@@ -75,12 +75,14 @@ class TeacherRepository(
         date: String,
         periodId: String? = null,
         isExtraClass: Boolean = false,
+        extraLabel: String? = null,
     ): NetworkResult<RosterResponse> = safeApiCall {
         attendanceApi.unitRoster(
             unitId = unitId,
             date = date,
             periodId = periodId,
             isExtraClass = isExtraClass,
+            extraLabel = extraLabel,
         )
     }
 
@@ -90,13 +92,15 @@ class TeacherRepository(
         periodId: String?,
         isExtraClass: Boolean,
         entries: List<Pair<String, AttendanceStatus>>,
+        extraLabel: String? = null,
     ): NetworkResult<RollOut> = safeApiCall {
         attendanceApi.upsertRoll(
             UpsertRollRequest(
                 teaching_unit_id = unitId,
                 attendance_date = date,
-                period_id = periodId,
+                period_id = if (isExtraClass) null else periodId,
                 is_extra_class = isExtraClass,
+                extra_label = if (isExtraClass) extraLabel else null,
                 entries = entries.map { (studentId, status) ->
                     EntryInput(student_id = studentId, status = status)
                 },

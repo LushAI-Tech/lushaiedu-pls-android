@@ -44,9 +44,7 @@ class TeacherHomeViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             coroutineScope {
-                val overviewDeferred = async { teacherRepository.overview(classId = classId) }
                 val unitsDeferred = async { teacherRepository.teachingUnits() }
-                val overviewResult = overviewDeferred.await()
                 val unitsResult = unitsDeferred.await()
                 val chips = (unitsResult as? NetworkResult.Success)
                     ?.data
@@ -54,14 +52,15 @@ class TeacherHomeViewModel(
                     .orEmpty()
                 val labels = chips.map { it.label }
                 val idsByLabel = chips.associate { it.label to it.classId }
+                val resolvedClassId = classId
+                    ?: _uiState.value.selectedClassId
+                    ?: chips.firstOrNull()?.classId
+                val overviewResult = teacherRepository.overview(classId = resolvedClassId)
                 when (overviewResult) {
                     is NetworkResult.Success -> {
                         val overview = overviewResult.data
-                        val selectedLabel = when {
-                            classId != null -> chips.find { it.classId == classId }?.label
-                            _uiState.value.selectedClass in labels -> _uiState.value.selectedClass
-                            else -> labels.firstOrNull().orEmpty()
-                        }.orEmpty()
+                        val selectedLabel = chips.find { it.classId == resolvedClassId }?.label
+                            ?: labels.firstOrNull().orEmpty()
                         val dashboard = TeacherUiMappers.homeDashboard(
                             overview = overview,
                             classLabel = selectedLabel,
@@ -76,7 +75,7 @@ class TeacherHomeViewModel(
                                 },
                                 notificationCount = overview.unread_notifications,
                                 selectedClass = selectedLabel,
-                                selectedClassId = idsByLabel[selectedLabel],
+                                selectedClassId = resolvedClassId,
                                 classes = labels,
                                 classIdsByLabel = idsByLabel,
                                 groupOutcome = dashboard.groupOutcome,

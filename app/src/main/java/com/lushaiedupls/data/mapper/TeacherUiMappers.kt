@@ -91,13 +91,22 @@ object TeacherUiMappers {
         overview: TeacherOverview,
         unitSummary: UnitAttendanceSummary? = null,
     ): TeacherOverviewDashboard {
-        val totals = unitSummary?.regular ?: overview.regular
+        // Prefer unit regular; if that session block is empty but extras exist, include extras
+        // so Overview reflects what the teacher just marked.
+        val totals = when {
+            unitSummary != null -> preferredTotals(unitSummary.regular, unitSummary.extra)
+            else -> preferredTotals(overview.regular, overview.extra)
+        }
         val byClassSource = unitSummary
         val firstUnit = overview.units.firstOrNull()
         val className = byClassSource?.class_name ?: firstUnit?.class_name.orEmpty()
         val subjectName = byClassSource?.subject_name ?: firstUnit?.subject_name.orEmpty()
-        val classTotals = byClassSource?.regular ?: firstUnit?.regular ?: totals
-        val subjectTotals = byClassSource?.regular ?: firstUnit?.regular ?: totals
+        val classTotals = when {
+            byClassSource != null -> preferredTotals(byClassSource.regular, byClassSource.extra)
+            firstUnit != null -> preferredTotals(firstUnit.regular, firstUnit.extra)
+            else -> totals
+        }
+        val subjectTotals = classTotals
         return TeacherOverviewDashboard(
             monthLabel = monthLabel(overview.month),
             presentRate = "${totals.present_pct_all.roundToInt()}%",
@@ -119,6 +128,9 @@ object TeacherUiMappers {
             ),
         )
     }
+
+    fun periodTimeLabel(startTime: String, endTime: String): String =
+        formatPeriodRange(startTime, endTime)
 
     fun classOverview(
         unit: TeachingUnitOut,
@@ -259,6 +271,16 @@ object TeacherUiMappers {
         AttendanceStatus.PRESENT -> TeacherAttendanceMark.Present
         AttendanceStatus.ABSENT, AttendanceStatus.LEAVE -> TeacherAttendanceMark.Absent
         null -> TeacherAttendanceMark.None
+    }
+
+    private fun preferredTotals(regular: AttendanceTotals, extra: AttendanceTotals): AttendanceTotals {
+        return when {
+            regular.sessions > 0 -> regular
+            extra.sessions > 0 -> extra
+            regular.present + regular.absent + regular.leave > 0 -> regular
+            extra.present + extra.absent + extra.leave > 0 -> extra
+            else -> regular
+        }
     }
 
     private fun attendanceBlock(totals: AttendanceTotals?): TeacherAttendanceBlock {

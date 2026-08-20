@@ -25,11 +25,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,6 +62,13 @@ import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
 import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.TextSecondary
+
+data class AttendancePeriodOption(
+    val periodId: String,
+    val label: String,
+    val extraLabel: String = "",
+    val isMarked: Boolean = false,
+)
 
 private val CardShape = RoundedCornerShape(20.dp)
 private val FieldShape = RoundedCornerShape(14.dp)
@@ -227,6 +238,161 @@ fun InviteParentOverlay(
                     onLink()
                     Toast.makeText(context, linkedMessage, Toast.LENGTH_SHORT).show()
                     onDismiss()
+                },
+            )
+        }
+    }
+}
+
+@Composable
+fun TakeAttendanceSetupOverlay(
+    scheduledPeriods: List<AttendancePeriodOption>,
+    institutePeriods: List<AttendancePeriodOption>,
+    isLoadingPeriods: Boolean,
+    errorMessage: String? = null,
+    onDismiss: () -> Unit,
+    onTakeAttendance: (isExtraClass: Boolean, periodId: String?, extraLabel: String?) -> Unit,
+) {
+    var isExtraClass by remember { mutableStateOf(false) }
+    var selectedPeriodId by remember { mutableStateOf<String?>(null) }
+    var menuExpanded by remember { mutableStateOf(false) }
+
+    // Regular rolls use the day's timetabled periods; extra classes pick a time band
+    // from the institute timeline and send it as extra_label (period_id stays null).
+    val periods = if (isExtraClass) institutePeriods else scheduledPeriods.ifEmpty { institutePeriods }
+
+    LaunchedEffect(isExtraClass, periods) {
+        if (selectedPeriodId == null || periods.none { it.periodId == selectedPeriodId }) {
+            selectedPeriodId = periods.firstOrNull()?.periodId
+        }
+    }
+
+    val selected = periods.find { it.periodId == selectedPeriodId }
+    val selectedLabel = selected?.label
+        ?: stringResource(R.string.teacher_select_period_placeholder)
+    val canContinue = !selectedPeriodId.isNullOrBlank()
+
+    TeacherScrimDialog(onDismiss = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(CardShape)
+                .background(BgWhite)
+                .padding(20.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.teacher_extra_class),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = BrandBlack,
+                    fontFamily = FontFamily.SansSerif,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(
+                    checked = isExtraClass,
+                    onCheckedChange = { isExtraClass = it },
+                    colors = SwitchDefaults.colors(
+                        checkedTrackColor = BrandOrange,
+                        checkedThumbColor = Color.White,
+                        uncheckedTrackColor = BorderGray.copy(alpha = 0.5f),
+                        uncheckedThumbColor = Color.White,
+                    ),
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = stringResource(R.string.teacher_select_period),
+                fontSize = 14.sp,
+                color = BrandBlack,
+                fontFamily = FontFamily.SansSerif,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .clip(FieldShape)
+                        .border(1.dp, BorderGray.copy(alpha = 0.7f), FieldShape)
+                        .background(BgLight)
+                        .clickable(enabled = periods.isNotEmpty()) {
+                            menuExpanded = true
+                        }
+                        .padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = when {
+                            isLoadingPeriods -> stringResource(R.string.loading)
+                            periods.isEmpty() -> stringResource(R.string.teacher_no_periods)
+                            else -> selectedLabel
+                        },
+                        color = if (periods.isEmpty()) TextSecondary else BrandBlack,
+                        fontSize = 14.sp,
+                        fontFamily = FontFamily.SansSerif,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Icon(
+                        imageVector = Icons.Outlined.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = TextSecondary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                ) {
+                    periods.forEach { option ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = if (option.isMarked) {
+                                        stringResource(
+                                            R.string.teacher_period_marked_label,
+                                            option.label,
+                                        )
+                                    } else {
+                                        option.label
+                                    },
+                                    fontFamily = FontFamily.SansSerif,
+                                )
+                            },
+                            onClick = {
+                                selectedPeriodId = option.periodId
+                                menuExpanded = false
+                            },
+                        )
+                    }
+                }
+            }
+            errorMessage?.takeIf { it.isNotBlank() }?.let { message ->
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = message,
+                    color = BrandOrange,
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.SansSerif,
+                )
+            }
+            Spacer(modifier = Modifier.height(18.dp))
+            PrimaryPillButton(
+                label = stringResource(R.string.teacher_take_attendance_action),
+                enabled = canContinue && !isLoadingPeriods,
+                onClick = {
+                    if (!canContinue) return@PrimaryPillButton
+                    val option = periods.find { it.periodId == selectedPeriodId }
+                    if (isExtraClass) {
+                        val label = option?.extraLabel?.takeIf { it.isNotBlank() }
+                            ?: option?.label?.take(30)
+                        onTakeAttendance(true, null, label)
+                    } else {
+                        onTakeAttendance(false, selectedPeriodId, null)
+                    }
                 },
             )
         }
@@ -600,14 +766,15 @@ private fun SelectChip(
 private fun PrimaryPillButton(
     label: String,
     onClick: () -> Unit,
+    enabled: Boolean = true,
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(50.dp)
             .clip(PillShape)
-            .background(BrandBlack)
-            .clickable(onClick = onClick),
+            .background(if (enabled) BrandBlack else BrandBlack.copy(alpha = 0.35f))
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(

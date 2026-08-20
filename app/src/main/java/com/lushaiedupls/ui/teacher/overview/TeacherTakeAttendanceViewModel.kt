@@ -19,10 +19,14 @@ class TeacherTakeAttendanceViewModel(
     private val teacherRepository: TeacherRepository,
     private val unitId: String,
     private val dateLabel: String,
+    private val initialPeriodId: String?,
+    private val initialIsExtraClass: Boolean,
+    private val initialExtraLabel: String?,
 ) : ViewModel() {
 
-    private var periodId: String? = null
-    private var isExtraClass: Boolean = false
+    private var periodId: String? = initialPeriodId
+    private var isExtraClass: Boolean = initialIsExtraClass
+    private var extraLabel: String? = initialExtraLabel
 
     private val _uiState = MutableStateFlow(TeacherTakeAttendanceUiState(isLoading = true))
     val uiState: StateFlow<TeacherTakeAttendanceUiState> = _uiState.asStateFlow()
@@ -51,14 +55,21 @@ class TeacherTakeAttendanceViewModel(
             _uiState.update { it.copy(errorMessage = "Mark at least one student before saving.") }
             return
         }
+        if (!isExtraClass && periodId.isNullOrBlank()) {
+            _uiState.update {
+                it.copy(errorMessage = "A period is required unless this is an extra class.")
+            }
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true, errorMessage = null) }
             when (
                 val result = teacherRepository.saveRoll(
                     unitId = unitId,
                     date = dateLabel,
-                    periodId = periodId,
+                    periodId = if (isExtraClass) null else periodId,
                     isExtraClass = isExtraClass,
+                    extraLabel = if (isExtraClass) extraLabel else null,
                     entries = entries,
                 )
             ) {
@@ -75,20 +86,19 @@ class TeacherTakeAttendanceViewModel(
     fun refresh() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            val dayResult = teacherRepository.unitDay(unitId, dateLabel)
-            val firstPeriod = (dayResult as? NetworkResult.Success)?.data?.periods?.firstOrNull()
-            periodId = firstPeriod?.period_id
-            isExtraClass = firstPeriod == null
             val rosterResult = teacherRepository.unitRoster(
                 unitId = unitId,
                 date = dateLabel,
-                periodId = periodId,
+                periodId = if (isExtraClass) null else periodId,
                 isExtraClass = isExtraClass,
+                extraLabel = if (isExtraClass) extraLabel else null,
             )
             when (rosterResult) {
                 is NetworkResult.Success -> {
                     val session = TeacherUiMappers.attendanceSession(rosterResult.data)
-                    periodId = rosterResult.data.period_id ?: periodId
+                    if (!isExtraClass) {
+                        periodId = rosterResult.data.period_id ?: periodId
+                    }
                     isExtraClass = rosterResult.data.is_extra_class
                     _uiState.update {
                         it.copy(
@@ -110,8 +120,18 @@ class TeacherTakeAttendanceViewModel(
             teacherRepository: TeacherRepository,
             unitId: String,
             dateLabel: String,
+            periodId: String?,
+            isExtraClass: Boolean,
+            extraLabel: String?,
         ): ViewModelProvider.Factory = viewModelFactory {
-            TeacherTakeAttendanceViewModel(teacherRepository, unitId, dateLabel)
+            TeacherTakeAttendanceViewModel(
+                teacherRepository = teacherRepository,
+                unitId = unitId,
+                dateLabel = dateLabel,
+                initialPeriodId = periodId,
+                initialIsExtraClass = isExtraClass,
+                initialExtraLabel = extraLabel,
+            )
         }
     }
 }

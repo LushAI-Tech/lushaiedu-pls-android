@@ -7,7 +7,8 @@ object TeacherRoutes {
     const val MY_GROUPS = "teacher_my_groups"
     const val OVERVIEW = "teacher_overview"
     const val CLASS_OVERVIEW = "teacher_class_overview/{groupId}"
-    const val TAKE_ATTENDANCE = "teacher_take_attendance/{unitId}/{date}"
+    const val TAKE_ATTENDANCE =
+        "teacher_take_attendance/{unitId}/{date}?periodId={periodId}&extra={extra}&extraLabel={extraLabel}"
     const val CALENDAR = "teacher_calendar"
     const val ACADEMIC_CALENDAR = "teacher_academic_calendar"
     const val AI = "teacher_ai"
@@ -27,8 +28,19 @@ object TeacherRoutes {
 
     fun classOverview(groupId: String): String = "teacher_class_overview/$groupId"
 
-    fun takeAttendance(unitId: String, date: String): String =
-        "teacher_take_attendance/${Uri.encode(unitId)}/${Uri.encode(date)}"
+    fun takeAttendance(
+        unitId: String,
+        date: String,
+        periodId: String? = null,
+        isExtraClass: Boolean = false,
+        extraLabel: String? = null,
+    ): String {
+        val period = Uri.encode(periodId.orEmpty())
+        val extra = if (isExtraClass) "1" else "0"
+        val label = Uri.encode(extraLabel.orEmpty())
+        return "teacher_take_attendance/${Uri.encode(unitId)}/${Uri.encode(date)}" +
+            "?periodId=$period&extra=$extra&extraLabel=$label"
+    }
 
     fun aiChapters(subjectId: String, name: String = ""): String =
         "teacher_ai_chapters/$subjectId?name=${Uri.encode(name)}"

@@ -66,12 +66,25 @@ fun TeacherTakeAttendanceRoute(
     dateLabel: String,
     teacherRepository: TeacherRepository,
     onBack: () -> Unit,
+    periodId: String? = null,
+    isExtraClass: Boolean = false,
+    extraLabel: String? = null,
     modifier: Modifier = Modifier,
     viewModel: TeacherTakeAttendanceViewModel = viewModel(
+        key = listOf(
+            unitId,
+            dateLabel,
+            periodId.orEmpty(),
+            isExtraClass,
+            extraLabel.orEmpty(),
+        ).joinToString("|"),
         factory = TeacherTakeAttendanceViewModel.provideFactory(
             teacherRepository = teacherRepository,
             unitId = unitId,
             dateLabel = dateLabel,
+            periodId = periodId,
+            isExtraClass = isExtraClass,
+            extraLabel = extraLabel,
         ),
     ),
 ) {

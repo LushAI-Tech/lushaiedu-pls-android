@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lushaiedupls.R
@@ -77,6 +78,10 @@ fun TeacherHomeRoute(
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    LifecycleResumeEffect(Unit) {
+        viewModel.refresh()
+        onPauseOrDispose { }
+    }
     when {
         uiState.isLoading && uiState.classes.isEmpty() && uiState.errorMessage == null ->
             StudentPageSkeleton(kind = StudentSkeletonKind.Home, modifier = modifier)
@@ -239,15 +244,16 @@ private fun OutcomeCard(
     label: String,
     modifier: Modifier = Modifier,
 ) {
-    Column(
+    Row(
         modifier = modifier
             .clip(CardShape)
             .background(OutcomeCardBg)
-            .padding(16.dp),
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
-                .size(36.dp)
+                .size(40.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .background(BrandBlack),
             contentAlignment = Alignment.Center,
@@ -256,25 +262,29 @@ private fun OutcomeCard(
                 imageVector = icon,
                 contentDescription = null,
                 tint = Color.White,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(22.dp),
             )
         }
-        Spacer(modifier = Modifier.height(14.dp))
-        Text(
-            text = value,
-            fontWeight = FontWeight.Bold,
-            fontSize = 28.sp,
-            color = BrandBlack,
-            fontFamily = FontFamily.SansSerif,
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = label,
-            fontWeight = FontWeight.Medium,
-            fontSize = 14.sp,
-            color = TextSecondary,
-            fontFamily = FontFamily.SansSerif,
-        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = value,
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp,
+                color = BrandBlack,
+                fontFamily = FontFamily.SansSerif,
+                maxLines = 1,
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = label,
+                fontWeight = FontWeight.Medium,
+                fontSize = 13.sp,
+                color = TextSecondary,
+                fontFamily = FontFamily.SansSerif,
+                maxLines = 1,
+            )
+        }
     }
 }
 

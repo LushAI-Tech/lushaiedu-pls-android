@@ -201,9 +201,15 @@ fun TeacherShell(
             composable(TeacherRoutes.OVERVIEW) {
                 TeacherOverviewRoute(
                     teacherRepository = teacherRepository,
-                    onTakeAttendance = { unitId, dateLabel ->
+                    onTakeAttendance = { unitId, dateLabel, periodId, isExtraClass, extraLabel ->
                         tabNavController.navigate(
-                            TeacherRoutes.takeAttendance(unitId, dateLabel),
+                            TeacherRoutes.takeAttendance(
+                                unitId = unitId,
+                                date = dateLabel,
+                                periodId = periodId,
+                                isExtraClass = isExtraClass,
+                                extraLabel = extraLabel,
+                            ),
                         )
                     },
                     modifier = Modifier.fillMaxSize(),
@@ -214,13 +220,33 @@ fun TeacherShell(
                 arguments = listOf(
                     navArgument("unitId") { type = NavType.StringType },
                     navArgument("date") { type = NavType.StringType },
+                    navArgument("periodId") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                    },
+                    navArgument("extra") {
+                        type = NavType.StringType
+                        defaultValue = "0"
+                    },
+                    navArgument("extraLabel") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                    },
                 ),
             ) { entry ->
                 val unitId = Uri.decode(entry.arguments?.getString("unitId").orEmpty())
                 val date = Uri.decode(entry.arguments?.getString("date").orEmpty())
+                val periodId = Uri.decode(entry.arguments?.getString("periodId").orEmpty())
+                    .takeIf { it.isNotBlank() }
+                val isExtraClass = entry.arguments?.getString("extra") == "1"
+                val extraLabel = Uri.decode(entry.arguments?.getString("extraLabel").orEmpty())
+                    .takeIf { it.isNotBlank() }
                 TeacherTakeAttendanceRoute(
                     unitId = unitId,
                     dateLabel = date,
+                    periodId = periodId,
+                    isExtraClass = isExtraClass,
+                    extraLabel = extraLabel,
                     teacherRepository = teacherRepository,
                     onBack = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),

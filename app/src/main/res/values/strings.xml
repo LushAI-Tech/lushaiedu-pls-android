@@ -298,6 +298,13 @@
     <string name="teacher_attendance_tab_hint">Detailed attendance records arrive in a later teacher phase.</string>
     <string name="teacher_attendance_class">Class</string>
     <string name="teacher_attendance_tap_day">Tap a day to take attendance for that date.</string>
+    <string name="teacher_extra_class">Extra Class</string>
+    <string name="teacher_select_period">Select Period</string>
+    <string name="teacher_select_period_placeholder">Choose a period</string>
+    <string name="teacher_no_periods">No periods available</string>
+    <string name="teacher_period_marked_label">%1$s · marked</string>
+    <string name="teacher_take_attendance_action">Take Attendance</string>
+    <string name="teacher_select_period_required">Select a period, or turn on Extra Class.</string>
     <string name="teacher_take_attendance_title">Students · %1$s</string>
     <string name="teacher_take_attendance_meta">%1$s · %2$s</string>
     <string name="teacher_attendance_selected">%1$d/%2$d Selected</string>

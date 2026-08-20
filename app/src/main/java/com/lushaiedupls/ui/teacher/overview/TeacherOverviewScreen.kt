@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lushaiedupls.R
@@ -55,6 +56,7 @@ import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.ui.common.LoadErrorPanel
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
+import com.lushaiedupls.ui.teacher.overlays.TakeAttendanceSetupOverlay
 import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
@@ -83,13 +85,23 @@ private val SelectedDayBg = Color(0xFFFFE0B8)
 @Composable
 fun TeacherOverviewRoute(
     teacherRepository: TeacherRepository,
-    onTakeAttendance: (unitId: String, dateLabel: String) -> Unit,
+    onTakeAttendance: (
+        unitId: String,
+        dateLabel: String,
+        periodId: String?,
+        isExtraClass: Boolean,
+        extraLabel: String?,
+    ) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: TeacherOverviewViewModel = viewModel(
         factory = TeacherOverviewViewModel.provideFactory(teacherRepository),
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    LifecycleResumeEffect(Unit) {
+        viewModel.refresh()
+        onPauseOrDispose { }
+    }
     when {
         uiState.isLoading && uiState.dashboard == null && uiState.errorMessage == null ->
             StudentPageSkeleton(kind = StudentSkeletonKind.Attendance, modifier = modifier)
@@ -100,27 +112,41 @@ fun TeacherOverviewRoute(
             isRetrying = uiState.isLoading,
             modifier = modifier,
         )
-        else -> TeacherOverviewScreen(
-            uiState = uiState,
-            onSectionSelected = viewModel::onSectionSelected,
-            onAttendanceClassSelected = viewModel::onAttendanceClassSelected,
-            onPreviousAttendanceMonth = viewModel::previousAttendanceMonth,
-            onNextAttendanceMonth = viewModel::nextAttendanceMonth,
-            onSelectAttendanceDay = { day ->
-                val current = viewModel.uiState.value
-                viewModel.selectAttendanceDay(day)
-                val unitId = current.selectedUnitId
-                if (!unitId.isNullOrBlank()) {
-                    val dateLabel = "%04d-%02d-%02d".format(
-                        current.attendanceMonth.year,
-                        current.attendanceMonth.monthValue,
-                        day,
-                    )
-                    onTakeAttendance(unitId, dateLabel)
-                }
-            },
-            modifier = modifier,
-        )
+        else -> {
+            TeacherOverviewScreen(
+                uiState = uiState,
+                onSectionSelected = viewModel::onSectionSelected,
+                onAttendanceClassSelected = viewModel::onAttendanceClassSelected,
+                onPreviousAttendanceMonth = viewModel::previousAttendanceMonth,
+                onNextAttendanceMonth = viewModel::nextAttendanceMonth,
+                onThisAttendanceMonth = viewModel::goToThisAttendanceMonth,
+                onSelectAttendanceDay = viewModel::selectAttendanceDay,
+                modifier = modifier,
+            )
+            val setupDate = uiState.setupDateLabel
+            if (setupDate != null) {
+                TakeAttendanceSetupOverlay(
+                    scheduledPeriods = uiState.setupScheduledPeriods,
+                    institutePeriods = uiState.setupInstitutePeriods,
+                    isLoadingPeriods = uiState.isLoadingSetupPeriods,
+                    errorMessage = uiState.setupErrorMessage,
+                    onDismiss = viewModel::dismissAttendanceSetup,
+                    onTakeAttendance = { isExtraClass, periodId, extraLabel ->
+                        val unitId = uiState.selectedUnitId
+                        if (!unitId.isNullOrBlank()) {
+                            viewModel.dismissAttendanceSetup()
+                            onTakeAttendance(
+                                unitId,
+                                setupDate,
+                                periodId,
+                                isExtraClass,
+                                extraLabel,
+                            )
+                        }
+                    },
+                )
+            }
+        }
     }
 }
 
@@ -131,6 +157,7 @@ fun TeacherOverviewScreen(
     onAttendanceClassSelected: (String) -> Unit = {},
     onPreviousAttendanceMonth: () -> Unit = {},
     onNextAttendanceMonth: () -> Unit = {},
+    onThisAttendanceMonth: () -> Unit = {},
     onSelectAttendanceDay: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -165,7 +192,12 @@ fun TeacherOverviewScreen(
         Spacer(modifier = Modifier.height(22.dp))
 
         when (uiState.section) {
-            TeacherOverviewSection.Overview -> OverviewContent(dashboard = dashboard)
+            TeacherOverviewSection.Overview -> OverviewContent(
+                dashboard = dashboard,
+                onPreviousMonth = onPreviousAttendanceMonth,
+                onNextMonth = onNextAttendanceMonth,
+                onThisMonth = onThisAttendanceMonth,
+            )
             TeacherOverviewSection.Attendance -> AttendanceWorkspace(
                 classes = uiState.attendanceClasses,
                 selectedClass = uiState.selectedAttendanceClass,
@@ -455,7 +487,12 @@ private fun AttendanceCalendarCard(
 }
 
 @Composable
-private fun OverviewContent(dashboard: TeacherOverviewDashboard) {
+private fun OverviewContent(
+    dashboard: TeacherOverviewDashboard,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onThisMonth: () -> Unit,
+) {
     Text(
         text = stringResource(R.string.teacher_selected_month),
         fontWeight = FontWeight.Bold,
@@ -464,7 +501,12 @@ private fun OverviewContent(dashboard: TeacherOverviewDashboard) {
         fontFamily = FontFamily.SansSerif,
     )
     Spacer(modifier = Modifier.height(10.dp))
-    MonthSelectorRow(monthLabel = dashboard.monthLabel)
+    MonthSelectorRow(
+        monthLabel = dashboard.monthLabel,
+        onPreviousMonth = onPreviousMonth,
+        onNextMonth = onNextMonth,
+        onThisMonth = onThisMonth,
+    )
     Spacer(modifier = Modifier.height(22.dp))
 
     Text(
@@ -509,7 +551,12 @@ private fun OverviewContent(dashboard: TeacherOverviewDashboard) {
 }
 
 @Composable
-private fun MonthSelectorRow(monthLabel: String) {
+private fun MonthSelectorRow(
+    monthLabel: String,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onThisMonth: () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -521,16 +568,21 @@ private fun MonthSelectorRow(monthLabel: String) {
                 .height(44.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(BgLight)
-                .padding(horizontal = 8.dp),
+                .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
-                contentDescription = null,
-                tint = BrandOrange,
-                modifier = Modifier.size(22.dp),
-            )
+            IconButton(
+                onClick = onPreviousMonth,
+                modifier = Modifier.size(36.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                    contentDescription = stringResource(R.string.cd_prev_month),
+                    tint = BrandOrange,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
             Text(
                 text = monthLabel,
                 fontWeight = FontWeight.Bold,
@@ -538,18 +590,24 @@ private fun MonthSelectorRow(monthLabel: String) {
                 color = BrandBlack,
                 fontFamily = FontFamily.SansSerif,
             )
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                contentDescription = null,
-                tint = BrandOrange,
-                modifier = Modifier.size(22.dp),
-            )
+            IconButton(
+                onClick = onNextMonth,
+                modifier = Modifier.size(36.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                    contentDescription = stringResource(R.string.cd_next_month),
+                    tint = BrandOrange,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
         }
         Box(
             modifier = Modifier
                 .height(44.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .border(1.dp, BorderGray, RoundedCornerShape(12.dp))
+                .clickable(onClick = onThisMonth)
                 .padding(horizontal = 12.dp),
             contentAlignment = Alignment.Center,
         ) {
