@@ -20,6 +20,7 @@ import com.lushaiedupls.data.remote.dto.AttendanceCalendar
 import com.lushaiedupls.data.remote.dto.AvatarCommitRequest
 import com.lushaiedupls.data.remote.dto.AvatarPresignRequest
 import com.lushaiedupls.data.remote.dto.CalendarEventOut
+import com.lushaiedupls.data.remote.dto.ChapterAttachmentOut
 import com.lushaiedupls.data.remote.dto.ChapterListItem
 import com.lushaiedupls.data.remote.dto.ChapterOut
 import com.lushaiedupls.data.remote.dto.ChatHistoryResponse
@@ -28,6 +29,7 @@ import com.lushaiedupls.data.remote.dto.ChatResponse
 import com.lushaiedupls.data.remote.dto.ClassOut
 import com.lushaiedupls.data.remote.dto.ClearChatHistoryResponse
 import com.lushaiedupls.data.remote.dto.DeviceOut
+import com.lushaiedupls.data.remote.dto.ExamPrepPyqsResponse
 import com.lushaiedupls.data.remote.dto.Gender
 import com.lushaiedupls.data.remote.dto.LinkTokenResponse
 import com.lushaiedupls.data.remote.dto.MessageResponse
@@ -44,11 +46,14 @@ import com.lushaiedupls.data.remote.dto.SectionOut
 import com.lushaiedupls.data.remote.dto.StudentAttendanceSummary
 import com.lushaiedupls.data.remote.dto.StudentOverview
 import com.lushaiedupls.data.remote.dto.SubjectOut
+import com.lushaiedupls.data.remote.dto.SubjectPracticeQuestionsResponse
 import com.lushaiedupls.data.remote.dto.TeachingUnitOut
 import com.lushaiedupls.data.remote.dto.UnreadCountResponse
 import com.lushaiedupls.data.remote.dto.UserOut
 import com.lushaiedupls.data.remote.dto.WeekView
 import com.lushaiedupls.data.remote.safeApiCall
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -155,7 +160,69 @@ class StudentRepository(
         return safeApiCall { meApi.avatarCommit(AvatarCommitRequest(object_key = presign.object_key)) }
     }
 
+    private val chaptersCache = java.util.concurrent.ConcurrentHashMap<String, List<ChapterListItem>>()
+    private val chapterCache = java.util.concurrent.ConcurrentHashMap<String, ChapterOut>()
+    private val sectionCache = java.util.concurrent.ConcurrentHashMap<String, SectionOut>()
+    private val chatHistoryCache = java.util.concurrent.ConcurrentHashMap<String, ChatHistoryResponse>()
+    private val chatIntroCache = java.util.concurrent.ConcurrentHashMap<String, ChatResponse>()
+    private val questionsListCache = java.util.concurrent.ConcurrentHashMap<String, SubjectPracticeQuestionsResponse>()
+    private val examPrepPyqsCache = java.util.concurrent.ConcurrentHashMap<String, ExamPrepPyqsResponse>()
+    private val chapterAttachmentsCache = java.util.concurrent.ConcurrentHashMap<String, List<ChapterAttachmentOut>>()
+
     suspend fun classes(): NetworkResult<List<ClassOut>> = safeApiCall { classesApi.listClasses() }
+
+    suspend fun questionsList(
+        subjectId: String,
+        forceRefresh: Boolean = false,
+    ): NetworkResult<SubjectPracticeQuestionsResponse> {
+        if (!forceRefresh) {
+            questionsListCache[subjectId]?.let { return NetworkResult.Success(it) }
+        }
+        val result = safeApiCall { aiApi.questionsList(subjectId) }
+        if (result is NetworkResult.Success) {
+            questionsListCache[subjectId] = result.data
+        }
+        return result
+    }
+
+    suspend fun chapterAttachments(
+        chapterId: String,
+        forceRefresh: Boolean = false,
+    ): NetworkResult<List<ChapterAttachmentOut>> {
+        if (!forceRefresh) {
+            chapterAttachmentsCache[chapterId]?.let { return NetworkResult.Success(it) }
+        }
+        val result = safeApiCall { aiApi.chapterAttachments(chapterId) }
+        if (result is NetworkResult.Success) {
+            chapterAttachmentsCache[chapterId] = result.data
+        }
+        return result
+    }
+
+    suspend fun examPrepPyqs(
+        chapterId: String,
+        sectionId: String? = null,
+        chapterScope: Boolean? = null,
+        examCodes: String? = null,
+        forceRefresh: Boolean = false,
+    ): NetworkResult<ExamPrepPyqsResponse> {
+        val cacheKey = "${chapterId}_${sectionId}_${chapterScope}_${examCodes}"
+        if (!forceRefresh) {
+            examPrepPyqsCache[cacheKey]?.let { return NetworkResult.Success(it) }
+        }
+        val result = safeApiCall {
+            aiApi.examPrepPyqs(
+                chapterId = chapterId,
+                sectionId = sectionId,
+                chapterScope = chapterScope,
+                examCodes = examCodes,
+            )
+        }
+        if (result is NetworkResult.Success) {
+            examPrepPyqsCache[cacheKey] = result.data
+        }
+        return result
+    }
 
     suspend fun subjects(classId: String): NetworkResult<List<SubjectOut>> =
         safeApiCall { classesApi.listSubjects(classId) }
@@ -171,20 +238,85 @@ class StudentRepository(
     suspend fun progressResume(): NetworkResult<ResumeResponse?> =
         safeApiCall { aiApi.progressResume() }
 
-    suspend fun chapters(subjectId: String): NetworkResult<List<ChapterListItem>> =
-        safeApiCall { aiApi.chapters(subjectId) }
+    suspend fun chapters(subjectId: String, forceRefresh: Boolean = false): NetworkResult<List<ChapterListItem>> {
+        if (!forceRefresh) {
+            chaptersCache[subjectId]?.let { return NetworkResult.Success(it) }
+        }
+        val result = safeApiCall { aiApi.chapters(subjectId) }
+        if (result is NetworkResult.Success) {
+            chaptersCache[subjectId] = result.data
+        }
+        return result
+    }
 
-    suspend fun chapter(chapterId: String): NetworkResult<ChapterOut> =
-        safeApiCall { aiApi.chapter(chapterId) }
+    suspend fun chapter(chapterId: String, forceRefresh: Boolean = false): NetworkResult<ChapterOut> {
+        if (!forceRefresh) {
+            chapterCache[chapterId]?.let { return NetworkResult.Success(it) }
+        }
+        val result = safeApiCall { aiApi.chapter(chapterId) }
+        if (result is NetworkResult.Success) {
+            chapterCache[chapterId] = result.data
+        }
+        return result
+    }
 
-    suspend fun section(sectionId: String): NetworkResult<SectionOut> =
-        safeApiCall { aiApi.section(sectionId) }
+    suspend fun section(sectionId: String, forceRefresh: Boolean = false): NetworkResult<SectionOut> {
+        if (!forceRefresh) {
+            sectionCache[sectionId]?.let { return NetworkResult.Success(it) }
+        }
+        val result = safeApiCall { aiApi.section(sectionId) }
+        if (result is NetworkResult.Success) {
+            sectionCache[sectionId] = result.data
+        }
+        return result
+    }
 
-    suspend fun chatIntro(chapterId: String, language: String): NetworkResult<ChatResponse> =
-        safeApiCall { aiApi.intro(chapterId, language) }
+    suspend fun chatIntro(
+        chapterId: String,
+        language: String,
+        forceRefresh: Boolean = false,
+    ): NetworkResult<ChatResponse> {
+        val key = "${chapterId}_$language"
+        if (!forceRefresh) {
+            chatIntroCache[key]?.let { return NetworkResult.Success(it) }
+        }
+        val result = safeApiCall { aiApi.intro(chapterId, language) }
+        if (result is NetworkResult.Success) {
+            chatIntroCache[key] = result.data
+        }
+        return result
+    }
 
-    suspend fun chatHistory(chapterId: String): NetworkResult<ChatHistoryResponse> =
-        safeApiCall { aiApi.history(chapterId) }
+    suspend fun chatHistory(chapterId: String, forceRefresh: Boolean = false): NetworkResult<ChatHistoryResponse> {
+        if (!forceRefresh) {
+            chatHistoryCache[chapterId]?.let { return NetworkResult.Success(it) }
+        }
+        val result = safeApiCall { aiApi.history(chapterId) }
+        if (result is NetworkResult.Success) {
+            chatHistoryCache[chapterId] = result.data
+        }
+        return result
+    }
+
+    suspend fun prefetchAiChat(chapterIds: List<String>, language: String = "en") {
+        try {
+            coroutineScope {
+                chapterIds.take(3).forEach { chapterId ->
+                    launch {
+                        chapter(chapterId)
+                        chapterAttachments(chapterId)
+                        examPrepPyqs(chapterId)
+                        val history = chatHistory(chapterId)
+                        if (history is NetworkResult.Success && history.data.messages.isEmpty()) {
+                            chatIntro(chapterId, language)
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            // Best effort prefetch
+        }
+    }
 
     suspend fun chat(
         chapterId: String,
@@ -204,8 +336,11 @@ class StudentRepository(
         )
     }
 
-    suspend fun clearChat(chapterId: String): NetworkResult<ClearChatHistoryResponse> =
-        safeApiCall { aiApi.clearHistory(chapterId) }
+    suspend fun clearChat(chapterId: String): NetworkResult<ClearChatHistoryResponse> {
+        chatHistoryCache.remove(chapterId)
+        chatIntroCache.keys.filter { it.startsWith("${chapterId}_") }.forEach { chatIntroCache.remove(it) }
+        return safeApiCall { aiApi.clearHistory(chapterId) }
+    }
 
     suspend fun quizChapter(chapterId: String): NetworkResult<QuizStartResponse> =
         safeApiCall { aiApi.quizChapter(chapterId) }

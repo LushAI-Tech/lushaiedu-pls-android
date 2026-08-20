@@ -289,6 +289,91 @@ data class QuizAttemptSummary(
 )
 
 @Serializable
+data class PracticeQuestionOption(
+    val key: String,
+    val text: String,
+)
+
+@Serializable
+data class PracticeQuestionItemOut(
+    val id: String,
+    val sort_order: Int = 0,
+    val question_text: String,
+    val question_type: String? = null,
+    val options: List<PracticeQuestionOption>? = null,
+    val marks: JsonElement? = null,
+    val group_label: String? = null,
+    val calendar_year: Int? = null,
+    val block_type: String? = null,
+    val display_label: String? = null,
+    val extraction_quality: String? = null,
+    val content_metadata: JsonElement? = null,
+    val figure_assets: JsonElement? = null,
+    val figure_ref: String? = null,
+    val ai_image_url: String? = null,
+    val original_image_url: String? = null,
+    val question_image_url: String? = null,
+)
+
+@Serializable
+data class PracticeSetOut(
+    val id: String,
+    val label: String = "",
+    val items: List<PracticeQuestionItemOut> = emptyList(),
+    val section_id: String? = null,
+    val chapter_id: String? = null,
+    val chapter_number: Int? = null,
+    val chapter_title: String? = null,
+)
+
+@Serializable
+data class SubjectPracticeQuestionsResponse(
+    val sets: List<PracticeSetOut> = emptyList(),
+)
+
+@Serializable
+data class ExamPrepPyqHitOut(
+    val content_block_id: String,
+    val paper_id: String,
+    val paper_title: String,
+    val calendar_year: Int,
+    val exam_code: String,
+    val exam_name: String? = null,
+    val marks: JsonElement? = null,
+    val question_preview: String,
+    val block_type: String,
+    val similarity: Double = 0.0,
+    val repeat_count: Int = 1,
+    val repeat_badge: String? = null,
+    val trend_probability: Double? = null,
+    val trend_reason: String? = null,
+    val trend_years: List<Int> = emptyList(),
+)
+
+@Serializable
+data class ExamPrepPyqsResponse(
+    val hits: List<ExamPrepPyqHitOut> = emptyList(),
+    val filter_codes_available: List<String> = emptyList(),
+)
+
+@Serializable
+data class ChapterAttachmentOut(
+    val id: String,
+    val chapter_id: String,
+    val section_id: String? = null,
+    val resource_scope: String = "chapter",
+    val title: String,
+    val resource_type: String,
+    val label: String = "",
+    val status: String = "",
+    val file_url: String? = null,
+    val thumbnail_url: String? = null,
+    val youtube_url: String? = null,
+    val metadata_text: String? = null,
+    val external_url: String? = null,
+)
+
+@Serializable
 data class QuizQuestionOut(
     val id: String,
     val question_text: String,

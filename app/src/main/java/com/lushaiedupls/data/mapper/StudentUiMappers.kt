@@ -493,6 +493,64 @@ object StudentUiMappers {
     ): List<AiMenuContentItem> =
         contentItems(sections, fallbackTitle) { block -> isQuestionBlock(block) && !isResourceBlock(block) }
 
+    fun textbookQuestionsFromPracticeSets(
+        sets: List<com.lushaiedupls.data.remote.dto.PracticeSetOut>,
+        chapterId: String? = null,
+    ): List<AiMenuContentItem> {
+        val filteredSets = if (chapterId.isNullOrBlank()) {
+            sets
+        } else {
+            sets.filter { it.chapter_id == chapterId || it.chapter_id == null }
+        }
+        return filteredSets.flatMap { set ->
+            set.items.map { item ->
+                val metaParts = listOfNotNull(
+                    item.display_label ?: item.group_label ?: set.label.takeIf { it.isNotBlank() },
+                    item.calendar_year?.let { "Year $it" },
+                    item.question_type?.takeIf { it.isNotBlank() },
+                )
+                AiMenuContentItem(
+                    id = item.id,
+                    title = item.question_text.trim(),
+                    subtitle = metaParts.joinToString(" · "),
+                    sectionId = set.section_id.orEmpty(),
+                )
+            }
+        }
+    }
+
+    fun examPrepPyqs(hits: List<com.lushaiedupls.data.remote.dto.ExamPrepPyqHitOut>): List<AiMenuContentItem> =
+        hits.map { hit ->
+            val metaParts = listOfNotNull(
+                hit.exam_name?.takeIf { it.isNotBlank() } ?: hit.exam_code.takeIf { it.isNotBlank() },
+                hit.calendar_year.toString(),
+                hit.repeat_badge ?: (if (hit.repeat_count > 1) "Repeated ${hit.repeat_count}x" else null),
+                hit.trend_reason?.takeIf { it.isNotBlank() },
+            )
+            AiMenuContentItem(
+                id = hit.content_block_id,
+                title = hit.question_preview.trim(),
+                subtitle = metaParts.joinToString(" · "),
+                sectionId = "",
+            )
+        }
+
+    fun attachments(attachments: List<com.lushaiedupls.data.remote.dto.ChapterAttachmentOut>): List<AiMenuContentItem> =
+        attachments.map { att ->
+            val typeStr = att.resource_type.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.ROOT) else it.toString() }
+            val metaParts = listOfNotNull(
+                typeStr.takeIf { it.isNotBlank() },
+                att.label.takeIf { it.isNotBlank() },
+            )
+            AiMenuContentItem(
+                id = att.id,
+                title = att.title.trim(),
+                subtitle = metaParts.joinToString(" · ").ifBlank { null },
+                sectionId = att.section_id.orEmpty(),
+                imageUrl = att.thumbnail_url ?: att.file_url,
+            )
+        }
+
     fun resources(
         sections: List<SectionOut>,
         fallbackTitle: String = "Figure",

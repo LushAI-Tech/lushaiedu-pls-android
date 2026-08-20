@@ -102,6 +102,16 @@ class TeacherAiHubViewModel(
                         errorMessage = if (needsApproval) null else error,
                     ),
                 )
+                val firstSubjectId = allSubjects.firstOrNull()?.id
+                if (!firstSubjectId.isNullOrBlank()) {
+                    val chResult = studentRepository.chapters(firstSubjectId)
+                    if (chResult is NetworkResult.Success) {
+                        val activeChapterIds = chResult.data.filter { it.is_active }.map { it.id }
+                        if (activeChapterIds.isNotEmpty()) {
+                            studentRepository.prefetchAiChat(activeChapterIds)
+                        }
+                    }
+                }
             }
         }
     }
@@ -153,10 +163,11 @@ class TeacherAiChatViewModel(
 
     fun askAboutContent(item: AiMenuContentItem) {
         closeMenu()
+        _uiState.update { it.copy(menuTab = AiMenuTab.Chats) }
         val prompt = if (item.title.isNotBlank()) {
-            "Ask tutor about this: ${item.title}"
+            "Ask tutor about this question: ${item.title}"
         } else {
-            "Ask tutor about this"
+            "Ask tutor about this question"
         }
         appendUserMessage(prompt)
     }
@@ -184,7 +195,7 @@ class TeacherAiChatViewModel(
     }
 
     fun openMenu() {
-        _uiState.update { it.copy(showMenu = true, menuTab = AiMenuTab.Chats) }
+        _uiState.update { it.copy(showMenu = true) }
     }
 
     fun closeMenu() {
@@ -192,7 +203,7 @@ class TeacherAiChatViewModel(
     }
 
     fun selectMenuTab(tab: AiMenuTab) {
-        _uiState.update { it.copy(menuTab = tab) }
+        _uiState.update { it.copy(menuTab = tab, showMenu = false) }
     }
 
     fun selectQuickOption(option: String) {
@@ -213,6 +224,7 @@ class TeacherAiChatViewModel(
             quickCheck = pack.quickCheck,
             syllabus = session.syllabus,
             textbookQuestions = session.textbookQuestions,
+            examPrepPyqs = session.examPrepPyqs,
             resources = session.resources,
             quizHistory = session.quizHistory,
             language = language,

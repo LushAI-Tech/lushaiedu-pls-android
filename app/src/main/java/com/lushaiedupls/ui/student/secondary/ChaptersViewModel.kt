@@ -80,6 +80,10 @@ class ChaptersViewModel(
                             chapters = StudentUiMappers.chapters(chapters.data),
                         )
                     }
+                    val activeChapterIds = chapters.data.filter { it.is_active }.map { it.id }
+                    if (activeChapterIds.isNotEmpty()) {
+                        studentRepository.prefetchAiChat(activeChapterIds)
+                    }
                 } else {
                     _uiState.update {
                         it.copy(isLoading = false, errorMessage = chapters.userMessage())

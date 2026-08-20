@@ -69,6 +69,16 @@ class StudentAiHubViewModel(
                         errorMessage = if (needsApproval) null else error,
                     )
                 }
+                val firstSubjectId = subjects.firstOrNull()?.id
+                if (!firstSubjectId.isNullOrBlank()) {
+                    val chResult = studentRepository.chapters(firstSubjectId)
+                    if (chResult is NetworkResult.Success) {
+                        val activeChapterIds = chResult.data.filter { it.is_active }.map { it.id }
+                        if (activeChapterIds.isNotEmpty()) {
+                            studentRepository.prefetchAiChat(activeChapterIds)
+                        }
+                    }
+                }
             }
         }
     }

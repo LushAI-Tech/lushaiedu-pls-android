@@ -1,5 +1,6 @@
 package com.lushaiedupls.data.mapper
 
+import com.lushaiedupls.R
 import com.lushaiedupls.data.mock.TeacherAnnouncement
 import com.lushaiedupls.data.mock.TeacherAnnouncementAudience
 import com.lushaiedupls.data.mock.TeacherAttendanceBlock
@@ -51,6 +52,8 @@ object TeacherUiMappers {
                     TeachingUnitStatus.ACTIVE -> "Active"
                     TeachingUnitStatus.ARCHIVED -> "Archived"
                 },
+                subjectIconRes = subjectIcon(unit.subject_name),
+                subjectName = unit.subject_name,
             )
         }
 
@@ -368,6 +371,17 @@ object TeacherUiMappers {
             else -> hour
         }
         return String.format(Locale.ENGLISH, "%d:%02d %s", h12, minute, amPm)
+    }
+
+    fun subjectIcon(name: String, code: String? = null): Int {
+        val key = "${name.lowercase(Locale.ENGLISH)} ${code.orEmpty().lowercase(Locale.ENGLISH)}"
+        return when {
+            "chem" in key -> R.drawable.ic_subject_chemistry
+            "math" in key -> R.drawable.ic_subject_mathematics
+            "phys" in key -> R.drawable.ic_subject_physics
+            "bio" in key -> R.drawable.ic_subject_biology
+            else -> R.drawable.ic_metric_subject
+        }
     }
 }
 

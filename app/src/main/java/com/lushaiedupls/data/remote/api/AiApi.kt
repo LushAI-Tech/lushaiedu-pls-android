@@ -1,12 +1,14 @@
 package com.lushaiedupls.data.remote.api
 
 import com.lushaiedupls.data.remote.dto.AiSubjectOut
+import com.lushaiedupls.data.remote.dto.ChapterAttachmentOut
 import com.lushaiedupls.data.remote.dto.ChapterListItem
 import com.lushaiedupls.data.remote.dto.ChapterOut
 import com.lushaiedupls.data.remote.dto.ChatHistoryResponse
 import com.lushaiedupls.data.remote.dto.ChatRequest
 import com.lushaiedupls.data.remote.dto.ChatResponse
 import com.lushaiedupls.data.remote.dto.ClearChatHistoryResponse
+import com.lushaiedupls.data.remote.dto.ExamPrepPyqsResponse
 import com.lushaiedupls.data.remote.dto.ProgressDashboardResponse
 import com.lushaiedupls.data.remote.dto.ProgressUpdateRequest
 import com.lushaiedupls.data.remote.dto.QuizAttemptSummary
@@ -15,6 +17,7 @@ import com.lushaiedupls.data.remote.dto.QuizSubmitRequest
 import com.lushaiedupls.data.remote.dto.QuizSubmitResponse
 import com.lushaiedupls.data.remote.dto.ResumeResponse
 import com.lushaiedupls.data.remote.dto.SectionOut
+import com.lushaiedupls.data.remote.dto.SubjectPracticeQuestionsResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -30,8 +33,22 @@ interface AiApi {
     @GET("api/v1/ai/subjects/{subject_id}/chapters")
     suspend fun chapters(@Path("subject_id") subjectId: String): List<ChapterListItem>
 
+    @GET("api/v1/ai/subjects/{subject_id}/questions-list")
+    suspend fun questionsList(@Path("subject_id") subjectId: String): SubjectPracticeQuestionsResponse
+
     @GET("api/v1/ai/chapters/{chapter_id}")
     suspend fun chapter(@Path("chapter_id") chapterId: String): ChapterOut
+
+    @GET("api/v1/ai/chapters/{chapter_id}/attach-files")
+    suspend fun chapterAttachments(@Path("chapter_id") chapterId: String): List<ChapterAttachmentOut>
+
+    @GET("api/v1/ai/chapters/{chapter_id}/exam-prep-pyqs")
+    suspend fun examPrepPyqs(
+        @Path("chapter_id") chapterId: String,
+        @Query("section_id") sectionId: String? = null,
+        @Query("chapter_scope") chapterScope: Boolean? = null,
+        @Query("exam_codes") examCodes: String? = null,
+    ): ExamPrepPyqsResponse
 
     @GET("api/v1/ai/sections/{section_id}")
     suspend fun section(@Path("section_id") sectionId: String): SectionOut

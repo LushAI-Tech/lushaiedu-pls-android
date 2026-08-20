@@ -53,10 +53,11 @@ class StudentAiChatViewModel(
 
     fun askAboutContent(item: AiMenuContentItem) {
         closeMenu()
+        _uiState.update { it.copy(menuTab = AiMenuTab.Chats) }
         val prompt = if (item.title.isNotBlank()) {
-            "Ask tutor about this: ${item.title}"
+            "Ask tutor about this question: ${item.title}"
         } else {
-            "Ask tutor about this"
+            "Ask tutor about this question"
         }
         sendMessage(
             text = prompt,
@@ -74,6 +75,14 @@ class StudentAiChatViewModel(
             val next = state.selectedSyllabusIds.toMutableSet()
             if (!next.add(item.id)) next.remove(item.id)
             state.copy(selectedSyllabusIds = next)
+        }
+    }
+
+    fun selectAllSyllabus(selectAll: Boolean) {
+        _uiState.update { state ->
+            state.copy(
+                selectedSyllabusIds = if (selectAll) state.syllabus.map { it.id }.toSet() else emptySet(),
+            )
         }
     }
 
@@ -108,7 +117,7 @@ class StudentAiChatViewModel(
     }
 
     fun openMenu() {
-        _uiState.update { it.copy(showMenu = true, menuTab = AiMenuTab.Chats) }
+        _uiState.update { it.copy(showMenu = true) }
         loadQuizHistory()
     }
 
@@ -117,7 +126,10 @@ class StudentAiChatViewModel(
     }
 
     fun selectMenuTab(tab: AiMenuTab) {
-        _uiState.update { it.copy(menuTab = tab) }
+        _uiState.update { it.copy(menuTab = tab, showMenu = false) }
+        if (tab == AiMenuTab.ExamPreparation) {
+            loadQuizHistory()
+        }
     }
 
     fun selectQuickOption(option: String) {
@@ -153,57 +165,77 @@ class StudentAiChatViewModel(
     }
 
     private fun bootstrap() {
+        val hint = chapterIdHint?.takeIf { it.isNotBlank() }
+        if (hint != null) {
+            _uiState.update { it.copy(chapterId = hint, isLoading = true, errorMessage = null) }
+            loadSyllabus(hint)
+            reloadConversation(hint, _uiState.value.language)
+
+            // Resolve chapter title in background without blocking chat UI
+            viewModelScope.launch {
+                val chaptersResult = studentRepository.chapters(subjectId)
+                if (chaptersResult is NetworkResult.Success) {
+                    val chapter = chaptersResult.data.find { it.id == hint }
+                    if (chapter != null) {
+                        _uiState.update { it.copy(chapterTitle = chapterHeading(chapter.chapter_number)) }
+                    }
+                }
+            }
+            return
+        }
+
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            val resume = studentRepository.progressResume()
-            val chaptersResult = studentRepository.chapters(subjectId)
-            val activeChapters = (chaptersResult as? NetworkResult.Success)?.data
-                ?.filter { it.is_active }
-                .orEmpty()
-            val chapterId = when {
-                !chapterIdHint.isNullOrBlank() &&
-                    (activeChapters.isEmpty() || activeChapters.any { it.id == chapterIdHint }) ->
-                    chapterIdHint
-                resume is NetworkResult.Success &&
-                    activeChapters.any { it.id == resume.data?.chapter_id } ->
-                    resume.data?.chapter_id
-                activeChapters.isNotEmpty() ->
-                    activeChapters.minByOrNull { it.chapter_number }?.id
-                else -> null
-            }
-            val chapterTitle = when {
-                chaptersResult is NetworkResult.Success ->
-                    chaptersResult.data.find { it.id == chapterId }
-                        ?.let { chapterHeading(it.chapter_number) }
-                resume is NetworkResult.Success &&
-                    resume.data?.chapter_id == chapterId ->
-                    chapterHeading(resume.data?.chapter_number)
-                else -> null
-            }
-            if (chapterId.isNullOrBlank()) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = if (chaptersResult !is NetworkResult.Success) {
-                            chaptersResult.userMessage()
-                        } else {
-                            "No chapters available for this subject."
-                        },
-                    )
+            supervisorScope {
+                val resumeDeferred = async { studentRepository.progressResume() }
+                val chaptersDeferred = async { studentRepository.chapters(subjectId) }
+
+                val resume = resumeDeferred.await()
+                val chaptersResult = chaptersDeferred.await()
+                val activeChapters = (chaptersResult as? NetworkResult.Success)?.data
+                    ?.filter { it.is_active }
+                    .orEmpty()
+                val chapterId = when {
+                    resume is NetworkResult.Success &&
+                        activeChapters.any { it.id == resume.data?.chapter_id } ->
+                        resume.data?.chapter_id
+                    activeChapters.isNotEmpty() ->
+                        activeChapters.minByOrNull { it.chapter_number }?.id
+                    else -> null
                 }
-                return@launch
+                val chapterTitle = when {
+                    chaptersResult is NetworkResult.Success ->
+                        chaptersResult.data.find { it.id == chapterId }
+                            ?.let { chapterHeading(it.chapter_number) }
+                    resume is NetworkResult.Success &&
+                        resume.data?.chapter_id == chapterId ->
+                        chapterHeading(resume.data?.chapter_number)
+                    else -> null
+                }
+                if (chapterId.isNullOrBlank()) {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = if (chaptersResult !is NetworkResult.Success) {
+                                chaptersResult.userMessage()
+                            } else {
+                                "No chapters available for this subject."
+                            },
+                        )
+                    }
+                    return@supervisorScope
+                }
+                _uiState.update {
+                    it.copy(chapterId = chapterId, chapterTitle = chapterTitle.orEmpty())
+                }
+                loadSyllabus(chapterId)
+                reloadConversation(chapterId, _uiState.value.language)
             }
-            _uiState.update {
-                it.copy(chapterId = chapterId, chapterTitle = chapterTitle.orEmpty())
-            }
-            loadSyllabus(chapterId)
-            reloadConversation(chapterId, _uiState.value.language)
         }
     }
 
     private fun reloadConversation(chapterId: String, language: String) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             when (val history = studentRepository.chatHistory(chapterId)) {
                 is NetworkResult.Success -> {
                     val messages = StudentUiMappers.chatMessages(history.data.messages)
@@ -230,9 +262,6 @@ class StudentAiChatViewModel(
                 }
                 else -> {
                     loadIntro(chapterId, language)
-                    if (history !is NetworkResult.Success) {
-                        // intro will set loading; keep soft error only if intro also fails
-                    }
                 }
             }
         }
@@ -269,29 +298,86 @@ class StudentAiChatViewModel(
     private fun loadSyllabus(chapterId: String) {
         viewModelScope.launch {
             _uiState.update { it.copy(isMenuContentLoading = true) }
-            when (val result = studentRepository.chapter(chapterId)) {
-                is NetworkResult.Success -> {
-                    val sections = result.data.sections
-                    _uiState.update {
-                        it.copy(
-                            chapterTitle = it.chapterTitle.ifBlank {
-                                chapterHeading(result.data.chapter_number)
-                            },
-                            syllabus = StudentUiMappers.syllabus(sections),
-                        )
+
+            // 1. Fetch Resources (Attach files) in parallel - instant
+            launch {
+                when (val attResult = studentRepository.chapterAttachments(chapterId)) {
+                    is NetworkResult.Success -> {
+                        val attItems = StudentUiMappers.attachments(attResult.data)
+                        _uiState.update { it.copy(resources = attItems) }
                     }
-                    val filled = fillSectionBlocks(sections)
-                    _uiState.update {
-                        it.copy(
-                            textbookQuestions = StudentUiMappers.textbookQuestions(filled),
-                            resources = StudentUiMappers.resources(filled),
-                            isMenuContentLoading = false,
-                        )
+                    else -> _uiState.update { it.copy(resources = emptyList()) }
+                }
+            }
+
+            // 2. Fetch Exam Prep (PYQs) in parallel - instant
+            launch {
+                val pyqResult = studentRepository.examPrepPyqs(chapterId = chapterId)
+                if (pyqResult is NetworkResult.Success && pyqResult.data.hits.isNotEmpty()) {
+                    val pyqItems = StudentUiMappers.examPrepPyqs(pyqResult.data.hits)
+                    _uiState.update { it.copy(examPrepPyqs = pyqItems) }
+                } else {
+                    val scopedPyqResult = studentRepository.examPrepPyqs(chapterId = chapterId, chapterScope = true)
+                    if (scopedPyqResult is NetworkResult.Success && scopedPyqResult.data.hits.isNotEmpty()) {
+                        val pyqItems = StudentUiMappers.examPrepPyqs(scopedPyqResult.data.hits)
+                        _uiState.update { it.copy(examPrepPyqs = pyqItems) }
                     }
                 }
-                else -> _uiState.update { it.copy(isMenuContentLoading = false) }
             }
-            loadQuizHistory()
+
+            // 3. Fetch Practice Questions in parallel
+            if (subjectId.isNotBlank()) {
+                launch {
+                    when (val qResult = studentRepository.questionsList(subjectId)) {
+                        is NetworkResult.Success -> {
+                            val practiceQuestions = StudentUiMappers.textbookQuestionsFromPracticeSets(
+                                qResult.data.sets,
+                                chapterId,
+                            )
+                            if (practiceQuestions.isNotEmpty()) {
+                                _uiState.update { state ->
+                                    val combined = (practiceQuestions + state.textbookQuestions).distinctBy { it.id }
+                                    state.copy(textbookQuestions = combined)
+                                }
+                            }
+                        }
+                        else -> Unit
+                    }
+                }
+            }
+
+            // 4. Fetch Chapter outline & section content blocks in parallel
+            launch {
+                when (val result = studentRepository.chapter(chapterId)) {
+                    is NetworkResult.Success -> {
+                        val sections = result.data.sections
+                        _uiState.update {
+                            it.copy(
+                                chapterTitle = it.chapterTitle.ifBlank {
+                                    chapterHeading(result.data.chapter_number)
+                                },
+                                syllabus = StudentUiMappers.syllabus(sections),
+                            )
+                        }
+                        val filled = fillSectionBlocks(sections)
+                        val sectionQuestions = StudentUiMappers.textbookQuestions(filled)
+                        if (sectionQuestions.isNotEmpty()) {
+                            _uiState.update { state ->
+                                val combined = (state.textbookQuestions + sectionQuestions).distinctBy { it.id }
+                                state.copy(textbookQuestions = combined)
+                            }
+                        }
+                    }
+                    else -> Unit
+                }
+            }
+
+            // 5. Quiz history
+            launch {
+                loadQuizHistory()
+            }
+
+            _uiState.update { it.copy(isMenuContentLoading = false) }
         }
     }
 

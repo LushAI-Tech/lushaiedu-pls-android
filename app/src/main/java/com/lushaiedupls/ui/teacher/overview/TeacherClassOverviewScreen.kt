@@ -25,7 +25,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
@@ -256,7 +255,6 @@ fun TeacherClassOverviewScreen(
                 ParentsInClassSection(
                     students = uiState.students,
                     onChoose = { inviteForStudent = it },
-                    onOpenStudent = { inviteForStudent = it },
                 )
             }
         }
@@ -398,7 +396,6 @@ private fun StudentsInClassSection(
 private fun ParentsInClassSection(
     students: List<TeacherStudent>,
     onChoose: (TeacherStudent) -> Unit,
-    onOpenStudent: (TeacherStudent) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         students.forEach { student ->
@@ -408,6 +405,7 @@ private fun ParentsInClassSection(
                     .fillMaxWidth()
                     .border(1.dp, BorderGray.copy(alpha = 0.75f), StudentCardShape)
                     .background(BgWhite, StudentCardShape)
+                    .clickable { onChoose(student) }
                     .padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -425,11 +423,13 @@ private fun ParentsInClassSection(
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 15.sp,
                         color = BrandBlack,
+                        fontFamily = FontFamily.SansSerif,
                     )
                     Text(
                         text = student.email,
                         fontSize = 12.sp,
                         color = TextSecondary,
+                        fontFamily = FontFamily.SansSerif,
                     )
                 }
                 Box(
@@ -438,36 +438,28 @@ private fun ParentsInClassSection(
                         .clip(ChooseShape)
                         .then(
                             if (selected) {
-                                Modifier.background(BrandOrange)
+                                Modifier
+                                    .border(1.dp, BrandOrange, ChooseShape)
+                                    .background(BrandOrange.copy(alpha = 0.10f))
                             } else {
                                 Modifier
                                     .border(1.dp, BorderGray, ChooseShape)
                                     .background(BgWhite)
                             },
                         )
-                        .clickable {
-                            if (!selected) onChoose(student)
-                        }
-                        .padding(horizontal = 10.dp),
+                        .padding(horizontal = 12.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = if (selected) {
-                            stringResource(R.string.teacher_parent_selected)
+                            stringResource(R.string.teacher_parent_selected).uppercase()
                         } else {
-                            stringResource(R.string.teacher_parent_choose)
+                            stringResource(R.string.teacher_parent_choose).uppercase()
                         },
-                        color = if (selected) Color.White else TextSecondary,
+                        color = if (selected) BrandOrange else TextSecondary,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
-                    )
-                }
-                Spacer(modifier = Modifier.width(4.dp))
-                IconButton(onClick = { onOpenStudent(student) }) {
-                    Icon(
-                        imageVector = Icons.Outlined.ChevronRight,
-                        contentDescription = stringResource(R.string.cd_invite_parent),
-                        tint = TextSecondary,
+                        fontFamily = FontFamily.SansSerif,
                     )
                 }
             }

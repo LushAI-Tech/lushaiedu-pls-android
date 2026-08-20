@@ -234,6 +234,7 @@ data class AiChatSession(
     val mizo: AiChatLanguagePack,
     val syllabus: List<AiSyllabusItem>,
     val textbookQuestions: List<AiMenuContentItem> = emptyList(),
+    val examPrepPyqs: List<AiMenuContentItem> = emptyList(),
     val resources: List<AiMenuContentItem> = emptyList(),
     val quizHistory: List<AiQuizHistoryItem> = emptyList(),
 ) {
@@ -327,6 +328,26 @@ Eng atangin nge i tan duh?""".trimIndent(),
                 sectionId = "1.2",
                 title = "Calculate the mole fraction of a solute in a binary solution.",
                 subtitle = "1.2 Expressing Concentration of Solutions",
+            ),
+        ),
+        examPrepPyqs = listOf(
+            AiMenuContentItem(
+                id = "pyq1",
+                sectionId = "1.3",
+                title = "State Henry's law and mention two of its important applications in daily life.",
+                subtitle = "MBSE · 2024 · Repeated 3x · High frequency",
+            ),
+            AiMenuContentItem(
+                id = "pyq2",
+                sectionId = "1.2",
+                title = "Define molality and molarity. Why is molality preferred over molarity in expressing concentration?",
+                subtitle = "MBSE · 2023 · Repeated 2x",
+            ),
+            AiMenuContentItem(
+                id = "pyq3",
+                sectionId = "1.4",
+                title = "What are colligative properties? Write the mathematical expression for relative lowering of vapour pressure.",
+                subtitle = "NEET · 2022",
             ),
         ),
         resources = listOf(

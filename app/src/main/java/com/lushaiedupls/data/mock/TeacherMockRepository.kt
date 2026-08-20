@@ -39,6 +39,8 @@ data class TeacherGroup(
     val title: String,
     val code: String,
     val status: String = "Active",
+    val subjectIconRes: Int = R.drawable.ic_metric_subject,
+    val subjectName: String = "",
 )
 
 data class TeacherVolumeRow(
@@ -146,13 +148,15 @@ class TeacherMockRepository {
                             title = "${schoolClass.displayLabel()} (${subject.name})",
                             code = mockGroupCode(schoolClass, subject),
                             status = "Active",
+                            subjectIconRes = subjectIconFor(subject.name),
+                            subjectName = subject.name,
                         )
                     }
                 }
         }
         return listOf(
-            TeacherGroup("g1", "Class XII (Chemistry)", "J3QUE3", "Active"),
-            TeacherGroup("g2", "Class XI (Chemistry)", "BFTNHE", "Active"),
+            TeacherGroup("g1", "Class XII (Chemistry)", "J3QUE3", "Active", R.drawable.ic_subject_chemistry, "Chemistry"),
+            TeacherGroup("g2", "Class XI (Chemistry)", "BFTNHE", "Active", R.drawable.ic_subject_chemistry, "Chemistry"),
         )
     }
 
@@ -537,5 +541,16 @@ private fun mockGroupCode(schoolClass: SchoolClass, subject: SubjectOption): Str
             value /= alphabet.length.toUInt()
             if (value == 0u) value = seed xor (it + 1).toUInt()
         }
+    }
+}
+
+private fun subjectIconFor(name: String): Int {
+    val key = name.lowercase(java.util.Locale.ENGLISH)
+    return when {
+        "chem" in key -> R.drawable.ic_subject_chemistry
+        "math" in key -> R.drawable.ic_subject_mathematics
+        "phys" in key -> R.drawable.ic_subject_physics
+        "bio" in key -> R.drawable.ic_subject_biology
+        else -> R.drawable.ic_metric_subject
     }
 }

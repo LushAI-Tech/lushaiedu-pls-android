@@ -1,8 +1,17 @@
 package com.lushaiedupls.ui.student.ai
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -22,12 +32,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Check
@@ -37,12 +50,15 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Translate
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -167,72 +183,128 @@ fun StudentAiChatScreen(
         Column(modifier = Modifier.fillMaxSize()) {
             ChatTopBar(
                 title = uiState.chapterTitle,
+                activeTab = uiState.menuTab,
                 onBack = onBack,
                 onClear = onClearChat,
                 onMenu = onOpenMenu,
             )
-            if (uiState.isLoading && uiState.messages.isEmpty()) {
-                StudentPageSkeleton(
-                    kind = StudentSkeletonKind.Chat,
-                    modifier = Modifier.weight(1f),
-                )
-            } else {
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                item { Spacer(modifier = Modifier.height(4.dp)) }
-                items(uiState.messages, key = { it.id }) { message ->
-                    ChatBubble(message = message)
-                }
-                if (uiState.suggestions.isNotEmpty()) {
-                    item {
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            uiState.suggestions.forEach { suggestion ->
-                                SuggestionChip(
-                                    text = suggestion,
-                                    onClick = { onSuggestion(suggestion) },
-                                )
-                            }
+
+            when (uiState.menuTab) {
+                AiMenuTab.Chats -> {
+                    val listState = rememberLazyListState()
+
+                    LaunchedEffect(uiState.messages.size, uiState.isSending) {
+                        if (uiState.messages.isNotEmpty() || uiState.isSending) {
+                            val targetIndex = (uiState.messages.size + (if (uiState.isSending) 1 else 0)).coerceAtLeast(0)
+                            listState.animateScrollToItem(targetIndex)
                         }
                     }
-                }
-                if (uiState.showQuickCheck && uiState.quickCheck != null) {
-                    item {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        QuickCheckCard(
-                            quickCheck = uiState.quickCheck,
-                            selectedOption = uiState.selectedQuickOption,
-                            isAnswered = uiState.quickCheckAnswered,
-                            explanation = uiState.quickCheckExplanation,
-                            onOption = onQuickOption,
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    ) {
+                        if (uiState.isLoading && uiState.messages.isEmpty()) {
+                            StudentPageSkeleton(
+                                kind = StudentSkeletonKind.Chat,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        } else {
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                item { Spacer(modifier = Modifier.height(4.dp)) }
+                                items(uiState.messages, key = { it.id }) { message ->
+                                    ChatBubble(message = message)
+                                }
+                                if (uiState.isSending) {
+                                    item(key = "ai_thinking") {
+                                        AiThinkingBubble()
+                                    }
+                                }
+                                if (uiState.suggestions.isNotEmpty()) {
+                                    item {
+                                        FlowRow(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            uiState.suggestions.forEach { suggestion ->
+                                                SuggestionChip(
+                                                    text = suggestion,
+                                                    onClick = { onSuggestion(suggestion) },
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                if (uiState.showQuickCheck && uiState.quickCheck != null) {
+                                    item {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        QuickCheckCard(
+                                            quickCheck = uiState.quickCheck,
+                                            selectedOption = uiState.selectedQuickOption,
+                                            isAnswered = uiState.quickCheckAnswered,
+                                            explanation = uiState.quickCheckExplanation,
+                                            onOption = onQuickOption,
+                                        )
+                                    }
+                                }
+                                item { Spacer(modifier = Modifier.height(88.dp)) }
+                            }
+                        }
+
+                        ChatInputBar(
+                            language = uiState.language,
+                            draft = uiState.draft,
+                            onDraftChange = onDraftChange,
+                            onSend = onSend,
+                            onLanguageSelected = onLanguageSelected,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
                         )
                     }
                 }
-                item { Spacer(modifier = Modifier.height(88.dp)) }
-            }
+                AiMenuTab.TextbookQuestions -> {
+                    TextbookQuestionsPageView(
+                        questions = uiState.textbookQuestions,
+                        isLoading = uiState.isMenuContentLoading,
+                        onAskAboutQuestion = onAskAboutContent,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    )
+                }
+                AiMenuTab.ExamPreparation -> {
+                    ExamPreparationPageView(
+                        examPrepPyqs = uiState.examPrepPyqs,
+                        isLoading = uiState.isMenuContentLoading,
+                        onAskAboutPyq = onAskAboutContent,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    )
+                }
+                AiMenuTab.Resources -> {
+                    ResourcesPageView(
+                        resources = uiState.resources,
+                        isLoading = uiState.isMenuContentLoading,
+                        onOpenResource = onAskAboutContent,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    )
+                }
             }
         }
-
-        ChatInputBar(
-            language = uiState.language,
-            draft = uiState.draft,
-            onDraftChange = onDraftChange,
-            onSend = onSend,
-            onLanguageSelected = onLanguageSelected,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-        )
     }
 
     if (uiState.showMenu) {
@@ -248,6 +320,7 @@ fun StudentAiChatScreen(
                 syllabus = uiState.syllabus,
                 selectedSyllabusIds = uiState.selectedSyllabusIds,
                 textbookQuestions = uiState.textbookQuestions,
+                examPrepPyqs = uiState.examPrepPyqs,
                 resources = uiState.resources,
                 quizHistory = uiState.quizHistory,
                 isMenuContentLoading = uiState.isMenuContentLoading,
@@ -274,6 +347,7 @@ fun StudentAiChatScreen(
 @Composable
 private fun ChatTopBar(
     title: String,
+    activeTab: AiMenuTab,
     onBack: () -> Unit,
     onClear: () -> Unit,
     onMenu: () -> Unit,
@@ -304,12 +378,14 @@ private fun ChatTopBar(
             fontFamily = FontFamily.SansSerif,
         )
         Row(modifier = Modifier.align(Alignment.CenterEnd)) {
-            IconButton(onClick = onClear) {
-                Icon(
-                    imageVector = Icons.Outlined.DeleteOutline,
-                    contentDescription = stringResource(R.string.cd_ai_delete),
-                    tint = BrandOrange,
-                )
+            if (activeTab == AiMenuTab.Chats) {
+                IconButton(onClick = onClear) {
+                    Icon(
+                        imageVector = Icons.Outlined.DeleteOutline,
+                        contentDescription = stringResource(R.string.cd_ai_delete),
+                        tint = BrandOrange,
+                    )
+                }
             }
             IconButton(onClick = onMenu) {
                 Icon(
@@ -347,6 +423,84 @@ private fun ChatBubble(message: AiChatMessage) {
             fontWeight = FontWeight.SemiBold,
             lineHeightMultiplier = 20f / 14f,
         )
+    }
+}
+
+@Composable
+private fun AiThinkingBubble(
+    modifier: Modifier = Modifier,
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "thinking_wave")
+    val dot1Offset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = -6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "dot1",
+    )
+    val dot2Offset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = -6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 350, delayMillis = 120, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "dot2",
+    )
+    val dot3Offset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = -6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 350, delayMillis = 240, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "dot3",
+    )
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(16.dp))
+                .background(BgLight)
+                .border(1.dp, BorderGray.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .offset(y = dot1Offset.dp)
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(BrandBlack),
+                )
+                Box(
+                    modifier = Modifier
+                        .offset(y = dot2Offset.dp)
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(BrandBlack),
+                )
+                Box(
+                    modifier = Modifier
+                        .offset(y = dot3Offset.dp)
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(BrandBlack),
+                )
+            }
+        }
     }
 }
 
@@ -454,10 +608,10 @@ private fun QuickCheckCard(
             Spacer(modifier = Modifier.height(10.dp))
             MarkdownLatexText(
                 text = explanation,
-                color = BrandBlack,
+                color = TextSecondary,
                 fontSize = 13.sp,
-                fontWeight = FontWeight.Normal,
-                lineHeightMultiplier = 19f / 13f,
+                fontWeight = FontWeight.Medium,
+                lineHeightMultiplier = 18f / 13f,
             )
         }
     }
@@ -469,162 +623,607 @@ private fun ChatInputBar(
     draft: String,
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
-    onLanguageSelected: (String) -> Unit,
+    onLanguageSelected: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val english = stringResource(R.string.ai_language_english)
-    val mizo = stringResource(R.string.ai_language_mizo)
-    val languages = listOf(english, mizo)
-    var languageMenuOpen by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(false) }
+    var languageButtonWidthPx by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
-    var menuHeightPx by remember { mutableIntStateOf(0) }
 
-    Box(modifier = modifier) {
-        Row(
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(44.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                .onSizeChanged { languageButtonWidthPx = it.width }
+                .clip(ChipShape)
+                .background(BrandBlack)
+                .clickable { expanded = !expanded }
+                .padding(horizontal = 12.dp, vertical = 9.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Box {
-                Row(
-                    modifier = Modifier
-                        .height(44.dp)
-                        .shadow(2.dp, ChipShape, clip = false)
-                        .clip(ChipShape)
-                        .background(if (languageMenuOpen) BrandOrange else BrandBlack)
-                        .clickable { languageMenuOpen = !languageMenuOpen }
-                        .padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Translate,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = language,
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Icon(
-                        imageVector = if (languageMenuOpen) {
-                            Icons.Outlined.KeyboardArrowUp
-                        } else {
-                            Icons.Outlined.KeyboardArrowDown
-                        },
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp),
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = language,
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.SansSerif,
+                )
+                Spacer(modifier = Modifier.width(3.dp))
+                Icon(
+                    imageVector = if (expanded) {
+                        Icons.Outlined.KeyboardArrowUp
+                    } else {
+                        Icons.Outlined.KeyboardArrowDown
+                    },
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(13.dp),
+                )
+            }
+
+            if (expanded) {
+                val menuWidthDp = with(density) { languageButtonWidthPx.toDp() }
+                val popupOffset = with(density) {
+                    IntOffset(
+                        x = 0,
+                        y = -(44.dp.roundToPx() + 104.dp.roundToPx()),
                     )
                 }
-                if (languageMenuOpen) {
-                    Popup(
-                        alignment = Alignment.TopStart,
-                        offset = IntOffset(
-                            x = 0,
-                            y = -menuHeightPx - with(density) { 8.dp.roundToPx() },
-                        ),
-                        onDismissRequest = { languageMenuOpen = false },
-                        properties = PopupProperties(focusable = true),
+                Popup(
+                    alignment = Alignment.TopStart,
+                    offset = popupOffset,
+                    onDismissRequest = { expanded = false },
+                    properties = PopupProperties(focusable = true),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .width(menuWidthDp)
+                            .shadow(12.dp, LanguageMenuShape, clip = false)
+                            .clip(LanguageMenuShape)
+                            .background(BgWhite)
+                            .border(1.dp, BorderGray.copy(alpha = 0.7f), LanguageMenuShape)
+                            .padding(vertical = 4.dp),
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .width(168.dp)
-                                .onSizeChanged { menuHeightPx = it.height }
-                                .shadow(16.dp, LanguageMenuShape, clip = false)
-                                .clip(LanguageMenuShape)
-                                .border(1.dp, BorderGray.copy(alpha = 0.7f), LanguageMenuShape)
-                                .background(BgWhite)
-                                .padding(6.dp),
-                        ) {
-                            languages.forEach { option ->
-                                val selected = option == language
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(if (selected) HighlightPeach else Color.Transparent)
-                                        .clickable {
-                                            onLanguageSelected(option)
-                                            languageMenuOpen = false
-                                        }
-                                        .padding(horizontal = 10.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(
-                                        text = option,
-                                        modifier = Modifier.weight(1f),
-                                        color = if (selected) BrandOrange else BrandBlack,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                        fontSize = 14.sp,
-                                    )
-                                    if (selected) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Check,
-                                            contentDescription = null,
-                                            tint = BrandOrange,
-                                            modifier = Modifier.size(18.dp),
-                                        )
+                        listOf("English", "Mizo").forEach { lang ->
+                            val selected = lang == language
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onLanguageSelected(lang)
+                                        expanded = false
                                     }
+                                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Translate,
+                                        contentDescription = null,
+                                        tint = if (selected) BrandOrange else TextSecondary,
+                                        modifier = Modifier.size(13.dp),
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = lang,
+                                        color = if (selected) BrandBlack else TextSecondary,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (selected) {
+                                            FontWeight.Bold
+                                        } else {
+                                            FontWeight.Medium
+                                        },
+                                        fontFamily = FontFamily.SansSerif,
+                                    )
+                                }
+                                if (selected) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Check,
+                                        contentDescription = null,
+                                        tint = BrandOrange,
+                                        modifier = Modifier.size(13.dp),
+                                    )
                                 }
                             }
                         }
                     }
                 }
             }
+        }
 
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(44.dp)
-                    .clip(InputShape)
-                    .background(BgLight)
-                    .padding(horizontal = 14.dp),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                if (draft.isEmpty()) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .heightIn(min = 44.dp)
+                .clip(InputShape)
+                .background(BgLight)
+                .padding(horizontal = 16.dp, vertical = 11.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            if (draft.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.ai_send_messages),
+                    color = TextSecondary,
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.SansSerif,
+                )
+            }
+            BasicTextField(
+                value = draft,
+                onValueChange = onDraftChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                textStyle = TextStyle(
+                    color = BrandBlack,
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.SansSerif,
+                ),
+                cursorBrush = SolidColor(BrandBlack),
+            )
+        }
+
+        IconButton(
+            onClick = onSend,
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(BrandBlack),
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.Send,
+                contentDescription = stringResource(R.string.cd_ai_send),
+                tint = Color.White,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TextbookQuestionsPageView(
+    questions: List<AiMenuContentItem>,
+    isLoading: Boolean,
+    onAskAboutQuestion: (AiMenuContentItem) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (isLoading && questions.isEmpty()) {
+        MenuLoading(modifier = modifier.fillMaxSize())
+    } else if (questions.isEmpty()) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = stringResource(R.string.ai_menu_no_questions),
+                color = TextSecondary,
+                fontSize = 14.sp,
+                fontFamily = FontFamily.SansSerif,
+                textAlign = TextAlign.Center,
+            )
+        }
+    } else {
+        LazyColumn(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
-                        text = stringResource(R.string.ai_send_messages),
+                        text = stringResource(R.string.ai_menu_textbook),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = BrandBlack,
+                        fontFamily = FontFamily.SansSerif,
+                    )
+                    Text(
+                        text = "${questions.size} items",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
                         color = TextSecondary,
-                        fontSize = 14.sp,
+                        fontFamily = FontFamily.SansSerif,
                     )
                 }
-                BasicTextField(
-                    value = draft,
-                    onValueChange = onDraftChange,
-                    singleLine = true,
-                    textStyle = TextStyle(
-                        color = BrandBlack,
-                        fontSize = 14.sp,
-                        fontFamily = FontFamily.SansSerif,
-                    ),
-                    cursorBrush = SolidColor(BrandBlack),
+            }
+            itemsIndexed(questions, key = { index, item -> item.id.ifBlank { index.toString() } }) { index, item ->
+                Card(
                     modifier = Modifier.fillMaxWidth(),
-                )
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = BgWhite),
+                    border = BorderStroke(1.dp, BorderGray.copy(alpha = 0.65f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(BgLight)
+                                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                            ) {
+                                Text(
+                                    text = "Q ${index + 1}",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = BrandBlack,
+                                    fontFamily = FontFamily.SansSerif,
+                                )
+                            }
+                            if (!item.subtitle.isNullOrBlank()) {
+                                Text(
+                                    text = item.subtitle,
+                                    fontSize = 11.sp,
+                                    color = TextSecondary,
+                                    fontFamily = FontFamily.SansSerif,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        MarkdownLatexText(
+                            text = item.title,
+                            color = BrandBlack,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            lineHeightMultiplier = 20f / 14f,
+                        )
+                        if (!item.imageUrl.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            AsyncImage(
+                                model = item.imageUrl,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(160.dp)
+                                    .clip(RoundedCornerShape(10.dp)),
+                                contentScale = ContentScale.Fit,
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .height(34.dp)
+                                    .clip(ChipShape)
+                                    .background(BrandBlack)
+                                    .clickable { onAskAboutQuestion(item) }
+                                    .padding(horizontal = 14.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "Ask tutor about this question",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.SansSerif,
+                                )
+                            }
+                        }
+                    }
+                }
             }
+            item { Spacer(modifier = Modifier.height(24.dp)) }
+        }
+    }
+}
 
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .shadow(2.dp, CircleShape, clip = false)
-                    .clip(CircleShape)
-                    .background(BrandBlack)
-                    .clickable(onClick = onSend),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.Send,
-                    contentDescription = stringResource(R.string.cd_ai_send),
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp),
-                )
+@Composable
+private fun ExamPreparationPageView(
+    examPrepPyqs: List<AiMenuContentItem>,
+    isLoading: Boolean,
+    onAskAboutPyq: (AiMenuContentItem) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (isLoading && examPrepPyqs.isEmpty()) {
+        MenuLoading(modifier = modifier.fillMaxSize())
+    } else if (examPrepPyqs.isEmpty()) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "No exam preparation questions found for this chapter.",
+                color = TextSecondary,
+                fontSize = 14.sp,
+                fontFamily = FontFamily.SansSerif,
+                textAlign = TextAlign.Center,
+            )
+        }
+    } else {
+        LazyColumn(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.ai_menu_exam),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = BrandBlack,
+                        fontFamily = FontFamily.SansSerif,
+                    )
+                    Text(
+                        text = "${examPrepPyqs.size} questions",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextSecondary,
+                        fontFamily = FontFamily.SansSerif,
+                    )
+                }
             }
+            itemsIndexed(examPrepPyqs, key = { index, item -> item.id.ifBlank { index.toString() } }) { index, item ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onAskAboutPyq(item) },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = BgWhite),
+                    border = BorderStroke(1.dp, BorderGray.copy(alpha = 0.65f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(BgLight)
+                                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                            ) {
+                                Text(
+                                    text = "Q ${index + 1}",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = BrandBlack,
+                                    fontFamily = FontFamily.SansSerif,
+                                )
+                            }
+                            if (!item.subtitle.isNullOrBlank()) {
+                                Text(
+                                    text = item.subtitle,
+                                    fontSize = 11.sp,
+                                    color = TextSecondary,
+                                    fontFamily = FontFamily.SansSerif,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        MarkdownLatexText(
+                            text = item.title,
+                            color = BrandBlack,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            lineHeightMultiplier = 20f / 14f,
+                        )
+                        if (!item.imageUrl.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            AsyncImage(
+                                model = item.imageUrl,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(160.dp)
+                                    .clip(RoundedCornerShape(10.dp)),
+                                contentScale = ContentScale.Fit,
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .height(34.dp)
+                                    .clip(ChipShape)
+                                    .background(BrandBlack)
+                                    .clickable { onAskAboutPyq(item) }
+                                    .padding(horizontal = 14.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "Ask tutor about this question",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.SansSerif,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            item { Spacer(modifier = Modifier.height(24.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun ResourcesPageView(
+    resources: List<AiMenuContentItem>,
+    isLoading: Boolean,
+    onOpenResource: (AiMenuContentItem) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (isLoading && resources.isEmpty()) {
+        MenuLoading(modifier = modifier.fillMaxSize())
+    } else if (resources.isEmpty()) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = stringResource(R.string.ai_menu_no_resources),
+                color = TextSecondary,
+                fontSize = 14.sp,
+                fontFamily = FontFamily.SansSerif,
+                textAlign = TextAlign.Center,
+            )
+        }
+    } else {
+        LazyColumn(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.ai_menu_resources),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = BrandBlack,
+                        fontFamily = FontFamily.SansSerif,
+                    )
+                    Text(
+                        text = "${resources.size} files",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextSecondary,
+                        fontFamily = FontFamily.SansSerif,
+                    )
+                }
+            }
+            itemsIndexed(resources, key = { index, item -> item.id.ifBlank { index.toString() } }) { _, item ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenResource(item) },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = BgWhite),
+                    border = BorderStroke(1.dp, BorderGray.copy(alpha = 0.65f)),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(54.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(BgLight),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (!item.imageUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = item.imageUrl,
+                                    contentDescription = item.title,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Outlined.InsertDriveFile,
+                                    contentDescription = null,
+                                    tint = BrandOrange,
+                                    modifier = Modifier.size(26.dp),
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = item.title,
+                                color = BrandBlack,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = FontFamily.SansSerif,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (!item.subtitle.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text(
+                                    text = item.subtitle,
+                                    color = TextSecondary,
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.SansSerif,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .height(32.dp)
+                                .clip(ChipShape)
+                                .background(BgLight)
+                                .padding(horizontal = 10.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "Ask AI",
+                                color = BrandBlack,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.SansSerif,
+                            )
+                        }
+                    }
+                }
+            }
+            item { Spacer(modifier = Modifier.height(24.dp)) }
         }
     }
 }
@@ -636,6 +1235,7 @@ fun AiChatsMenuOverlay(
     syllabus: List<AiSyllabusItem>,
     selectedSyllabusIds: Set<String> = emptySet(),
     textbookQuestions: List<AiMenuContentItem> = emptyList(),
+    examPrepPyqs: List<AiMenuContentItem> = emptyList(),
     resources: List<AiMenuContentItem> = emptyList(),
     quizHistory: List<AiQuizHistoryItem> = emptyList(),
     isMenuContentLoading: Boolean = false,
@@ -754,6 +1354,26 @@ fun AiChatsMenuOverlay(
                             .weight(1f)
                             .verticalScroll(rememberScrollState()),
                     ) {
+                        if (examPrepPyqs.isNotEmpty()) {
+                            Text(
+                                text = "Past exam questions (PYQs)",
+                                color = BrandBlack,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(bottom = 8.dp),
+                            )
+                            examPrepPyqs.forEachIndexed { index, item ->
+                                MenuContentRow(
+                                    item = item,
+                                    showThumbnail = false,
+                                    onClick = { onContentClick(item) },
+                                )
+                                if (index != examPrepPyqs.lastIndex) {
+                                    HorizontalDivider(color = BorderGray.copy(alpha = 0.35f))
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(20.dp))
+                        }
                         if (syllabus.isNotEmpty()) {
                             Text(
                                 text = stringResource(R.string.ai_exam_section_practice),
@@ -835,17 +1455,18 @@ private fun MenuTabChip(
         modifier = Modifier
             .height(34.dp)
             .clip(ChipShape)
-            .border(1.dp, if (selected) BrandBlack else Color.Transparent, ChipShape)
-            .background(if (selected) BgWhite else BgLight)
+            .border(1.dp, if (selected) BrandBlack else BorderGray.copy(alpha = 0.6f), ChipShape)
+            .background(if (selected) BrandBlack else BgWhite)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
-            color = if (selected) BrandBlack else TextSecondary,
+            color = if (selected) Color.White else TextSecondary,
             fontSize = 12.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            fontFamily = FontFamily.SansSerif,
             maxLines = 1,
         )
     }
@@ -1033,6 +1654,7 @@ private fun StudentAiChatPreview() {
                 quickCheck = pack.quickCheck,
                 syllabus = session.syllabus,
                 textbookQuestions = session.textbookQuestions,
+                examPrepPyqs = session.examPrepPyqs,
                 resources = session.resources,
                 quizHistory = session.quizHistory,
                 language = "English",

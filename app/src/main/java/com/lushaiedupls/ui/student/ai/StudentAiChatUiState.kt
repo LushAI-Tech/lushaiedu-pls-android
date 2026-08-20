@@ -15,6 +15,7 @@ data class StudentAiChatUiState(
     val quickCheck: AiQuickCheck? = null,
     val syllabus: List<AiSyllabusItem> = emptyList(),
     val textbookQuestions: List<AiMenuContentItem> = emptyList(),
+    val examPrepPyqs: List<AiMenuContentItem> = emptyList(),
     val resources: List<AiMenuContentItem> = emptyList(),
     val quizHistory: List<AiQuizHistoryItem> = emptyList(),
     val draft: String = "",
