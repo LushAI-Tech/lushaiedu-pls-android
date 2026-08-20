@@ -164,37 +164,47 @@ object TeacherUiMappers {
         )
     }
 
-    fun students(members: List<MemberOut>, parentIds: Set<String> = emptySet()): List<TeacherStudent> =
-        members.sortedBy { it.roll_no ?: Int.MAX_VALUE }.map { member ->
+    fun students(members: List<MemberOut>, parentIds: Set<String> = emptySet()): List<TeacherStudent> {
+        val sorted = members.sortedWith(
+            compareBy<MemberOut> { it.roll_no?.takeIf { roll -> roll > 0 } ?: Int.MAX_VALUE }
+                .thenBy { it.student.name }
+        )
+        return sorted.mapIndexed { index, member ->
             TeacherStudent(
                 id = member.student.id,
                 name = member.student.name,
                 email = member.student.email.orEmpty(),
-                rollNumber = member.roll_no ?: 0,
+                rollNumber = member.roll_no?.takeIf { it > 0 } ?: (index + 1),
                 hasParentsSelected = member.student.id in parentIds,
             )
         }
+    }
 
-    fun attendanceSession(roster: RosterResponse): TeacherAttendanceSession =
-        TeacherAttendanceSession(
+    fun attendanceSession(roster: RosterResponse): TeacherAttendanceSession {
+        val sortedStudents = roster.students.sortedWith(
+            compareBy<com.lushaiedupls.data.remote.dto.RosterStudent> { it.roll_no?.takeIf { roll -> roll > 0 } ?: Int.MAX_VALUE }
+                .thenBy { it.student.name }
+        )
+        return TeacherAttendanceSession(
             classLabel = classLabel(roster.class_name),
             dateLabel = roster.attendance_date,
             subjectLabel = roster.subject_name,
             timeLabel = roster.time_key.ifBlank {
                 if (roster.is_extra_class) "Extra class" else ""
             },
-            students = roster.students.map { row ->
+            students = sortedStudents.mapIndexed { index, row ->
                 TeacherAttendanceStudent(
                     student = TeacherStudent(
                         id = row.student.id,
                         name = row.student.name,
                         email = row.student.email.orEmpty(),
-                        rollNumber = row.roll_no ?: 0,
+                        rollNumber = row.roll_no?.takeIf { it > 0 } ?: (index + 1),
                     ),
                     mark = row.status.toMark(),
                 )
             },
         )
+    }
 
     fun announcementAudiences(units: List<TeachingUnitOut>): List<TeacherAnnouncementAudience> {
         val unitRows = units.map { unit ->

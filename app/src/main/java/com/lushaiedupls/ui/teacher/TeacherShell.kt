@@ -201,6 +201,7 @@ fun TeacherShell(
             composable(TeacherRoutes.OVERVIEW) {
                 TeacherOverviewRoute(
                     teacherRepository = teacherRepository,
+                    onBack = { tabNavController.popBackStack() },
                     onTakeAttendance = { unitId, dateLabel, periodId, isExtraClass, extraLabel ->
                         tabNavController.navigate(
                             TeacherRoutes.takeAttendance(
@@ -350,14 +351,13 @@ fun TeacherShell(
             }
             composable(TeacherRoutes.MORE) {
                 TeacherMoreScreen(
-                    onBack = { navigateTab(TeacherRoutes.HOME) },
                     onAcademicCalendar = {
                         tabNavController.navigate(TeacherRoutes.ACADEMIC_CALENDAR)
                     },
                     onAnnouncements = {
                         tabNavController.navigate(TeacherRoutes.ANNOUNCEMENTS)
                     },
-                    onAttendance = { navigateTab(TeacherRoutes.OVERVIEW) },
+                    onAttendance = { tabNavController.navigate(TeacherRoutes.OVERVIEW) },
                     onTimetable = { tabNavController.navigate(TeacherRoutes.TIMETABLE) },
                     modifier = Modifier.fillMaxSize(),
                 )

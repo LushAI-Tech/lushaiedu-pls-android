@@ -24,5 +24,6 @@ data class TeacherOverviewUiState(
     val isLoadingSetupPeriods: Boolean = false,
     val setupErrorMessage: String? = null,
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
 )

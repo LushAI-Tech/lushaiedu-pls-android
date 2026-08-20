@@ -25,11 +25,19 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,7 +53,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lushaiedupls.R
@@ -53,10 +60,10 @@ import com.lushaiedupls.data.mock.TeacherMockRepository
 import com.lushaiedupls.data.mock.TeacherOverviewDashboard
 import com.lushaiedupls.data.mock.TeacherVolumeRow
 import com.lushaiedupls.data.repository.TeacherRepository
+import com.lushaiedupls.ui.common.AppBackNav
 import com.lushaiedupls.ui.common.LoadErrorPanel
-import com.lushaiedupls.ui.common.StudentPageSkeleton
-import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.teacher.overlays.TakeAttendanceSetupOverlay
+import com.lushaiedupls.ui.teacher.overlays.TeacherScrimDialog
 import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
@@ -65,6 +72,7 @@ import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.LushAIEdu_PLSTheme
 import com.lushaiedupls.ui.theme.TextSecondary
 import java.time.DayOfWeek
+import java.time.Month
 import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
@@ -82,6 +90,7 @@ private val LegendGray = Color(0xFF8B93A7)
 private val DowGray = Color(0xFF9CA3AF)
 private val SelectedDayBg = Color(0xFFFFE0B8)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TeacherOverviewRoute(
     teacherRepository: TeacherRepository,
@@ -92,35 +101,39 @@ fun TeacherOverviewRoute(
         isExtraClass: Boolean,
         extraLabel: String?,
     ) -> Unit,
+    onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     viewModel: TeacherOverviewViewModel = viewModel(
         factory = TeacherOverviewViewModel.provideFactory(teacherRepository),
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    LifecycleResumeEffect(Unit) {
-        viewModel.refresh()
-        onPauseOrDispose { }
+    // Opened from More → Attendance; land on the Attendance workspace.
+    LaunchedEffect(onBack) {
+        if (onBack != null) {
+            viewModel.onSectionSelected(TeacherOverviewSection.Attendance)
+        }
     }
     when {
-        uiState.isLoading && uiState.dashboard == null && uiState.errorMessage == null ->
-            StudentPageSkeleton(kind = StudentSkeletonKind.Attendance, modifier = modifier)
-        uiState.errorMessage != null && uiState.dashboard == null -> LoadErrorPanel(
-            screenTitle = stringResource(R.string.section_overview),
-            message = uiState.errorMessage.orEmpty(),
-            onRetry = { viewModel.refresh() },
-            isRetrying = uiState.isLoading,
-            modifier = modifier,
-        )
+        uiState.errorMessage != null && uiState.dashboard == null && !uiState.isLoading ->
+            LoadErrorPanel(
+                screenTitle = stringResource(R.string.section_overview),
+                message = uiState.errorMessage.orEmpty(),
+                onRetry = { viewModel.refresh(forceNetwork = true) },
+                isRetrying = uiState.isLoading || uiState.isRefreshing,
+                modifier = modifier,
+            )
         else -> {
             TeacherOverviewScreen(
                 uiState = uiState,
+                onBack = onBack,
                 onSectionSelected = viewModel::onSectionSelected,
                 onAttendanceClassSelected = viewModel::onAttendanceClassSelected,
                 onPreviousAttendanceMonth = viewModel::previousAttendanceMonth,
                 onNextAttendanceMonth = viewModel::nextAttendanceMonth,
-                onThisAttendanceMonth = viewModel::goToThisAttendanceMonth,
+                onSelectAttendanceMonth = viewModel::selectAttendanceMonth,
                 onSelectAttendanceDay = viewModel::selectAttendanceDay,
+                onPullRefresh = viewModel::pullToRefresh,
                 modifier = modifier,
             )
             val setupDate = uiState.setupDateLabel
@@ -150,6 +163,7 @@ fun TeacherOverviewRoute(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TeacherOverviewScreen(
     uiState: TeacherOverviewUiState,
@@ -157,59 +171,144 @@ fun TeacherOverviewScreen(
     onAttendanceClassSelected: (String) -> Unit = {},
     onPreviousAttendanceMonth: () -> Unit = {},
     onNextAttendanceMonth: () -> Unit = {},
-    onThisAttendanceMonth: () -> Unit = {},
+    onSelectAttendanceMonth: (YearMonth) -> Unit = {},
     onSelectAttendanceDay: (Int) -> Unit = {},
+    onPullRefresh: () -> Unit = {},
+    onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val dashboard = uiState.dashboard ?: return
-    Column(
+    var showMonthPicker by remember { mutableStateOf(false) }
+
+    PullToRefreshBox(
+        isRefreshing = uiState.isRefreshing,
+        onRefresh = onPullRefresh,
         modifier = modifier
             .fillMaxSize()
-            .background(BgWhite)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-            .padding(top = 12.dp, bottom = 24.dp),
+            .background(BgWhite),
     ) {
-        Text(
-            text = stringResource(R.string.teacher_overview_title),
-            fontWeight = FontWeight.Bold,
-            fontSize = 28.sp,
-            color = BrandBlack,
-            fontFamily = FontFamily.SansSerif,
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = stringResource(R.string.teacher_overview_subtitle),
-            fontSize = 14.sp,
-            color = TextSecondary,
-            fontFamily = FontFamily.SansSerif,
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        OverviewSegmentedControl(
-            selected = uiState.section,
-            onSelected = onSectionSelected,
-        )
-        Spacer(modifier = Modifier.height(22.dp))
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(
+                    top = if (onBack != null) 4.dp else 12.dp,
+                    bottom = 24.dp,
+                ),
+        ) {
+            if (onBack != null) {
+                AppBackNav(onBack = onBack)
+            }
+            Text(
+                text = stringResource(R.string.teacher_overview_title),
+                fontWeight = FontWeight.Bold,
+                fontSize = 28.sp,
+                color = BrandBlack,
+                fontFamily = FontFamily.SansSerif,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.teacher_overview_subtitle),
+                fontSize = 14.sp,
+                color = TextSecondary,
+                fontFamily = FontFamily.SansSerif,
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            OverviewSegmentedControl(
+                selected = uiState.section,
+                onSelected = onSectionSelected,
+            )
+            Spacer(modifier = Modifier.height(22.dp))
 
-        when (uiState.section) {
-            TeacherOverviewSection.Overview -> OverviewContent(
-                dashboard = dashboard,
-                onPreviousMonth = onPreviousAttendanceMonth,
-                onNextMonth = onNextAttendanceMonth,
-                onThisMonth = onThisAttendanceMonth,
-            )
-            TeacherOverviewSection.Attendance -> AttendanceWorkspace(
-                classes = uiState.attendanceClasses,
-                selectedClass = uiState.selectedAttendanceClass,
-                month = uiState.attendanceMonth,
-                selectedDay = uiState.selectedAttendanceDay,
-                onClassSelected = onAttendanceClassSelected,
-                onPreviousMonth = onPreviousAttendanceMonth,
-                onNextMonth = onNextAttendanceMonth,
-                onSelectDay = onSelectAttendanceDay,
-            )
+            when (uiState.section) {
+                TeacherOverviewSection.Overview -> {
+                    OverviewMonthHeader(
+                        month = uiState.attendanceMonth,
+                        onPreviousMonth = onPreviousAttendanceMonth,
+                        onNextMonth = onNextAttendanceMonth,
+                        onOpenMonthPicker = { showMonthPicker = true },
+                    )
+                    Spacer(modifier = Modifier.height(22.dp))
+                    if (uiState.isLoading || uiState.dashboard == null) {
+                        OverviewContentLoading()
+                    } else {
+                        OverviewContent(dashboard = uiState.dashboard)
+                    }
+                }
+                TeacherOverviewSection.Attendance -> AttendanceWorkspace(
+                    classes = uiState.attendanceClasses,
+                    selectedClass = uiState.selectedAttendanceClass,
+                    month = uiState.attendanceMonth,
+                    selectedDay = uiState.selectedAttendanceDay,
+                    isLoading = uiState.isLoading,
+                    onClassSelected = onAttendanceClassSelected,
+                    onPreviousMonth = onPreviousAttendanceMonth,
+                    onNextMonth = onNextAttendanceMonth,
+                    onOpenMonthPicker = { showMonthPicker = true },
+                    onSelectDay = onSelectAttendanceDay,
+                )
+            }
         }
     }
+
+    if (showMonthPicker) {
+        MonthPickerOverlay(
+            selectedMonth = uiState.attendanceMonth,
+            onDismiss = { showMonthPicker = false },
+            onSelect = { month ->
+                showMonthPicker = false
+                onSelectAttendanceMonth(month)
+            },
+        )
+    }
+}
+
+@Composable
+private fun OverviewContentLoading() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(280.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        CircularProgressIndicator(
+            color = BrandOrange,
+            strokeWidth = 3.dp,
+            modifier = Modifier.size(36.dp),
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+        Text(
+            text = stringResource(R.string.loading),
+            color = TextSecondary,
+            fontSize = 14.sp,
+            fontFamily = FontFamily.SansSerif,
+        )
+    }
+}
+
+@Composable
+private fun OverviewMonthHeader(
+    month: YearMonth,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onOpenMonthPicker: () -> Unit,
+) {
+    val monthLabel = "${month.month.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} ${month.year}"
+    Text(
+        text = stringResource(R.string.teacher_selected_month),
+        fontWeight = FontWeight.Bold,
+        fontSize = 16.sp,
+        color = BrandBlack,
+        fontFamily = FontFamily.SansSerif,
+    )
+    Spacer(modifier = Modifier.height(10.dp))
+    MonthSelectorRow(
+        monthLabel = monthLabel,
+        onPreviousMonth = onPreviousMonth,
+        onNextMonth = onNextMonth,
+        onOpenMonthPicker = onOpenMonthPicker,
+    )
 }
 
 @Composable
@@ -279,9 +378,11 @@ private fun AttendanceWorkspace(
     selectedClass: String,
     month: YearMonth,
     selectedDay: Int?,
+    isLoading: Boolean,
     onClassSelected: (String) -> Unit,
     onPreviousMonth: () -> Unit,
     onNextMonth: () -> Unit,
+    onOpenMonthPicker: () -> Unit,
     onSelectDay: (Int) -> Unit,
 ) {
     Text(
@@ -292,6 +393,10 @@ private fun AttendanceWorkspace(
         fontFamily = FontFamily.SansSerif,
     )
     Spacer(modifier = Modifier.height(10.dp))
+    if (classes.isEmpty() && isLoading) {
+        OverviewContentLoading()
+        return
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -316,7 +421,7 @@ private fun AttendanceWorkspace(
                             Modifier.background(Color.Transparent)
                         },
                     )
-                    .clickable { onClassSelected(label) }
+                    .clickable(enabled = !isLoading) { onClassSelected(label) }
                     .padding(horizontal = 14.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -341,13 +446,36 @@ private fun AttendanceWorkspace(
         fontFamily = FontFamily.SansSerif,
     )
     Spacer(modifier = Modifier.height(10.dp))
-    AttendanceCalendarCard(
-        month = month,
-        selectedDay = selectedDay,
+    MonthSelectorRow(
+        monthLabel = "${month.month.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} ${month.year}",
         onPreviousMonth = onPreviousMonth,
         onNextMonth = onNextMonth,
-        onSelectDay = onSelectDay,
+        onOpenMonthPicker = onOpenMonthPicker,
     )
+    Spacer(modifier = Modifier.height(12.dp))
+    Box(modifier = Modifier.fillMaxWidth()) {
+        AttendanceCalendarCard(
+            month = month,
+            selectedDay = selectedDay,
+            onSelectDay = { day -> if (!isLoading) onSelectDay(day) },
+        )
+        if (isLoading) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(CalendarShape)
+                    .background(BgWhite.copy(alpha = 0.72f))
+                    .clickable(onClick = {}),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(
+                    color = BrandOrange,
+                    strokeWidth = 3.dp,
+                    modifier = Modifier.size(32.dp),
+                )
+            }
+        }
+    }
     Spacer(modifier = Modifier.height(14.dp))
     Text(
         text = stringResource(R.string.teacher_attendance_tap_day),
@@ -363,11 +491,8 @@ private fun AttendanceWorkspace(
 private fun AttendanceCalendarCard(
     month: YearMonth,
     selectedDay: Int?,
-    onPreviousMonth: () -> Unit,
-    onNextMonth: () -> Unit,
     onSelectDay: (Int) -> Unit,
 ) {
-    val monthLabel = "${month.month.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} ${month.year}"
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -375,39 +500,6 @@ private fun AttendanceCalendarCard(
             .background(BgLight)
             .padding(horizontal = 14.dp, vertical = 18.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            IconButton(onClick = onPreviousMonth) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
-                    contentDescription = stringResource(R.string.cd_prev_month),
-                    tint = BrandOrange,
-                    modifier = Modifier.size(28.dp),
-                )
-            }
-            Text(
-                text = monthLabel,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-                color = BrandBlack,
-                fontFamily = FontFamily.SansSerif,
-                modifier = Modifier.padding(horizontal = 8.dp),
-            )
-            IconButton(onClick = onNextMonth) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                    contentDescription = stringResource(R.string.cd_next_month),
-                    tint = BrandOrange,
-                    modifier = Modifier.size(28.dp),
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
         val dow = listOf(
             R.string.calendar_dow_mon,
             R.string.calendar_dow_tue,
@@ -489,26 +581,7 @@ private fun AttendanceCalendarCard(
 @Composable
 private fun OverviewContent(
     dashboard: TeacherOverviewDashboard,
-    onPreviousMonth: () -> Unit,
-    onNextMonth: () -> Unit,
-    onThisMonth: () -> Unit,
 ) {
-    Text(
-        text = stringResource(R.string.teacher_selected_month),
-        fontWeight = FontWeight.Bold,
-        fontSize = 16.sp,
-        color = BrandBlack,
-        fontFamily = FontFamily.SansSerif,
-    )
-    Spacer(modifier = Modifier.height(10.dp))
-    MonthSelectorRow(
-        monthLabel = dashboard.monthLabel,
-        onPreviousMonth = onPreviousMonth,
-        onNextMonth = onNextMonth,
-        onThisMonth = onThisMonth,
-    )
-    Spacer(modifier = Modifier.height(22.dp))
-
     Text(
         text = stringResource(R.string.teacher_regular_classes_caps),
         fontWeight = FontWeight.Bold,
@@ -555,7 +628,7 @@ private fun MonthSelectorRow(
     monthLabel: String,
     onPreviousMonth: () -> Unit,
     onNextMonth: () -> Unit,
-    onThisMonth: () -> Unit,
+    onOpenMonthPicker: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -607,16 +680,117 @@ private fun MonthSelectorRow(
                 .height(44.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .border(1.dp, BorderGray, RoundedCornerShape(12.dp))
-                .clickable(onClick = onThisMonth)
+                .clickable(onClick = onOpenMonthPicker)
                 .padding(horizontal = 12.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = stringResource(R.string.teacher_this_month),
+                text = stringResource(R.string.teacher_pick_month),
+                fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
                 color = BrandBlack,
                 fontFamily = FontFamily.SansSerif,
             )
+        }
+    }
+}
+
+@Composable
+private fun MonthPickerOverlay(
+    selectedMonth: YearMonth,
+    onDismiss: () -> Unit,
+    onSelect: (YearMonth) -> Unit,
+) {
+    var visibleYear by remember(selectedMonth) { mutableIntStateOf(selectedMonth.year) }
+    val now = remember { YearMonth.now() }
+
+    TeacherScrimDialog(onDismiss = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(CardShape)
+                .background(BgWhite)
+                .padding(horizontal = 18.dp, vertical = 20.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.teacher_select_month),
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                color = BrandBlack,
+                fontFamily = FontFamily.SansSerif,
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(BgLight)
+                    .padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                IconButton(onClick = { visibleYear -= 1 }) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                        contentDescription = stringResource(R.string.cd_prev_year),
+                        tint = BrandOrange,
+                    )
+                }
+                Text(
+                    text = visibleYear.toString(),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = BrandBlack,
+                    fontFamily = FontFamily.SansSerif,
+                )
+                IconButton(onClick = { visibleYear += 1 }) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                        contentDescription = stringResource(R.string.cd_next_year),
+                        tint = BrandOrange,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Month.entries.chunked(3).forEach { rowMonths ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    rowMonths.forEach { month ->
+                        val candidate = YearMonth.of(visibleYear, month)
+                        val selected = candidate == selectedMonth
+                        val isCurrent = candidate == now
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (selected) SelectedDayBg else BgLight)
+                                .border(
+                                    width = if (selected || isCurrent) 1.dp else 0.dp,
+                                    color = when {
+                                        selected -> BrandOrange
+                                        isCurrent -> BorderGray
+                                        else -> Color.Transparent
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                )
+                                .clickable { onSelect(candidate) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = month.getDisplayName(TextStyle.SHORT, Locale.ENGLISH),
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 14.sp,
+                                color = if (selected) BrandOrange else BrandBlack,
+                                fontFamily = FontFamily.SansSerif,
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
         }
     }
 }

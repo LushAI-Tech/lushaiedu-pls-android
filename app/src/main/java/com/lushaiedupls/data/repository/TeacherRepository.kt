@@ -8,6 +8,7 @@ import com.lushaiedupls.data.remote.api.OverviewApi
 import com.lushaiedupls.data.remote.api.TeachingUnitsApi
 import com.lushaiedupls.data.remote.api.TimetableApi
 import com.lushaiedupls.data.remote.dto.AddMemberRequest
+import com.lushaiedupls.data.remote.dto.ApproveRollNumbersRequest
 import com.lushaiedupls.data.remote.dto.AttendanceStatus
 import com.lushaiedupls.data.remote.dto.CalendarEventOut
 import com.lushaiedupls.data.remote.dto.DayView
@@ -18,8 +19,10 @@ import com.lushaiedupls.data.remote.dto.NotificationAudience
 import com.lushaiedupls.data.remote.dto.NotificationCreate
 import com.lushaiedupls.data.remote.dto.NotificationOut
 import com.lushaiedupls.data.remote.dto.PeriodOut
+import com.lushaiedupls.data.remote.dto.RollNumberAssignment
 import com.lushaiedupls.data.remote.dto.RollOut
 import com.lushaiedupls.data.remote.dto.RosterResponse
+import com.lushaiedupls.data.remote.dto.SetRollNumbersRequest
 import com.lushaiedupls.data.remote.dto.TeacherOverview
 import com.lushaiedupls.data.remote.dto.TeachingUnitOut
 import com.lushaiedupls.data.remote.dto.UnitAttendanceSummary
@@ -56,6 +59,23 @@ class TeacherRepository(
 
     suspend fun addMember(unitId: String, studentId: String): NetworkResult<MemberOut> =
         safeApiCall { teachingUnitsApi.addMember(unitId, AddMemberRequest(studentId)) }
+
+    suspend fun removeMember(unitId: String, studentId: String): NetworkResult<MessageResponse> =
+        safeApiCall { teachingUnitsApi.removeMember(unitId, studentId) }
+
+    suspend fun setRollNumbers(
+        unitId: String,
+        assignments: List<RollNumberAssignment>,
+    ): NetworkResult<List<MemberOut>> = safeApiCall {
+        teachingUnitsApi.setRollNumbers(unitId, SetRollNumbersRequest(assignments))
+    }
+
+    suspend fun approveRollNumbers(
+        unitId: String,
+        studentIds: List<String>? = null,
+    ): NetworkResult<List<MemberOut>> = safeApiCall {
+        teachingUnitsApi.approveRollNumbers(unitId, ApproveRollNumbersRequest(studentIds))
+    }
 
     suspend fun parents(unitId: String): NetworkResult<List<UserSummary>> =
         safeApiCall { teachingUnitsApi.parents(unitId) }

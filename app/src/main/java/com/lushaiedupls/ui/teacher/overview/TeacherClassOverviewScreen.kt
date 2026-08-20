@@ -1,5 +1,6 @@
 package com.lushaiedupls.ui.teacher.overview
 
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,16 +19,22 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,10 +43,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -67,11 +79,16 @@ import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.LushAIEdu_PLSTheme
 import com.lushaiedupls.ui.theme.TextSecondary
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.text.style.TextDecoration
+
 private val CardShape = RoundedCornerShape(18.dp)
 private val StudentCardShape = RoundedCornerShape(16.dp)
 private val SegmentShape = RoundedCornerShape(14.dp)
 private val ChooseShape = RoundedCornerShape(10.dp)
+private val PillShape = RoundedCornerShape(50)
 private val ExtraCardBg = Color(0xFFE8E8EA)
+private val DangerRed = Color(0xFFF25F5C)
 
 @Composable
 fun TeacherClassOverviewRoute(
@@ -84,6 +101,15 @@ fun TeacherClassOverviewRoute(
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    LaunchedEffect(uiState.actionMessage) {
+        uiState.actionMessage?.let { msg ->
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            viewModel.clearActionMessage()
+        }
+    }
+
     when {
         uiState.isLoading && uiState.overview == null && uiState.errorMessage == null ->
             StudentPageSkeleton(kind = StudentSkeletonKind.List, modifier = modifier)
@@ -98,6 +124,11 @@ fun TeacherClassOverviewRoute(
             uiState = uiState,
             onBack = onBack,
             onSectionSelected = viewModel::onSectionSelected,
+            onToggleEdit = viewModel::toggleEditMode,
+            onUpdateStudentRoll = viewModel::updateStudentRoll,
+            onAutoAssignRolls = viewModel::autoAssignSequentialRolls,
+            onApproveRollNumbers = viewModel::approveRollNumbers,
+            onToggleMarkStudentDelete = viewModel::toggleMarkStudentDelete,
             onParentsLinked = viewModel::markParentsSelected,
             modifier = modifier,
         )
@@ -109,6 +140,11 @@ fun TeacherClassOverviewScreen(
     uiState: TeacherClassOverviewUiState,
     onBack: () -> Unit,
     onSectionSelected: (TeacherClassSection) -> Unit,
+    onToggleEdit: () -> Unit = {},
+    onUpdateStudentRoll: (String, String) -> Unit = { _, _ -> },
+    onAutoAssignRolls: () -> Unit = {},
+    onApproveRollNumbers: () -> Unit = {},
+    onToggleMarkStudentDelete: (String) -> Unit = {},
     onParentsLinked: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -204,6 +240,15 @@ fun TeacherClassOverviewScreen(
             TeacherClassSection.Students -> {
                 StudentsInClassSection(
                     students = uiState.students,
+                    isEditing = uiState.isEditing,
+                    isApprovingRolls = uiState.isApprovingRolls,
+                    rollDrafts = uiState.rollDrafts,
+                    pendingDeleteStudentIds = uiState.pendingDeleteStudentIds,
+                    onToggleEdit = onToggleEdit,
+                    onUpdateStudentRoll = onUpdateStudentRoll,
+                    onAutoAssignRolls = onAutoAssignRolls,
+                    onApproveRollNumbers = onApproveRollNumbers,
+                    onToggleMarkStudentDelete = onToggleMarkStudentDelete,
                     onAddStudent = { showAddStudent = true },
                 )
             }
@@ -232,6 +277,15 @@ fun TeacherClassOverviewScreen(
 @Composable
 private fun StudentsInClassSection(
     students: List<TeacherStudent>,
+    isEditing: Boolean,
+    isApprovingRolls: Boolean,
+    rollDrafts: Map<String, String>,
+    pendingDeleteStudentIds: Set<String>,
+    onToggleEdit: () -> Unit,
+    onUpdateStudentRoll: (String, String) -> Unit,
+    onAutoAssignRolls: () -> Unit,
+    onApproveRollNumbers: () -> Unit,
+    onToggleMarkStudentDelete: (String) -> Unit,
     onAddStudent: () -> Unit,
 ) {
     Row(
@@ -246,11 +300,13 @@ private fun StudentsInClassSection(
             fontFamily = FontFamily.SansSerif,
             modifier = Modifier.weight(1f),
         )
-        IconButton(onClick = {}) {
+        IconButton(onClick = onToggleEdit) {
             Icon(
-                imageVector = Icons.Outlined.Edit,
-                contentDescription = stringResource(R.string.cd_edit_students),
-                tint = BrandBlack,
+                imageVector = if (isEditing) Icons.Outlined.Close else Icons.Outlined.Edit,
+                contentDescription = stringResource(
+                    if (isEditing) R.string.cd_cancel_edit_students else R.string.cd_edit_students,
+                ),
+                tint = if (isEditing) BrandOrange else BrandBlack,
             )
         }
         IconButton(onClick = onAddStudent) {
@@ -258,6 +314,27 @@ private fun StudentsInClassSection(
                 imageVector = Icons.Outlined.Add,
                 contentDescription = stringResource(R.string.cd_add_student),
                 tint = BrandBlack,
+            )
+        }
+    }
+    if (isEditing && students.isNotEmpty()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.teacher_auto_assign_rolls),
+                color = BrandOrange,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = FontFamily.SansSerif,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onAutoAssignRolls)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
             )
         }
     }
@@ -272,8 +349,47 @@ private fun StudentsInClassSection(
     } else {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             students.forEach { student ->
-                StudentRosterCard(student = student)
+                val draft = rollDrafts[student.id] ?: student.rollNumber.toString()
+                val isMarkedForDelete = student.id in pendingDeleteStudentIds
+                StudentRosterCard(
+                    student = student,
+                    isEditing = isEditing,
+                    isMarkedForDelete = isMarkedForDelete,
+                    rollDraft = draft,
+                    onUpdateRoll = { onUpdateStudentRoll(student.id, it) },
+                    onToggleMarkDelete = { onToggleMarkStudentDelete(student.id) },
+                )
             }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // "Approve roll numbers" button (matching design: black pill button)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp)
+                .clip(PillShape)
+                .background(
+                    if (isApprovingRolls) BrandBlack.copy(alpha = 0.5f) else BrandBlack,
+                )
+                .clickable(
+                    enabled = !isApprovingRolls,
+                    onClick = onApproveRollNumbers,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = if (isApprovingRolls) {
+                    stringResource(R.string.teacher_approving)
+                } else {
+                    stringResource(R.string.teacher_approve_roll_numbers)
+                },
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                fontFamily = FontFamily.SansSerif,
+            )
         }
     }
 }
@@ -360,34 +476,86 @@ private fun ParentsInClassSection(
 }
 
 @Composable
-private fun StudentRosterCard(student: TeacherStudent) {
+private fun StudentRosterCard(
+    student: TeacherStudent,
+    isEditing: Boolean = false,
+    isMarkedForDelete: Boolean = false,
+    rollDraft: String = student.rollNumber.toString(),
+    onUpdateRoll: (String) -> Unit = {},
+    onToggleMarkDelete: () -> Unit = {},
+) {
+    val cardBorder = if (isMarkedForDelete) {
+        BorderStroke(1.dp, DangerRed.copy(alpha = 0.6f))
+    } else {
+        BorderStroke(1.dp, BorderGray.copy(alpha = 0.75f))
+    }
+    val cardBg = if (isMarkedForDelete) Color(0xFFFFF4F4) else BgWhite
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, BorderGray.copy(alpha = 0.75f), StudentCardShape)
-            .background(BgWhite, StudentCardShape)
-            .padding(horizontal = 14.dp, vertical = 14.dp),
+            .border(cardBorder.width, cardBorder.brush, StudentCardShape)
+            .background(cardBg, StudentCardShape)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(BrandBlack),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = student.rollNumber.toString(),
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
-                fontFamily = FontFamily.SansSerif,
-            )
+        if (isEditing) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isMarkedForDelete) BorderGray else BrandBlack)
+                    .padding(2.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (isMarkedForDelete) {
+                    Text(
+                        text = student.rollNumber.toString(),
+                        color = TextSecondary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        fontFamily = FontFamily.SansSerif,
+                    )
+                } else {
+                    BasicTextField(
+                        value = rollDraft,
+                        onValueChange = onUpdateRoll,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        cursorBrush = SolidColor(Color.White),
+                        textStyle = TextStyle(
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            textAlign = TextAlign.Center,
+                            fontFamily = FontFamily.SansSerif,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(BrandBlack),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = student.rollNumber.toString(),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    fontFamily = FontFamily.SansSerif,
+                )
+            }
         }
         Spacer(modifier = Modifier.width(12.dp))
         Image(
             painter = painterResource(R.drawable.ic_avatar_placeholder),
             contentDescription = null,
+            alpha = if (isMarkedForDelete) 0.45f else 1f,
             modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape),
@@ -398,16 +566,55 @@ private fun StudentRosterCard(student: TeacherStudent) {
                 text = student.name,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp,
-                color = BrandBlack,
+                color = if (isMarkedForDelete) TextSecondary else BrandBlack,
+                textDecoration = if (isMarkedForDelete) TextDecoration.LineThrough else TextDecoration.None,
                 fontFamily = FontFamily.SansSerif,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = student.email,
+                text = if (isMarkedForDelete) {
+                    stringResource(R.string.teacher_marked_delete_label)
+                } else {
+                    student.email
+                },
                 fontSize = 12.sp,
-                color = TextSecondary,
+                color = if (isMarkedForDelete) DangerRed else TextSecondary,
                 fontFamily = FontFamily.SansSerif,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
+        }
+        if (isEditing) {
+            if (isMarkedForDelete) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .border(1.dp, DangerRed.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                        .background(BgWhite)
+                        .clickable(onClick = onToggleMarkDelete)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(R.string.teacher_undo_delete),
+                        color = DangerRed,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.SansSerif,
+                    )
+                }
+            } else {
+                IconButton(onClick = onToggleMarkDelete) {
+                    Icon(
+                        imageVector = Icons.Outlined.DeleteOutline,
+                        contentDescription = stringResource(R.string.cd_mark_delete),
+                        tint = DangerRed,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
         }
     }
 }
