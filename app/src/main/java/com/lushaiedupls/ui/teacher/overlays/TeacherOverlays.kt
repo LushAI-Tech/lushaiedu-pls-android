@@ -485,12 +485,16 @@ fun SetReminderOverlay(
 @Composable
 fun SetSessionOverlay(
     subjects: List<String>,
+    initialSubject: String? = null,
+    initialRoom: String? = null,
     onDismiss: () -> Unit,
     onDone: (subject: String, room: String) -> Unit = { _, _ -> },
     onClear: () -> Unit = {},
 ) {
-    var selectedSubject by remember { mutableStateOf(subjects.firstOrNull().orEmpty()) }
-    var room by remember { mutableStateOf("") }
+    var selectedSubject by remember(initialSubject, subjects) {
+        mutableStateOf(initialSubject?.takeIf { it in subjects } ?: subjects.firstOrNull().orEmpty())
+    }
+    var room by remember(initialRoom) { mutableStateOf(initialRoom.orEmpty()) }
 
     TeacherScrimDialog(onDismiss = onDismiss) {
         Column(

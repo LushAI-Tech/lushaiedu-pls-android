@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.ParentRepository
+import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.session.UserSessionStore
 import com.lushaiedupls.ui.common.viewModelFactory
 import java.time.YearMonth
@@ -18,6 +19,7 @@ import kotlinx.coroutines.launch
 class ParentHomeViewModel(
     private val userSessionStore: UserSessionStore,
     private val parentRepository: ParentRepository,
+    private val studentRepository: StudentRepository? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -29,6 +31,22 @@ class ParentHomeViewModel(
     val uiState: StateFlow<ParentHomeUiState> = _uiState.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            parentRepository.unreadNotificationCount.collect { count ->
+                if (count != null) {
+                    _uiState.update { it.copy(notificationCount = count) }
+                }
+            }
+        }
+        if (studentRepository != null) {
+            viewModelScope.launch {
+                studentRepository.unreadNotificationCount.collect { count ->
+                    if (count != null) {
+                        _uiState.update { it.copy(notificationCount = count) }
+                    }
+                }
+            }
+        }
         refresh()
     }
 
@@ -74,8 +92,9 @@ class ParentHomeViewModel(
         fun provideFactory(
             userSessionStore: UserSessionStore,
             parentRepository: ParentRepository,
+            studentRepository: StudentRepository? = null,
         ): ViewModelProvider.Factory = viewModelFactory {
-            ParentHomeViewModel(userSessionStore, parentRepository)
+            ParentHomeViewModel(userSessionStore, parentRepository, studentRepository)
         }
     }
 }

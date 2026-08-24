@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,15 +29,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lushaiedupls.R
@@ -59,8 +64,11 @@ import com.lushaiedupls.ui.theme.TextSecondary
 private val TableShape = RoundedCornerShape(14.dp)
 private val ChipShape = RoundedCornerShape(12.dp)
 private val ReminderShape = RoundedCornerShape(12.dp)
-private val HeaderBg = BrandBlack
-private val CellMinWidth = 88.dp
+private val HeaderBg = Color(0xFF4B5563)
+private val DayColWidth = 96.dp
+private val PeriodColWidth = 120.dp
+private val RowHeight = 72.dp
+private val HeaderHeight = 48.dp
 
 @Composable
 fun TeacherTimetableRoute(
@@ -70,10 +78,14 @@ fun TeacherTimetableRoute(
     modifier: Modifier = Modifier,
     viewModel: TeacherTimetableViewModel = viewModel(
         key = if (editable) "teacher-timetable-edit" else "teacher-timetable-view",
-        factory = TeacherTimetableViewModel.provideFactory(teacherRepository),
+        factory = TeacherTimetableViewModel.provideFactory(teacherRepository, editable),
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    LifecycleResumeEffect(Unit) {
+        viewModel.refresh()
+        onPauseOrDispose { }
+    }
     val title = if (editable) {
         stringResource(R.string.teacher_set_timetable_title)
     } else {
@@ -98,6 +110,9 @@ fun TeacherTimetableRoute(
             ),
             subjects = uiState.subjects,
             editable = editable,
+            onSelectClass = viewModel::selectClass,
+            onSaveSlot = viewModel::saveSlot,
+            onClearSlot = viewModel::clearSlot,
             onBack = onBack,
             modifier = modifier,
         )
@@ -113,15 +128,18 @@ fun TeacherTimetableScreen(
     timetable: TeacherTeachingTimetable,
     subjects: List<String> = listOf("Mathematics", "Chemistry", "Economics", "Biology"),
     editable: Boolean = false,
+    onSelectClass: (Int) -> Unit = {},
+    onSaveSlot: (timeIndex: Int, dayIndex: Int, subject: String, room: String, onDone: (Boolean) -> Unit) -> Unit = { _, _, _, _, cb -> cb(true) },
+    onClearSlot: (timeIndex: Int, dayIndex: Int, onDone: (Boolean) -> Unit) -> Unit = { _, _, cb -> cb(true) },
     onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    var selectedClass by remember(timetable.classes) {
-        mutableStateOf(timetable.classes.firstOrNull().orEmpty())
+    var selectedClassIndex by remember(timetable.classes) {
+        mutableStateOf(0)
     }
     var showReminder by remember { mutableStateOf(false) }
-    var showSetSession by remember { mutableStateOf(false) }
+    var targetCell by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
     Column(
         modifier = modifier
@@ -150,39 +168,65 @@ fun TeacherTimetableScreen(
             color = BrandBlack,
             fontFamily = FontFamily.SansSerif,
         )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = stringResource(R.string.teacher_timetable_subtitle),
-            fontSize = 14.sp,
-            color = TextSecondary,
-            fontFamily = FontFamily.SansSerif,
-        )
+
+        Spacer(modifier = Modifier.height(18.dp))
 
         if (!editable) {
-            Spacer(modifier = Modifier.height(14.dp))
             Box(
                 modifier = Modifier
+                    .fillMaxWidth()
                     .clip(ReminderShape)
-                    .background(BrandOrange)
+                    .background(BgLight)
                     .clickable { showReminder = true }
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
             ) {
-                Text(
-                    text = stringResource(R.string.teacher_set_reminder),
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.SansSerif,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.teacher_reminder_card_title),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = BrandBlack,
+                            fontFamily = FontFamily.SansSerif,
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = stringResource(R.string.teacher_timetable_subtitle),
+                            color = TextSecondary,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.SansSerif,
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .height(34.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(BrandBlack)
+                            .padding(horizontal = 14.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.teacher_set_reminder),
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = FontFamily.SansSerif,
+                        )
+                    }
+                }
             }
+            Spacer(modifier = Modifier.height(20.dp))
         }
 
         if (editable) {
-            Spacer(modifier = Modifier.height(20.dp))
             Text(
-                text = stringResource(R.string.teacher_attendance_class),
+                text = stringResource(R.string.timetable_class),
                 fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
+                fontSize = 15.sp,
                 color = BrandBlack,
                 fontFamily = FontFamily.SansSerif,
             )
@@ -190,14 +234,14 @@ fun TeacherTimetableScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(ChipShape)
                     .background(BgLight)
                     .horizontalScroll(rememberScrollState())
                     .padding(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                timetable.classes.forEach { label ->
-                    val selected = label == selectedClass
+                timetable.classes.forEachIndexed { index, label ->
+                    val selected = index == selectedClassIndex
                     Box(
                         modifier = Modifier
                             .height(40.dp)
@@ -205,13 +249,16 @@ fun TeacherTimetableScreen(
                             .then(
                                 if (selected) {
                                     Modifier
-                                        .border(1.dp, BrandBlack, ChipShape)
+                                        .border(1.dp, BorderGray, ChipShape)
                                         .background(BgWhite)
                                 } else {
                                     Modifier.background(Color.Transparent)
                                 },
                             )
-                            .clickable { selectedClass = label }
+                            .clickable {
+                                selectedClassIndex = index
+                                onSelectClass(index)
+                            }
                             .padding(horizontal = 14.dp),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -231,23 +278,43 @@ fun TeacherTimetableScreen(
         TeacherTimetableGrid(
             timetable = timetable,
             editable = editable,
-            onEmptyTap = { if (editable) showSetSession = true },
+            onCellTap = { timeIndex, dayIndex ->
+                if (editable) {
+                    targetCell = timeIndex to dayIndex
+                }
+            },
         )
     }
 
     if (showReminder) {
         SetReminderOverlay(onDismiss = { showReminder = false })
     }
-    if (showSetSession) {
+    targetCell?.let { (timeIndex, dayIndex) ->
+        val existingCell = timetable.cells[timeIndex to dayIndex]
         SetSessionOverlay(
             subjects = subjects,
-            onDismiss = { showSetSession = false },
+            initialSubject = existingCell?.subject,
+            initialRoom = existingCell?.detail?.takeIf { it.isNotBlank() },
+            onDismiss = { targetCell = null },
             onDone = { subject, room ->
-                Toast.makeText(
-                    context,
-                    context.getString(R.string.teacher_session_saved, subject, room.ifBlank { "—" }),
-                    Toast.LENGTH_SHORT,
-                ).show()
+                onSaveSlot(timeIndex, dayIndex, subject, room) { ok ->
+                    if (ok) {
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.teacher_session_saved, subject, room.ifBlank { "—" }),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
+                targetCell = null
+            },
+            onClear = {
+                onClearSlot(timeIndex, dayIndex) { ok ->
+                    if (ok) {
+                        Toast.makeText(context, "Slot cleared", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                targetCell = null
             },
         )
     }
@@ -257,14 +324,18 @@ fun TeacherTimetableScreen(
 private fun TeacherTimetableGrid(
     timetable: TeacherTeachingTimetable,
     editable: Boolean,
-    onEmptyTap: () -> Unit,
+    onCellTap: (timeIndex: Int, dayIndex: Int) -> Unit,
 ) {
+    val tableBorderColor = BorderGray
+    val cellDividerColor = BorderGray
+    val headerLine = Color.White.copy(alpha = 0.2f)
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(4.dp, TableShape, clip = false)
+            .shadow(2.dp, TableShape, clip = false)
             .clip(TableShape)
-            .border(1.dp, BorderGray.copy(alpha = 0.7f), TableShape)
+            .border(1.dp, tableBorderColor, TableShape)
             .background(BgWhite),
     ) {
         Row(
@@ -273,36 +344,56 @@ private fun TeacherTimetableGrid(
                 .horizontalScroll(rememberScrollState()),
         ) {
             Column {
-                Row(modifier = Modifier.background(HeaderBg)) {
+                Row(
+                    modifier = Modifier
+                        .background(HeaderBg)
+                        .height(HeaderHeight),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     HeaderCell(
-                        text = stringResource(R.string.teacher_timetable_time_day),
-                        modifier = Modifier.width(118.dp),
+                        text = stringResource(R.string.teacher_timetable_day_time),
+                        modifier = Modifier.width(DayColWidth),
+                        dividerColor = headerLine,
+                        bottomDividerColor = tableBorderColor,
+                        showEndDivider = true,
                     )
-                    timetable.days.forEach { day ->
+                    timetable.timeSlots.forEachIndexed { index, time ->
                         HeaderCell(
-                            text = day,
-                            modifier = Modifier.width(CellMinWidth),
+                            text = time,
+                            modifier = Modifier.width(PeriodColWidth),
+                            dividerColor = headerLine,
+                            bottomDividerColor = tableBorderColor,
+                            showEndDivider = index != timetable.timeSlots.lastIndex,
+                            maxLines = 2,
                         )
                     }
                 }
-                timetable.timeSlots.forEachIndexed { rowIndex, time ->
-                    Row {
-                        TimeCell(
-                            time = time,
-                            modifier = Modifier.width(118.dp),
+
+                timetable.days.forEachIndexed { dayIndex, day ->
+                    val isLastRow = dayIndex == timetable.days.lastIndex
+                    Row(
+                        modifier = Modifier.height(RowHeight),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        DayCell(
+                            day = day,
+                            modifier = Modifier.width(DayColWidth),
+                            dividerColor = cellDividerColor,
+                            showEndDivider = true,
+                            showBottomDivider = !isLastRow,
                         )
-                        timetable.days.indices.forEach { dayIndex ->
-                            val cell = timetable.cells[rowIndex to dayIndex]
+                        timetable.timeSlots.indices.forEach { timeIndex ->
+                            val cell = timetable.cells[timeIndex to dayIndex]
                             ScheduleCell(
                                 cell = cell,
                                 editable = editable,
-                                onEmptyTap = onEmptyTap,
-                                modifier = Modifier.width(CellMinWidth),
+                                onClick = { onCellTap(timeIndex, dayIndex) },
+                                modifier = Modifier.width(PeriodColWidth),
+                                dividerColor = cellDividerColor,
+                                showEndDivider = timeIndex != timetable.timeSlots.lastIndex,
+                                showBottomDivider = !isLastRow,
                             )
                         }
-                    }
-                    if (rowIndex < timetable.timeSlots.lastIndex) {
-                        HorizontalDivider(color = BorderGray.copy(alpha = 0.55f), thickness = 0.5.dp)
                     }
                 }
             }
@@ -314,50 +405,90 @@ private fun TeacherTimetableGrid(
 private fun HeaderCell(
     text: String,
     modifier: Modifier = Modifier,
+    dividerColor: Color = Color.White.copy(alpha = 0.2f),
+    bottomDividerColor: Color = BorderGray,
+    showEndDivider: Boolean = true,
+    maxLines: Int = 1,
 ) {
     Box(
         modifier = modifier
-            .height(44.dp)
+            .fillMaxHeight()
+            .drawBehind {
+                val stroke = 1.dp.toPx()
+                if (showEndDivider) {
+                    drawLine(
+                        color = dividerColor,
+                        start = Offset(size.width - stroke / 2f, 0f),
+                        end = Offset(size.width - stroke / 2f, size.height),
+                        strokeWidth = stroke,
+                    )
+                }
+                drawLine(
+                    color = bottomDividerColor,
+                    start = Offset(0f, size.height - stroke / 2f),
+                    end = Offset(size.width, size.height - stroke / 2f),
+                    strokeWidth = stroke,
+                )
+            }
             .padding(horizontal = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = text,
             color = Color.White,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp,
             textAlign = TextAlign.Center,
             fontFamily = FontFamily.SansSerif,
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis,
+            lineHeight = 14.sp,
         )
     }
 }
 
 @Composable
-private fun TimeCell(
-    time: String,
+private fun DayCell(
+    day: String,
     modifier: Modifier = Modifier,
+    dividerColor: Color = BorderGray,
+    showEndDivider: Boolean = true,
+    showBottomDivider: Boolean = true,
 ) {
-    Column(
+    Box(
         modifier = modifier
-            .background(BgLight)
-            .padding(horizontal = 8.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.Center,
+            .fillMaxHeight()
+            .background(Color(0xFFF3F4F6))
+            .drawBehind {
+                val stroke = 1.dp.toPx()
+                if (showEndDivider) {
+                    drawLine(
+                        color = dividerColor,
+                        start = Offset(size.width - stroke / 2f, 0f),
+                        end = Offset(size.width - stroke / 2f, size.height),
+                        strokeWidth = stroke,
+                    )
+                }
+                if (showBottomDivider) {
+                    drawLine(
+                        color = dividerColor,
+                        start = Offset(0f, size.height - stroke / 2f),
+                        end = Offset(size.width, size.height - stroke / 2f),
+                        strokeWidth = stroke,
+                    )
+                }
+            }
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.CenterStart,
     ) {
         Text(
-            text = time,
+            text = day,
             color = BrandBlack,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            fontFamily = FontFamily.SansSerif,
-            lineHeight = 14.sp,
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = stringResource(R.string.teacher_timetable_subject_label),
-            color = BrandBlack,
-            fontSize = 10.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.SansSerif,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -366,49 +497,69 @@ private fun TimeCell(
 private fun ScheduleCell(
     cell: TeacherTimetableCell?,
     editable: Boolean,
-    onEmptyTap: () -> Unit,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    dividerColor: Color = BorderGray,
+    showEndDivider: Boolean = true,
+    showBottomDivider: Boolean = true,
 ) {
     Box(
         modifier = modifier
-            .height(72.dp)
+            .fillMaxHeight()
+            .background(if (cell != null) Color(0xFFF4F5F7) else BgWhite)
+            .drawBehind {
+                val stroke = 1.dp.toPx()
+                if (showEndDivider) {
+                    drawLine(
+                        color = dividerColor,
+                        start = Offset(size.width - stroke / 2f, 0f),
+                        end = Offset(size.width - stroke / 2f, size.height),
+                        strokeWidth = stroke,
+                    )
+                }
+                if (showBottomDivider) {
+                    drawLine(
+                        color = dividerColor,
+                        start = Offset(0f, size.height - stroke / 2f),
+                        end = Offset(size.width, size.height - stroke / 2f),
+                        strokeWidth = stroke,
+                    )
+                }
+            }
             .then(
-                if (editable && cell == null) {
-                    Modifier.clickable(onClick = onEmptyTap)
+                if (editable) {
+                    Modifier.clickable(onClick = onClick)
                 } else {
                     Modifier
                 },
-            )
-            .padding(4.dp),
-        contentAlignment = Alignment.Center,
+            ),
+        contentAlignment = if (cell == null) Alignment.Center else Alignment.CenterStart,
     ) {
         if (cell == null) {
             Text(
                 text = stringResource(
                     if (editable) R.string.teacher_tap_to_set else R.string.teacher_timetable_empty,
                 ),
-                color = TextSecondary,
-                fontSize = 11.sp,
+                color = Color(0xFF71717A),
+                fontWeight = FontWeight.Medium,
+                fontSize = 11.5.sp,
                 textAlign = TextAlign.Center,
                 fontFamily = FontFamily.SansSerif,
             )
         } else {
             Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (editable) BgWhite else BgLight)
-                    .border(1.dp, BorderGray.copy(alpha = 0.5f), RoundedCornerShape(8.dp)),
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
                     modifier = Modifier
-                        .width(3.dp)
-                        .fillMaxSize()
+                        .width(2.5.dp)
+                        .fillMaxHeight()
                         .background(BrandOrange),
                 )
                 Column(
                     modifier = Modifier
-                        .padding(horizontal = 6.dp, vertical = 8.dp)
+                        .padding(horizontal = 6.dp, vertical = 6.dp)
                         .weight(1f),
                     verticalArrangement = Arrangement.Center,
                 ) {
@@ -416,15 +567,19 @@ private fun ScheduleCell(
                         text = cell.subject,
                         color = BrandBlack,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
+                        fontSize = 11.5.sp,
                         fontFamily = FontFamily.SansSerif,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = cell.detail,
-                        color = TextSecondary,
-                        fontSize = 9.sp,
+                        color = Color(0xFF71717A),
+                        fontSize = 9.5.sp,
                         fontFamily = FontFamily.SansSerif,
-                        lineHeight = 11.sp,
+                        lineHeight = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }

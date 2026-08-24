@@ -40,12 +40,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Assignment
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Menu
@@ -97,6 +102,8 @@ import com.lushaiedupls.data.mock.AiQuizHistoryItem
 import com.lushaiedupls.data.mock.AiSyllabusItem
 import com.lushaiedupls.data.mock.StudentMockRepository
 import com.lushaiedupls.data.repository.StudentRepository
+import com.lushaiedupls.ui.common.SkeletonBox
+import com.lushaiedupls.ui.common.SkeletonLine
 import com.lushaiedupls.ui.common.SlideFromRightOverlay
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
@@ -216,7 +223,7 @@ fun StudentAiChatScreen(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(horizontal = 16.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(14.dp),
                             ) {
                                 item { Spacer(modifier = Modifier.height(4.dp)) }
                                 items(uiState.messages, key = { it.id }) { message ->
@@ -255,22 +262,31 @@ fun StudentAiChatScreen(
                                         )
                                     }
                                 }
-                                item { Spacer(modifier = Modifier.height(88.dp)) }
+                                item { Spacer(modifier = Modifier.height(100.dp)) }
                             }
                         }
 
-                        ChatInputBar(
-                            language = uiState.language,
-                            draft = uiState.draft,
-                            onDraftChange = onDraftChange,
-                            onSend = onSend,
-                            onLanguageSelected = onLanguageSelected,
+                        // Bottom message bar with white background
+                        Column(
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
                                 .fillMaxWidth()
-                                .navigationBarsPadding()
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                        )
+                                .background(BgWhite)
+                                .navigationBarsPadding(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            HorizontalDivider(color = BorderGray.copy(alpha = 0.4f))
+                            ChatInputBar(
+                                language = uiState.language,
+                                draft = uiState.draft,
+                                onDraftChange = onDraftChange,
+                                onSend = onSend,
+                                onLanguageSelected = onLanguageSelected,
+                                modifier = Modifier
+                                    .fillMaxWidth(0.94f)
+                                    .padding(vertical = 10.dp),
+                            )
+                        }
                     }
                 }
                 AiMenuTab.TextbookQuestions -> {
@@ -401,10 +417,16 @@ private fun ChatTopBar(
 @Composable
 private fun ChatBubble(message: AiChatMessage) {
     if (message.fromUser) {
-        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp, bottom = 8.dp),
+            contentAlignment = Alignment.CenterEnd,
+        ) {
             Text(
                 text = message.text,
                 modifier = Modifier
+                    .widthIn(max = 290.dp)
                     .background(BrandBlack, BubbleShape)
                     .padding(horizontal = 14.dp, vertical = 10.dp),
                 color = Color.White,
@@ -418,7 +440,7 @@ private fun ChatBubble(message: AiChatMessage) {
             color = BrandBlack,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(end = 12.dp),
+                .padding(top = 2.dp, bottom = 6.dp, end = 12.dp),
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             lineHeightMultiplier = 20f / 14f,
@@ -588,19 +610,31 @@ private fun QuickCheckCard(
                     .padding(vertical = 4.dp)
                     .heightIn(min = 44.dp)
                     .clip(ChipShape)
-                    .background(bg)
-                    .clickable(enabled = !isAnswered) { onOption(option) }
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .background(bg),
                 contentAlignment = Alignment.Center,
             ) {
-                MarkdownLatexText(
-                    text = option,
-                    color = textColor,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    lineHeightMultiplier = 20f / 14f,
-                    enableLinks = false,
-                    textAlign = TextAlign.Center,
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    MarkdownLatexText(
+                        text = option,
+                        color = textColor,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        lineHeightMultiplier = 20f / 14f,
+                        enableLinks = false,
+                        textAlign = TextAlign.Center,
+                        onClick = if (!isAnswered) { { onOption(option) } } else null,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(ChipShape)
+                        .clickable(enabled = !isAnswered) { onOption(option) },
                 )
             }
         }
@@ -644,15 +678,23 @@ private fun ChatInputBar(
                 .padding(horizontal = 12.dp, vertical = 9.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Translate,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.size(13.dp),
+                )
                 Text(
                     text = language,
                     color = Color.White,
-                    fontSize = 11.sp,
+                    fontSize = 11.5.sp,
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = FontFamily.SansSerif,
                 )
-                Spacer(modifier = Modifier.width(3.dp))
                 Icon(
                     imageVector = if (expanded) {
                         Icons.Outlined.KeyboardArrowUp
@@ -666,11 +708,10 @@ private fun ChatInputBar(
             }
 
             if (expanded) {
-                val menuWidthDp = with(density) { languageButtonWidthPx.toDp() }
                 val popupOffset = with(density) {
                     IntOffset(
                         x = 0,
-                        y = -(44.dp.roundToPx() + 104.dp.roundToPx()),
+                        y = -(96.dp.roundToPx()),
                     )
                 }
                 Popup(
@@ -681,23 +722,25 @@ private fun ChatInputBar(
                 ) {
                     Column(
                         modifier = Modifier
-                            .width(menuWidthDp)
+                            .width(136.dp)
                             .shadow(12.dp, LanguageMenuShape, clip = false)
                             .clip(LanguageMenuShape)
                             .background(BgWhite)
                             .border(1.dp, BorderGray.copy(alpha = 0.7f), LanguageMenuShape)
-                            .padding(vertical = 4.dp),
+                            .padding(4.dp),
                     ) {
                         listOf("English", "Mizo").forEach { lang ->
                             val selected = lang == language
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (selected) BgLight else Color.Transparent)
                                     .clickable {
                                         onLanguageSelected(lang)
                                         expanded = false
                                     }
-                                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                                    .padding(horizontal = 10.dp, vertical = 9.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
@@ -709,19 +752,20 @@ private fun ChatInputBar(
                                         imageVector = Icons.Outlined.Translate,
                                         contentDescription = null,
                                         tint = if (selected) BrandOrange else TextSecondary,
-                                        modifier = Modifier.size(13.dp),
+                                        modifier = Modifier.size(14.dp),
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = lang,
                                         color = if (selected) BrandBlack else TextSecondary,
-                                        fontSize = 12.sp,
+                                        fontSize = 12.5.sp,
                                         fontWeight = if (selected) {
                                             FontWeight.Bold
                                         } else {
                                             FontWeight.Medium
                                         },
                                         fontFamily = FontFamily.SansSerif,
+                                        maxLines = 1,
                                     )
                                 }
                                 if (selected) {
@@ -729,7 +773,7 @@ private fun ChatInputBar(
                                         imageVector = Icons.Outlined.Check,
                                         contentDescription = null,
                                         tint = BrandOrange,
-                                        modifier = Modifier.size(13.dp),
+                                        modifier = Modifier.size(14.dp),
                                     )
                                 }
                             }
@@ -795,22 +839,24 @@ private fun TextbookQuestionsPageView(
     modifier: Modifier = Modifier,
 ) {
     if (isLoading && questions.isEmpty()) {
-        MenuLoading(modifier = modifier.fillMaxSize())
+        StudentPageSkeleton(
+            kind = StudentSkeletonKind.TextbookQuestions,
+            modifier = modifier.fillMaxSize(),
+        )
     } else if (questions.isEmpty()) {
-        Box(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = stringResource(R.string.ai_menu_no_questions),
-                color = TextSecondary,
-                fontSize = 14.sp,
-                fontFamily = FontFamily.SansSerif,
-                textAlign = TextAlign.Center,
-            )
-        }
+        AiEmptyStateView(
+            tab = AiMenuTab.TextbookQuestions,
+            onAction = {
+                onAskAboutQuestion(
+                    AiMenuContentItem(
+                        id = "",
+                        sectionId = "",
+                        title = "Ask tutor a textbook question",
+                    ),
+                )
+            },
+            modifier = modifier,
+        )
     } else {
         LazyColumn(
             modifier = modifier
@@ -909,23 +955,35 @@ private fun TextbookQuestionsPageView(
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .height(34.dp)
+                                    .height(32.dp)
                                     .clip(ChipShape)
                                     .background(BrandBlack)
                                     .clickable { onAskAboutQuestion(item) }
                                     .padding(horizontal = 14.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Text(
-                                    text = "Ask tutor about this question",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.SansSerif,
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = BrandOrange,
+                                        modifier = Modifier.size(13.dp),
+                                    )
+                                    Text(
+                                        text = "Ask",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 12.5.sp,
+                                        fontFamily = FontFamily.SansSerif,
+                                    )
+                                }
                             }
                         }
                     }
@@ -944,22 +1002,15 @@ private fun ExamPreparationPageView(
     modifier: Modifier = Modifier,
 ) {
     if (isLoading && examPrepPyqs.isEmpty()) {
-        MenuLoading(modifier = modifier.fillMaxSize())
+        StudentPageSkeleton(
+            kind = StudentSkeletonKind.ExamPreparation,
+            modifier = modifier.fillMaxSize(),
+        )
     } else if (examPrepPyqs.isEmpty()) {
-        Box(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = "No exam preparation questions found for this chapter.",
-                color = TextSecondary,
-                fontSize = 14.sp,
-                fontFamily = FontFamily.SansSerif,
-                textAlign = TextAlign.Center,
-            )
-        }
+        AiEmptyStateView(
+            tab = AiMenuTab.ExamPreparation,
+            modifier = modifier,
+        )
     } else {
         LazyColumn(
             modifier = modifier
@@ -1060,23 +1111,35 @@ private fun ExamPreparationPageView(
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .height(34.dp)
+                                    .height(32.dp)
                                     .clip(ChipShape)
                                     .background(BrandBlack)
                                     .clickable { onAskAboutPyq(item) }
                                     .padding(horizontal = 14.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Text(
-                                    text = "Ask tutor about this question",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.SansSerif,
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = BrandOrange,
+                                        modifier = Modifier.size(13.dp),
+                                    )
+                                    Text(
+                                        text = "Ask",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 12.5.sp,
+                                        fontFamily = FontFamily.SansSerif,
+                                    )
+                                }
                             }
                         }
                     }
@@ -1095,22 +1158,16 @@ private fun ResourcesPageView(
     modifier: Modifier = Modifier,
 ) {
     if (isLoading && resources.isEmpty()) {
-        MenuLoading(modifier = modifier.fillMaxSize())
+        StudentPageSkeleton(
+            kind = StudentSkeletonKind.Resources,
+            modifier = modifier.fillMaxSize(),
+        )
     } else if (resources.isEmpty()) {
-        Box(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = stringResource(R.string.ai_menu_no_resources),
-                color = TextSecondary,
-                fontSize = 14.sp,
-                fontFamily = FontFamily.SansSerif,
-                textAlign = TextAlign.Center,
-            )
-        }
+        AiEmptyStateView(
+            tab = AiMenuTab.Resources,
+            onAction = null,
+            modifier = modifier,
+        )
     } else {
         LazyColumn(
             modifier = modifier
@@ -1228,6 +1285,130 @@ private fun ResourcesPageView(
     }
 }
 
+@Composable
+private fun AiEmptyStateView(
+    tab: AiMenuTab,
+    onAction: (() -> Unit)? = null,
+    compact: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = if (compact) 8.dp else 16.dp, vertical = if (compact) 12.dp else 20.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = BgLight.copy(alpha = 0.65f)),
+            border = BorderStroke(1.dp, BorderGray.copy(alpha = 0.55f)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = if (compact) 16.dp else 22.dp, vertical = if (compact) 20.dp else 28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                // Icon Badge
+                Box(
+                    modifier = Modifier
+                        .size(if (compact) 54.dp else 66.dp)
+                        .clip(CircleShape)
+                        .background(BrandOrange.copy(alpha = 0.10f))
+                        .border(1.dp, BrandOrange.copy(alpha = 0.22f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = when (tab) {
+                            AiMenuTab.Resources -> Icons.Outlined.FolderOpen
+                            AiMenuTab.TextbookQuestions -> Icons.Outlined.AutoStories
+                            AiMenuTab.ExamPreparation -> Icons.AutoMirrored.Outlined.Assignment
+                            else -> Icons.Outlined.AutoAwesome
+                        },
+                        contentDescription = null,
+                        tint = BrandOrange,
+                        modifier = Modifier.size(if (compact) 26.dp else 32.dp),
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(if (compact) 12.dp else 16.dp))
+
+                // Title
+                Text(
+                    text = when (tab) {
+                        AiMenuTab.Resources -> "No Figures or Resources Yet"
+                        AiMenuTab.TextbookQuestions -> "No Textbook Questions Yet"
+                        AiMenuTab.ExamPreparation -> "No Past Exam Questions Found"
+                        else -> "No Items Available"
+                    },
+                    fontWeight = FontWeight.Bold,
+                    fontSize = if (compact) 15.sp else 17.sp,
+                    color = BrandBlack,
+                    fontFamily = FontFamily.SansSerif,
+                    textAlign = TextAlign.Center,
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Subtitle description
+                Text(
+                    text = when (tab) {
+                        AiMenuTab.Resources -> "Figures, diagrams, and downloadable study attachments for this chapter will appear here once added."
+                        AiMenuTab.TextbookQuestions -> "Practice questions and textbook exercises for this chapter will appear here once published."
+                        AiMenuTab.ExamPreparation -> "Previous years' exam questions for this chapter haven't been mapped yet. You can practice with AI tutor in Chat!"
+                        else -> "Content for this section will be available soon."
+                    },
+                    color = TextSecondary,
+                    fontSize = if (compact) 12.sp else 13.5.sp,
+                    lineHeight = if (compact) 17.sp else 20.sp,
+                    fontFamily = FontFamily.SansSerif,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.widthIn(max = 280.dp),
+                )
+
+                if (onAction != null && tab != AiMenuTab.Resources && tab != AiMenuTab.ExamPreparation) {
+                    Spacer(modifier = Modifier.height(if (compact) 14.dp else 20.dp))
+
+                    // Action pill
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(BgWhite)
+                            .border(1.dp, BorderGray.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                            .clickable { onAction() }
+                            .padding(horizontal = 14.dp, vertical = 9.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.ChatBubbleOutline,
+                                contentDescription = null,
+                                tint = BrandOrange,
+                                modifier = Modifier.size(15.dp),
+                            )
+                            Spacer(modifier = Modifier.width(7.dp))
+                            Text(
+                                text = when (tab) {
+                                    AiMenuTab.TextbookQuestions -> "Ask AI Tutor a question"
+                                    else -> "Chat with AI Tutor"
+                                },
+                                color = BrandBlack,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.SansSerif,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AiChatsMenuOverlay(
@@ -1335,14 +1516,14 @@ fun AiChatsMenuOverlay(
                 AiMenuTab.TextbookQuestions -> MenuContentList(
                     items = textbookQuestions,
                     isLoading = isMenuContentLoading,
-                    emptyText = stringResource(R.string.ai_menu_no_questions),
+                    tab = AiMenuTab.TextbookQuestions,
                     onItemClick = onContentClick,
                     modifier = Modifier.weight(1f),
                 )
                 AiMenuTab.Resources -> MenuContentList(
                     items = resources,
                     isLoading = isMenuContentLoading,
-                    emptyText = stringResource(R.string.ai_menu_no_resources),
+                    tab = AiMenuTab.Resources,
                     showThumbnail = true,
                     onItemClick = onContentClick,
                     modifier = Modifier.weight(1f),
@@ -1402,7 +1583,18 @@ fun AiChatsMenuOverlay(
                             modifier = Modifier.padding(bottom = 8.dp),
                         )
                         when {
-                            isMenuContentLoading && quizHistory.isEmpty() -> MenuLoading()
+                            isMenuContentLoading && quizHistory.isEmpty() -> {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    repeat(3) {
+                                        SkeletonLine(modifier = Modifier.fillMaxWidth(0.7f), height = 12.dp)
+                                        SkeletonLine(modifier = Modifier.fillMaxWidth(0.4f), height = 10.dp)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                    }
+                                }
+                            }
                             quizHistory.isEmpty() -> Text(
                                 text = stringResource(R.string.ai_exam_no_history),
                                 color = TextSecondary,
@@ -1476,19 +1668,59 @@ private fun MenuTabChip(
 private fun MenuContentList(
     items: List<AiMenuContentItem>,
     isLoading: Boolean,
-    emptyText: String,
+    tab: AiMenuTab,
     onItemClick: (AiMenuContentItem) -> Unit,
     showThumbnail: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     when {
-        isLoading && items.isEmpty() -> MenuLoading(modifier = modifier)
-        items.isEmpty() -> Text(
-            text = emptyText,
-            color = TextSecondary,
-            fontSize = 14.sp,
-            modifier = modifier.padding(vertical = 24.dp),
-        )
+        isLoading && items.isEmpty() -> {
+            Column(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                repeat(4) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (showThumbnail) {
+                            SkeletonBox(modifier = Modifier.size(44.dp), shape = RoundedCornerShape(8.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            SkeletonLine(modifier = Modifier.fillMaxWidth(0.75f), height = 12.dp)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            SkeletonLine(modifier = Modifier.fillMaxWidth(0.4f), height = 10.dp)
+                        }
+                    }
+                    HorizontalDivider(color = BorderGray.copy(alpha = 0.25f))
+                }
+            }
+        }
+        items.isEmpty() -> {
+            AiEmptyStateView(
+                tab = tab,
+                compact = true,
+                onAction = if (tab == AiMenuTab.Resources || tab == AiMenuTab.ExamPreparation) null else {
+                    {
+                        onItemClick(
+                            AiMenuContentItem(
+                                id = "",
+                                sectionId = "",
+                                title = when (tab) {
+                                    AiMenuTab.TextbookQuestions -> "Ask tutor a textbook question"
+                                    else -> "Ask tutor a question"
+                                },
+                            ),
+                        )
+                    }
+                },
+                modifier = modifier,
+            )
+        }
         else -> Column(
             modifier = modifier
                 .fillMaxWidth()
@@ -1505,22 +1737,6 @@ private fun MenuContentList(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun MenuLoading(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 32.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        CircularProgressIndicator(
-            color = BrandBlack,
-            strokeWidth = 2.dp,
-            modifier = Modifier.size(28.dp),
-        )
     }
 }
 

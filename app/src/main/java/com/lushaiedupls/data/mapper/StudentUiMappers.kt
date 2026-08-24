@@ -293,35 +293,68 @@ object StudentUiMappers {
         }
     }
 
-    fun weeklyTimetable(week: WeekView): WeeklyTimetable {
+    fun weeklyTimetable(
+        week: WeekView,
+        teachingUnits: List<TeachingUnitOut> = emptyList(),
+    ): WeeklyTimetable {
         val periods = week.periods.filter { it.is_active }.sortedBy { it.sort_order }
-        val dayOrder = listOf(
-            DayOfWeek.MON, DayOfWeek.TUE, DayOfWeek.WED, DayOfWeek.THU, DayOfWeek.FRI,
-        )
-        // Match design/students/TIme table(student).png — full weekday names as rows.
-        val dayLabels = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")
         val allSlots = week.days.values.flatten()
-        val subjects = allSlots.map { it.subject_name }.distinct().sorted()
+        val hasSaturday = allSlots.any { it.day_of_week == DayOfWeek.SAT }
+        val dayOrder = if (hasSaturday) {
+            listOf(DayOfWeek.MON, DayOfWeek.TUE, DayOfWeek.WED, DayOfWeek.THU, DayOfWeek.FRI, DayOfWeek.SAT)
+        } else {
+            listOf(DayOfWeek.MON, DayOfWeek.TUE, DayOfWeek.WED, DayOfWeek.THU, DayOfWeek.FRI)
+        }
+        val dayLabels = if (hasSaturday) {
+            listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+        } else {
+            listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")
+        }
+
+        val unitSubjects = teachingUnits.map { it.subject_name.trim() }.filter { it.isNotBlank() }
+        val slotSubjects = allSlots.map { it.subject_name.trim() }.filter { it.isNotBlank() }
+        val subjects = (unitSubjects + slotSubjects).distinct().sorted()
+
         val cells = subjects.associateWith { subject ->
+            val matchingUnitIds = teachingUnits
+                .filter { it.subject_name.equals(subject, ignoreCase = true) }
+                .map { it.id }
+                .toSet()
+
             dayOrder.map { day ->
                 val slots = slotsForDay(week, day)
                 periods.map { period ->
-                    val hit = slots.any {
-                        it.period_id == period.id &&
-                            it.subject_name == subject &&
-                            it.day_of_week == day
+                    val hit = slots.any { slot ->
+                        slot.period_id == period.id &&
+                            slot.day_of_week == day &&
+                            (slot.subject_name.equals(subject, ignoreCase = true) ||
+                                (matchingUnitIds.isNotEmpty() && slot.teaching_unit_id in matchingUnitIds))
                     }
                     if (hit) subject else "Off"
                 }
             }
         }
+
+        val allSubjectCells = dayOrder.map { day ->
+            val slots = slotsForDay(week, day)
+            periods.map { period ->
+                val hit = slots.firstOrNull { slot ->
+                    slot.period_id == period.id && slot.day_of_week == day
+                }
+                hit?.subject_name ?: "Off"
+            }
+        }
+
+        val fullSubjects = if (subjects.size > 1) listOf("All") + subjects else subjects
+        val finalCells = if (subjects.size > 1) mapOf("All" to allSubjectCells) + cells else cells
+
         val emptyRow = periods.map { "Off" }.ifEmpty { listOf("Off") }
         return WeeklyTimetable(
-            subjects = subjects.ifEmpty { listOf("—") },
+            subjects = fullSubjects.ifEmpty { listOf("—") },
             timeSlots = periods.map { formatPeriodRange(it.start_time, it.end_time) }
                 .ifEmpty { listOf("—") },
             days = dayLabels,
-            cellsBySubject = cells.ifEmpty {
+            cellsBySubject = finalCells.ifEmpty {
                 mapOf("—" to dayLabels.map { emptyRow })
             },
         )

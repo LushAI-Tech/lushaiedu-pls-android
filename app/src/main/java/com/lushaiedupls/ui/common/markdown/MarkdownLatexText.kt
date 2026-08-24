@@ -1,7 +1,11 @@
 package com.lushaiedupls.ui.common.markdown
 
+import android.graphics.Canvas
+import android.graphics.ColorFilter
+import android.graphics.Paint
+import android.graphics.PixelFormat
 import android.graphics.Typeface
-import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
 import android.text.method.LinkMovementMethod
 import android.util.TypedValue
 import android.view.Gravity
@@ -42,6 +46,7 @@ fun MarkdownLatexText(
     lineHeightMultiplier: Float = 1.25f,
     enableLinks: Boolean = true,
     textAlign: TextAlign = TextAlign.Start,
+    onClick: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -87,10 +92,20 @@ fun MarkdownLatexText(
             view.setLineSpacing(0f, lineHeightMultiplier)
             view.typeface = typeface
             view.gravity = gravity
-            view.movementMethod = if (enableLinks) LinkMovementMethod.getInstance() else null
-            view.linksClickable = enableLinks
-            if (!enableLinks) {
+            view.movementMethod = if (enableLinks && onClick == null) LinkMovementMethod.getInstance() else null
+            view.linksClickable = enableLinks && onClick == null
+            if (onClick != null) {
+                view.isClickable = true
+                view.setOnClickListener { onClick() }
+                view.setOnTouchListener(null)
+            } else if (!enableLinks) {
+                view.isClickable = false
+                view.setOnClickListener(null)
                 view.setOnTouchListener { _, _ -> false }
+            } else {
+                view.isClickable = true
+                view.setOnClickListener(null)
+                view.setOnTouchListener(null)
             }
             markwon.setMarkdown(view, prepared)
             view.requestLayout()
@@ -110,8 +125,8 @@ private fun createMarkwon(
             builder.blocksEnabled(true)
             builder.theme().inlineTextColor(textColor)
             builder.theme().blockTextColor(textColor)
-            builder.errorHandler { _, _ ->
-                ColorDrawable(android.graphics.Color.TRANSPARENT)
+            builder.errorHandler { latex, _ ->
+                FallbackLatexDrawable(latex, textColor, textSizePx)
             }
         },
     )
@@ -125,11 +140,16 @@ private fun createMarkwon(
                     .linkColor(BrandOrange.toArgb())
                     .isLinkUnderlined(true)
                     .headingBreakHeight(0)
-                    .headingTextSizeMultipliers(floatArrayOf(1.2f, 1.12f, 1.06f, 1f, 1f, 1f))
+                    .headingTextSizeMultipliers(floatArrayOf(1.28f, 1.18f, 1.10f, 1.04f, 1f, 1f))
+                    .blockMargin((textSizePx * 0.75f).toInt())
+                    .blockQuoteWidth((textSizePx * 0.22f).toInt().coerceAtLeast(3))
+                    .blockQuoteColor(BrandOrange.toArgb())
                     .codeTextColor(textColor)
                     .codeBackgroundColor(BgLight.toArgb())
                     .codeBlockBackgroundColor(BgLight.toArgb())
-                    .codeTextSize((textSizePx * 0.92f).toInt().coerceAtLeast(1))
+                    .codeTypeface(Typeface.MONOSPACE)
+                    .codeTextSize((textSizePx * 0.90f).toInt().coerceAtLeast(1))
+                    .bulletWidth((textSizePx * 0.32f).toInt().coerceAtLeast(4))
             }
 
             override fun configureVisitor(builder: MarkwonVisitor.Builder) {
@@ -140,3 +160,29 @@ private fun createMarkwon(
         },
     )
     .build()
+
+private class FallbackLatexDrawable(
+    latex: String,
+    textColor: Int,
+    private val textSizePx: Float,
+) : Drawable() {
+    private val cleanText = latex.replace("\n", " ").trim()
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = textColor
+        textSize = textSizePx * 0.92f
+        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
+    }
+
+    override fun draw(canvas: Canvas) {
+        val b = bounds
+        val y = b.top.toFloat() + textSizePx * 0.85f
+        canvas.drawText(cleanText, b.left.toFloat() + 4f, y, paint)
+    }
+
+    override fun setAlpha(alpha: Int) { paint.alpha = alpha }
+    override fun setColorFilter(colorFilter: ColorFilter?) { paint.colorFilter = colorFilter }
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+    override fun getIntrinsicWidth(): Int = (paint.measureText(cleanText) + 8).toInt().coerceAtLeast(1)
+    override fun getIntrinsicHeight(): Int = (textSizePx * 1.25f).toInt().coerceAtLeast(1)
+}

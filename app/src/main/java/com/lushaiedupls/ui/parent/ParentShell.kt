@@ -33,12 +33,12 @@ import com.lushaiedupls.ui.navigation.lushPopEnterTransition
 import com.lushaiedupls.ui.navigation.lushPopExitTransition
 import com.lushaiedupls.ui.parent.attendance.ParentChildAttendanceRoute
 import com.lushaiedupls.ui.parent.home.ParentHomeRoute
+import com.lushaiedupls.ui.parent.menu.ParentMenuOverlay
+import com.lushaiedupls.ui.parent.notifications.ParentNotificationsViewModel
 import com.lushaiedupls.ui.parent.scan.ParentScanRoute
 import com.lushaiedupls.ui.student.menu.LegalDocumentScreen
 import com.lushaiedupls.ui.student.menu.StudentAccountRoute
-import com.lushaiedupls.ui.student.menu.StudentMenuOverlay
 import com.lushaiedupls.ui.student.secondary.NotificationsScreen
-import com.lushaiedupls.ui.student.secondary.NotificationsViewModel
 import com.lushaiedupls.ui.theme.BgWhite
 
 private val ParentTabRoutes = setOf(
@@ -107,6 +107,7 @@ fun ParentShell(
                 ParentHomeRoute(
                     userSessionStore = userSessionStore,
                     parentRepository = parentRepository,
+                    studentRepository = studentRepository,
                     onNotificationsClick = {
                         tabNavController.navigate(ParentRoutes.NOTIFICATIONS)
                     },
@@ -132,14 +133,18 @@ fun ParentShell(
                 )
             }
             composable(ParentRoutes.NOTIFICATIONS) {
-                val vm: NotificationsViewModel = viewModel(
-                    factory = NotificationsViewModel.provideFactory(studentRepository),
+                // Use the parent-specific VM that syncs badge via parentRepository
+                val vm: ParentNotificationsViewModel = viewModel(
+                    factory = ParentNotificationsViewModel.provideFactory(
+                        studentRepository = studentRepository,
+                        parentRepository = parentRepository,
+                    ),
                 )
                 val state by vm.uiState.collectAsStateWithLifecycle()
                 when {
                     state.isLoading && state.notifications.isEmpty() -> StudentPageSkeleton(
                         kind = StudentSkeletonKind.Notifications,
-                        title = stringResource(R.string.notifications_title),
+                        title = stringResource(R.string.parent_notifications_title),
                     )
                     else -> NotificationsScreen(
                         notifications = state.notifications,
@@ -181,11 +186,15 @@ fun ParentShell(
     }
 
     if (showMenuOverlay) {
-        StudentMenuOverlay(
+        ParentMenuOverlay(
             onDismiss = { showMenuOverlay = false },
             onAccount = {
                 showMenuOverlay = false
                 tabNavController.navigate(ParentRoutes.ACCOUNT)
+            },
+            onScanQr = {
+                showMenuOverlay = false
+                navigateTab(ParentRoutes.SCAN)
             },
             onPrivacy = {
                 showMenuOverlay = false

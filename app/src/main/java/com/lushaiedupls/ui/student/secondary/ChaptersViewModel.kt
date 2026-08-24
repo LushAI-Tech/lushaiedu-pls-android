@@ -33,7 +33,19 @@ class ChaptersViewModel(
     private val subjectNameHint: String?,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(ChaptersUiState(isLoading = true))
+    private val cachedChapters = subjectIdHint?.let { studentRepository.getCachedChapters(it) }.orEmpty()
+    private val cachedDashboard = studentRepository.getCachedProgressDashboard()
+
+    private val _uiState = MutableStateFlow(
+        ChaptersUiState(
+            isLoading = cachedChapters.isEmpty(),
+            subjectId = subjectIdHint.orEmpty(),
+            subjectTitle = subjectNameHint.orEmpty(),
+            chapters = StudentUiMappers.chapters(cachedChapters),
+            stats = cachedDashboard?.let(StudentUiMappers::chapterStats)
+                ?: SubjectChapterStats("0%", "0%", "0", "0"),
+        ),
+    )
     val uiState: StateFlow<ChaptersUiState> = _uiState.asStateFlow()
 
     init {
@@ -42,51 +54,73 @@ class ChaptersViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            if (_uiState.value.chapters.isEmpty()) {
+                _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            }
             coroutineScope {
+                val resolvedSubjectId = subjectIdHint?.takeIf { it.isNotBlank() }
+                val chaptersDeferred = if (!resolvedSubjectId.isNullOrBlank()) {
+                    async { studentRepository.chapters(resolvedSubjectId) }
+                } else null
+
                 val subjectsDeferred = async { studentRepository.aiSubjects() }
                 val dashboardDeferred = async { studentRepository.progressDashboard() }
-                val subjects = subjectsDeferred.await()
-                val dashboard = dashboardDeferred.await()
-                val subjectId = subjectIdHint?.takeIf { it.isNotBlank() }
-                    ?: (subjects as? NetworkResult.Success)?.data?.firstOrNull()?.subject_id
+
+                val subjectId = resolvedSubjectId
+                    ?: (subjectsDeferred.await() as? NetworkResult.Success)?.data?.firstOrNull()?.subject_id
+
                 val subjectTitle = subjectNameHint?.takeIf { it.isNotBlank() }
-                    ?: (subjects as? NetworkResult.Success)?.data
+                    ?: (subjectsDeferred.await() as? NetworkResult.Success)?.data
                         ?.find { it.subject_id == subjectId }?.name
                     ?: ""
+
                 if (subjectId.isNullOrBlank()) {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = if (subjects !is NetworkResult.Success) {
-                                subjects.userMessage()
-                            } else {
-                                "No AI subjects available."
-                            },
+                            errorMessage = "No AI subjects available.",
                         )
                     }
                     return@coroutineScope
                 }
-                val chapters = studentRepository.chapters(subjectId)
-                if (chapters is NetworkResult.Success) {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            subjectId = subjectId,
-                            subjectTitle = subjectTitle,
-                            stats = (dashboard as? NetworkResult.Success)?.data
-                                ?.let(StudentUiMappers::chapterStats)
-                                ?: SubjectChapterStats("0%", "0%", "0", "0"),
-                            chapters = StudentUiMappers.chapters(chapters.data),
-                        )
+
+                val chDeferred = chaptersDeferred ?: async {
+                    studentRepository.chapters(subjectId)
+                }
+
+                // Handle chapters as soon as ready
+                launch {
+                    val chapters = chDeferred.await()
+                    if (chapters is NetworkResult.Success) {
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                subjectId = subjectId,
+                                subjectTitle = subjectTitle.ifBlank { it.subjectTitle },
+                                chapters = StudentUiMappers.chapters(chapters.data),
+                            )
+                        }
+                        val activeChapterIds = chapters.data.filter { it.is_active }.map { it.id }
+                        if (activeChapterIds.isNotEmpty()) {
+                            studentRepository.prefetchAiChat(activeChapterIds)
+                        }
+                    } else {
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                errorMessage = if (_uiState.value.chapters.isEmpty()) chapters.userMessage() else null,
+                            )
+                        }
                     }
-                    val activeChapterIds = chapters.data.filter { it.is_active }.map { it.id }
-                    if (activeChapterIds.isNotEmpty()) {
-                        studentRepository.prefetchAiChat(activeChapterIds)
-                    }
-                } else {
-                    _uiState.update {
-                        it.copy(isLoading = false, errorMessage = chapters.userMessage())
+                }
+
+                // Handle stats as soon as ready
+                launch {
+                    val dashboard = dashboardDeferred.await()
+                    if (dashboard is NetworkResult.Success) {
+                        _uiState.update {
+                            it.copy(stats = StudentUiMappers.chapterStats(dashboard.data))
+                        }
                     }
                 }
             }

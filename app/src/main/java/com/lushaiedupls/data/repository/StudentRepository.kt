@@ -47,13 +47,29 @@ import com.lushaiedupls.data.remote.dto.StudentAttendanceSummary
 import com.lushaiedupls.data.remote.dto.StudentOverview
 import com.lushaiedupls.data.remote.dto.SubjectOut
 import com.lushaiedupls.data.remote.dto.SubjectPracticeQuestionsResponse
+import com.lushaiedupls.data.mapper.StudentUiMappers
 import com.lushaiedupls.data.remote.dto.TeachingUnitOut
 import com.lushaiedupls.data.remote.dto.UnreadCountResponse
 import com.lushaiedupls.data.remote.dto.UserOut
 import com.lushaiedupls.data.remote.dto.WeekView
 import com.lushaiedupls.data.remote.safeApiCall
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -71,29 +87,194 @@ class StudentRepository(
     private val parentApi: ParentApi,
     private val teachingUnitsApi: TeachingUnitsApi,
     private val deviceIdProvider: DeviceIdProvider,
-) {    suspend fun overview(month: String? = null): NetworkResult<StudentOverview> =
-        safeApiCall { overviewApi.studentOverview(month) }
+) {
+    private val inFlightRequests = ConcurrentHashMap<String, Deferred<Any?>>()
+    private val inFlightMutex = Mutex()
 
-    suspend fun attendanceSummary(month: String? = null): NetworkResult<StudentAttendanceSummary> =
-        safeApiCall { attendanceApi.mySummary(month) }
+    private suspend fun <T> singleFlight(key: String, block: suspend () -> NetworkResult<T>): NetworkResult<T> {
+        val pair: Pair<Deferred<Any?>, Boolean> = inFlightMutex.withLock {
+            val existing = inFlightRequests[key]
+            if (existing != null) {
+                Pair(existing, false)
+            } else {
+                val newDeferred = CompletableDeferred<Any?>()
+                inFlightRequests[key] = newDeferred
+                Pair(newDeferred, true)
+            }
+        }
+        val deferred = pair.first
+        val isLeader = pair.second
 
-    suspend fun attendanceCalendar(month: String? = null): NetworkResult<AttendanceCalendar> =
-        safeApiCall { attendanceApi.myCalendar(month) }
+        if (!isLeader) {
+            @Suppress("UNCHECKED_CAST")
+            return deferred.await() as NetworkResult<T>
+        }
+
+        val leaderDeferred = deferred as CompletableDeferred<Any?>
+        try {
+            val result = block()
+            leaderDeferred.complete(result)
+            return result
+        } catch (e: Throwable) {
+            leaderDeferred.completeExceptionally(e)
+            throw e
+        } finally {
+            inFlightMutex.withLock {
+                inFlightRequests.remove(key)
+            }
+        }
+    }
+
+    private val overviewCache = ConcurrentHashMap<String, StudentOverview>()
+    private val attendanceSummaryCache = ConcurrentHashMap<String, StudentAttendanceSummary>()
+    private val attendanceCalendarCache = ConcurrentHashMap<String, AttendanceCalendar>()
+    private val timetableCache = ConcurrentHashMap<String, WeekView>()
+    private val chaptersCache = ConcurrentHashMap<String, List<ChapterListItem>>()
+    private val chapterCache = ConcurrentHashMap<String, ChapterOut>()
+    private val sectionCache = ConcurrentHashMap<String, SectionOut>()
+    private val chatHistoryCache = ConcurrentHashMap<String, ChatHistoryResponse>()
+    private val chatIntroCache = ConcurrentHashMap<String, ChatResponse>()
+    private val questionsListCache = ConcurrentHashMap<String, SubjectPracticeQuestionsResponse>()
+    private val examPrepPyqsCache = ConcurrentHashMap<String, ExamPrepPyqsResponse>()
+    private val chapterAttachmentsCache = ConcurrentHashMap<String, List<ChapterAttachmentOut>>()
+    private val aiSubjectsCache = AtomicReference<List<AiSubjectOut>?>()
+    private val teachingUnitsCache = AtomicReference<List<TeachingUnitOut>?>()
+    private val progressDashboardCache = AtomicReference<ProgressDashboardResponse?>()
+    private val progressResumeCache = AtomicReference<ResumeResponse?>()
+    private val hasCachedResume = AtomicBoolean(false)
+    private val quizHistoryCache = AtomicReference<List<QuizAttemptSummary>?>()
+    private val isPrefetchingAiLearn = AtomicBoolean(false)
+
+    fun getCachedOverview(month: String? = null): StudentOverview? = overviewCache[month.orEmpty()]
+    fun getCachedAiSubjects(): List<AiSubjectOut>? = aiSubjectsCache.get()
+    fun getCachedTeachingUnits(): List<TeachingUnitOut>? = teachingUnitsCache.get()
+    fun getCachedProgressDashboard(): ProgressDashboardResponse? = progressDashboardCache.get()
+    fun getCachedChapters(subjectId: String): List<ChapterListItem>? = chaptersCache[subjectId]
+    fun getCachedChapter(chapterId: String): ChapterOut? = chapterCache[chapterId]
+    fun getCachedChatHistory(chapterId: String): ChatHistoryResponse? = chatHistoryCache[chapterId]
+    fun getCachedChatIntro(chapterId: String, language: String): ChatResponse? = chatIntroCache["${chapterId}_$language"]
+    fun getCachedQuestionsList(subjectId: String): SubjectPracticeQuestionsResponse? = questionsListCache[subjectId]
+    fun getCachedAttachments(chapterId: String): List<ChapterAttachmentOut>? = chapterAttachmentsCache[chapterId]
+    fun getCachedExamPrepPyqs(
+        chapterId: String,
+        sectionId: String? = null,
+        chapterScope: Boolean? = null,
+        examCodes: String? = null,
+    ): ExamPrepPyqsResponse? = examPrepPyqsCache["${chapterId}_${sectionId}_${chapterScope}_${examCodes}"]
+    fun getCachedQuizHistory(): List<QuizAttemptSummary>? = quizHistoryCache.get()
+
+    private val _unreadNotificationCount = MutableStateFlow<Int?>(null)
+    val unreadNotificationCount: StateFlow<Int?> = _unreadNotificationCount.asStateFlow()
+
+    fun setUnreadNotificationCount(count: Int) {
+        val nonNegative = count.coerceAtLeast(0)
+        _unreadNotificationCount.value = nonNegative
+        overviewCache[""]?.let { current ->
+            overviewCache[""] = current.copy(unread_notifications = nonNegative)
+        }
+    }
+
+    fun decrementUnreadNotificationCount() {
+        val current = _unreadNotificationCount.value ?: 1
+        setUnreadNotificationCount(current - 1)
+    }
+
+    fun clearAiCache() {
+        overviewCache.clear()
+        attendanceSummaryCache.clear()
+        attendanceCalendarCache.clear()
+        timetableCache.clear()
+        chaptersCache.clear()
+        chapterCache.clear()
+        sectionCache.clear()
+        chatHistoryCache.clear()
+        chatIntroCache.clear()
+        questionsListCache.clear()
+        examPrepPyqsCache.clear()
+        chapterAttachmentsCache.clear()
+        aiSubjectsCache.set(null)
+        teachingUnitsCache.set(null)
+        progressDashboardCache.set(null)
+        progressResumeCache.set(null)
+        hasCachedResume.set(false)
+        quizHistoryCache.set(null)
+    }
+
+    suspend fun overview(month: String? = null, forceRefresh: Boolean = false): NetworkResult<StudentOverview> {
+        val key = month.orEmpty()
+        if (!forceRefresh) {
+            overviewCache[key]?.let { return NetworkResult.Success(it) }
+        }
+        return singleFlight("overview_$key") {
+            val res = safeApiCall { overviewApi.studentOverview(month) }
+            if (res is NetworkResult.Success) {
+                overviewCache[key] = res.data
+                _unreadNotificationCount.value = res.data.unread_notifications
+            }
+            res
+        }
+    }
+
+    suspend fun attendanceSummary(month: String? = null, forceRefresh: Boolean = false): NetworkResult<StudentAttendanceSummary> {
+        val key = month.orEmpty()
+        if (!forceRefresh) {
+            attendanceSummaryCache[key]?.let { return NetworkResult.Success(it) }
+        }
+        return singleFlight("att_summary_$key") {
+            val res = safeApiCall { attendanceApi.mySummary(month) }
+            if (res is NetworkResult.Success) {
+                attendanceSummaryCache[key] = res.data
+            }
+            res
+        }
+    }
+
+    suspend fun attendanceCalendar(month: String? = null, forceRefresh: Boolean = false): NetworkResult<AttendanceCalendar> {
+        val key = month.orEmpty()
+        if (!forceRefresh) {
+            attendanceCalendarCache[key]?.let { return NetworkResult.Success(it) }
+        }
+        return singleFlight("att_cal_$key") {
+            val res = safeApiCall { attendanceApi.myCalendar(month) }
+            if (res is NetworkResult.Success) {
+                attendanceCalendarCache[key] = res.data
+            }
+            res
+        }
+    }
 
     suspend fun calendarEvents(from: String? = null, to: String? = null): NetworkResult<List<CalendarEventOut>> =
         safeApiCall { calendarApi.events(from, to) }
 
-    suspend fun timetable(teachingUnitId: String? = null): NetworkResult<WeekView> =
-        safeApiCall { timetableApi.myTimetable(teachingUnitId) }
+    suspend fun timetable(teachingUnitId: String? = null, forceRefresh: Boolean = false): NetworkResult<WeekView> {
+        val key = teachingUnitId.orEmpty()
+        if (!forceRefresh) {
+            timetableCache[key]?.let { return NetworkResult.Success(it) }
+        }
+        return singleFlight("timetable_$key") {
+            val res = safeApiCall { timetableApi.myTimetable(teachingUnitId) }
+            if (res is NetworkResult.Success) {
+                timetableCache[key] = res.data
+            }
+            res
+        }
+    }
 
-    suspend fun notifications(limit: Int = 50, offset: Int = 0): NetworkResult<List<NotificationOut>> =
-        safeApiCall { notificationsApi.list(limit, offset) }
+    suspend fun notifications(limit: Int = 50, offset: Int = 0): NetworkResult<List<NotificationOut>> {
+        val res = safeApiCall { notificationsApi.list(limit, offset) }
+        if (res is NetworkResult.Success) {
+            setUnreadNotificationCount(res.data.count { !it.is_read })
+        }
+        return res
+    }
 
     suspend fun unreadCount(): NetworkResult<UnreadCountResponse> =
         safeApiCall { notificationsApi.unreadCount() }
 
-    suspend fun markNotificationRead(id: String): NetworkResult<MessageResponse> =
-        safeApiCall { notificationsApi.markRead(id) }
+    suspend fun markNotificationRead(id: String): NetworkResult<MessageResponse> {
+        decrementUnreadNotificationCount()
+        return safeApiCall { notificationsApi.markRead(id) }
+    }
 
     suspend fun profile(): NetworkResult<UserOut> = safeApiCall { meApi.me() }
 
@@ -160,15 +341,6 @@ class StudentRepository(
         return safeApiCall { meApi.avatarCommit(AvatarCommitRequest(object_key = presign.object_key)) }
     }
 
-    private val chaptersCache = java.util.concurrent.ConcurrentHashMap<String, List<ChapterListItem>>()
-    private val chapterCache = java.util.concurrent.ConcurrentHashMap<String, ChapterOut>()
-    private val sectionCache = java.util.concurrent.ConcurrentHashMap<String, SectionOut>()
-    private val chatHistoryCache = java.util.concurrent.ConcurrentHashMap<String, ChatHistoryResponse>()
-    private val chatIntroCache = java.util.concurrent.ConcurrentHashMap<String, ChatResponse>()
-    private val questionsListCache = java.util.concurrent.ConcurrentHashMap<String, SubjectPracticeQuestionsResponse>()
-    private val examPrepPyqsCache = java.util.concurrent.ConcurrentHashMap<String, ExamPrepPyqsResponse>()
-    private val chapterAttachmentsCache = java.util.concurrent.ConcurrentHashMap<String, List<ChapterAttachmentOut>>()
-
     suspend fun classes(): NetworkResult<List<ClassOut>> = safeApiCall { classesApi.listClasses() }
 
     suspend fun questionsList(
@@ -178,11 +350,13 @@ class StudentRepository(
         if (!forceRefresh) {
             questionsListCache[subjectId]?.let { return NetworkResult.Success(it) }
         }
-        val result = safeApiCall { aiApi.questionsList(subjectId) }
-        if (result is NetworkResult.Success) {
-            questionsListCache[subjectId] = result.data
+        return singleFlight("questions_$subjectId") {
+            val result = safeApiCall { aiApi.questionsList(subjectId) }
+            if (result is NetworkResult.Success) {
+                questionsListCache[subjectId] = result.data
+            }
+            result
         }
-        return result
     }
 
     suspend fun chapterAttachments(
@@ -192,11 +366,13 @@ class StudentRepository(
         if (!forceRefresh) {
             chapterAttachmentsCache[chapterId]?.let { return NetworkResult.Success(it) }
         }
-        val result = safeApiCall { aiApi.chapterAttachments(chapterId) }
-        if (result is NetworkResult.Success) {
-            chapterAttachmentsCache[chapterId] = result.data
+        return singleFlight("attachments_$chapterId") {
+            val result = safeApiCall { aiApi.chapterAttachments(chapterId) }
+            if (result is NetworkResult.Success) {
+                chapterAttachmentsCache[chapterId] = result.data
+            }
+            result
         }
-        return result
     }
 
     suspend fun examPrepPyqs(
@@ -210,65 +386,115 @@ class StudentRepository(
         if (!forceRefresh) {
             examPrepPyqsCache[cacheKey]?.let { return NetworkResult.Success(it) }
         }
-        val result = safeApiCall {
-            aiApi.examPrepPyqs(
-                chapterId = chapterId,
-                sectionId = sectionId,
-                chapterScope = chapterScope,
-                examCodes = examCodes,
-            )
+        return singleFlight("pyqs_$cacheKey") {
+            val result = safeApiCall {
+                aiApi.examPrepPyqs(
+                    chapterId = chapterId,
+                    sectionId = sectionId,
+                    chapterScope = chapterScope,
+                    examCodes = examCodes,
+                )
+            }
+            if (result is NetworkResult.Success) {
+                examPrepPyqsCache[cacheKey] = result.data
+            }
+            result
         }
-        if (result is NetworkResult.Success) {
-            examPrepPyqsCache[cacheKey] = result.data
-        }
-        return result
     }
 
     suspend fun subjects(classId: String): NetworkResult<List<SubjectOut>> =
         safeApiCall { classesApi.listSubjects(classId) }
 
-    suspend fun aiSubjects(): NetworkResult<List<AiSubjectOut>> = safeApiCall { aiApi.subjects() }
+    suspend fun aiSubjects(forceRefresh: Boolean = false): NetworkResult<List<AiSubjectOut>> {
+        if (!forceRefresh) {
+            aiSubjectsCache.get()?.let { return NetworkResult.Success(it) }
+        }
+        return singleFlight("ai_subjects") {
+            val result = safeApiCall { aiApi.subjects() }
+            if (result is NetworkResult.Success) {
+                aiSubjectsCache.set(result.data)
+            }
+            result
+        }
+    }
 
-    suspend fun teachingUnits(): NetworkResult<List<TeachingUnitOut>> =
-        safeApiCall { teachingUnitsApi.list() }
+    suspend fun teachingUnits(forceRefresh: Boolean = false): NetworkResult<List<TeachingUnitOut>> {
+        if (!forceRefresh) {
+            teachingUnitsCache.get()?.let { return NetworkResult.Success(it) }
+        }
+        return singleFlight("teaching_units") {
+            val result = safeApiCall { teachingUnitsApi.list() }
+            if (result is NetworkResult.Success) {
+                teachingUnitsCache.set(result.data)
+            }
+            result
+        }
+    }
 
-    suspend fun progressDashboard(): NetworkResult<ProgressDashboardResponse> =
-        safeApiCall { aiApi.progressDashboard() }
+    suspend fun progressDashboard(forceRefresh: Boolean = false): NetworkResult<ProgressDashboardResponse> {
+        if (!forceRefresh) {
+            progressDashboardCache.get()?.let { return NetworkResult.Success(it) }
+        }
+        return singleFlight("progress_dashboard") {
+            val result = safeApiCall { aiApi.progressDashboard() }
+            if (result is NetworkResult.Success) {
+                progressDashboardCache.set(result.data)
+            }
+            result
+        }
+    }
 
-    suspend fun progressResume(): NetworkResult<ResumeResponse?> =
-        safeApiCall { aiApi.progressResume() }
+    suspend fun progressResume(forceRefresh: Boolean = false): NetworkResult<ResumeResponse?> {
+        if (!forceRefresh && hasCachedResume.get()) {
+            return NetworkResult.Success(progressResumeCache.get())
+        }
+        return singleFlight("progress_resume") {
+            val result = safeApiCall { aiApi.progressResume() }
+            if (result is NetworkResult.Success) {
+                progressResumeCache.set(result.data)
+                hasCachedResume.set(true)
+            }
+            result
+        }
+    }
 
     suspend fun chapters(subjectId: String, forceRefresh: Boolean = false): NetworkResult<List<ChapterListItem>> {
         if (!forceRefresh) {
             chaptersCache[subjectId]?.let { return NetworkResult.Success(it) }
         }
-        val result = safeApiCall { aiApi.chapters(subjectId) }
-        if (result is NetworkResult.Success) {
-            chaptersCache[subjectId] = result.data
+        return singleFlight("chapters_$subjectId") {
+            val result = safeApiCall { aiApi.chapters(subjectId) }
+            if (result is NetworkResult.Success) {
+                chaptersCache[subjectId] = result.data
+            }
+            result
         }
-        return result
     }
 
     suspend fun chapter(chapterId: String, forceRefresh: Boolean = false): NetworkResult<ChapterOut> {
         if (!forceRefresh) {
             chapterCache[chapterId]?.let { return NetworkResult.Success(it) }
         }
-        val result = safeApiCall { aiApi.chapter(chapterId) }
-        if (result is NetworkResult.Success) {
-            chapterCache[chapterId] = result.data
+        return singleFlight("chapter_$chapterId") {
+            val result = safeApiCall { aiApi.chapter(chapterId) }
+            if (result is NetworkResult.Success) {
+                chapterCache[chapterId] = result.data
+            }
+            result
         }
-        return result
     }
 
     suspend fun section(sectionId: String, forceRefresh: Boolean = false): NetworkResult<SectionOut> {
         if (!forceRefresh) {
             sectionCache[sectionId]?.let { return NetworkResult.Success(it) }
         }
-        val result = safeApiCall { aiApi.section(sectionId) }
-        if (result is NetworkResult.Success) {
-            sectionCache[sectionId] = result.data
+        return singleFlight("section_$sectionId") {
+            val result = safeApiCall { aiApi.section(sectionId) }
+            if (result is NetworkResult.Success) {
+                sectionCache[sectionId] = result.data
+            }
+            result
         }
-        return result
     }
 
     suspend fun chatIntro(
@@ -280,22 +506,26 @@ class StudentRepository(
         if (!forceRefresh) {
             chatIntroCache[key]?.let { return NetworkResult.Success(it) }
         }
-        val result = safeApiCall { aiApi.intro(chapterId, language) }
-        if (result is NetworkResult.Success) {
-            chatIntroCache[key] = result.data
+        return singleFlight("chat_intro_$key") {
+            val result = safeApiCall { aiApi.intro(chapterId, language) }
+            if (result is NetworkResult.Success) {
+                chatIntroCache[key] = result.data
+            }
+            result
         }
-        return result
     }
 
     suspend fun chatHistory(chapterId: String, forceRefresh: Boolean = false): NetworkResult<ChatHistoryResponse> {
         if (!forceRefresh) {
             chatHistoryCache[chapterId]?.let { return NetworkResult.Success(it) }
         }
-        val result = safeApiCall { aiApi.history(chapterId) }
-        if (result is NetworkResult.Success) {
-            chatHistoryCache[chapterId] = result.data
+        return singleFlight("chat_history_$chapterId") {
+            val result = safeApiCall { aiApi.history(chapterId) }
+            if (result is NetworkResult.Success) {
+                chatHistoryCache[chapterId] = result.data
+            }
+            result
         }
-        return result
     }
 
     suspend fun prefetchAiChat(chapterIds: List<String>, language: String = "en") {
@@ -315,6 +545,121 @@ class StudentRepository(
             }
         } catch (_: Exception) {
             // Best effort prefetch
+        }
+    }
+
+    /**
+     * Highly optimized two-tier prefetching:
+     * - Tier 1 (Immediate / High-Priority): Warms top-level AI metadata and the first/resume chapter
+     *   so AI Hub and initial chats open instantly (< 200ms).
+     * - Tier 2 (Background / High-Concurrency): Preloads all remaining subjects, chapters, outline
+     *   sections, attachments, and exam prep PYQs using high parallel limits.
+     */
+    suspend fun prefetchAiLearn(language: String = "en") {
+        if (!isPrefetchingAiLearn.compareAndSet(false, true)) {
+            return
+        }
+        try {
+            supervisorScope {
+                // Tier 1: Concurrently fetch top-level AI hub metadata
+                val dashDeferred = async { progressDashboard() }
+                val aiSubDeferred = async { aiSubjects() }
+                val unitsDeferred = async { teachingUnits() }
+                val resumeDeferred = async { progressResume() }
+                val quizHistDeferred = async { quizHistory() }
+
+                val aiSubRes = aiSubDeferred.await()
+                val unitsRes = unitsDeferred.await()
+                val resumeRes = resumeDeferred.await()
+                dashDeferred.await()
+                quizHistDeferred.await()
+
+                // Extract all distinct subjects
+                val aiSubjects = (aiSubRes as? NetworkResult.Success)?.data.orEmpty()
+                val units = (unitsRes as? NetworkResult.Success)?.data.orEmpty()
+                val fromAi = StudentUiMappers.aiSubjects(aiSubjects)
+                val fromUnits = StudentUiMappers.teachingUnitSubjects(units)
+                val allSubjects = (fromAi + fromUnits)
+                    .filter { it.name.isNotBlank() && it.id.isNotBlank() }
+                    .distinctBy { it.id }
+
+                val resumeChapterId = (resumeRes as? NetworkResult.Success)?.data?.chapter_id
+                val firstSubjectId = allSubjects.firstOrNull()?.id
+
+                // Priority: Warm first subject's active chapters and resume chapter first
+                if (!firstSubjectId.isNullOrBlank()) {
+                    launch {
+                        val chResult = chapters(firstSubjectId)
+                        if (chResult is NetworkResult.Success) {
+                            val active = chResult.data.filter { it.is_active || it.id == resumeChapterId }.take(2)
+                            active.forEach { ch ->
+                                launch { chapter(ch.id) }
+                                launch { chapterAttachments(ch.id) }
+                                launch { examPrepPyqs(ch.id) }
+                                launch {
+                                    val h = chatHistory(ch.id)
+                                    if (h is NetworkResult.Success && h.data.messages.isEmpty()) {
+                                        chatIntro(ch.id, language)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                val semaphore = Semaphore(permits = 16)
+
+                // Tier 2: Preload remaining subjects, chapters, questions, attachments, and PYQs in parallel
+                allSubjects.forEach { subject ->
+                    launch {
+                        semaphore.withPermit {
+                            questionsList(subject.id)
+                        }
+                    }
+                    launch {
+                        val chResult = semaphore.withPermit {
+                            chapters(subject.id)
+                        }
+                        if (chResult is NetworkResult.Success) {
+                            val chapters = chResult.data
+                            val activeChapters = chapters.filter { it.is_active || it.id == resumeChapterId }
+
+                            activeChapters.forEach { chapterItem ->
+                                launch {
+                                    val cResult = semaphore.withPermit { chapter(chapterItem.id) }
+                                    if (cResult is NetworkResult.Success) {
+                                        val flatSections = StudentUiMappers.flattenSections(cResult.data.sections)
+                                        flatSections.forEach { sec ->
+                                            if (sec.content_blocks.isEmpty()) {
+                                                launch {
+                                                    semaphore.withPermit { section(sec.id) }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                launch {
+                                    semaphore.withPermit { chapterAttachments(chapterItem.id) }
+                                }
+                                launch {
+                                    semaphore.withPermit { examPrepPyqs(chapterId = chapterItem.id) }
+                                    semaphore.withPermit { examPrepPyqs(chapterId = chapterItem.id, chapterScope = true) }
+                                }
+                                launch {
+                                    val histResult = semaphore.withPermit { chatHistory(chapterItem.id) }
+                                    if (histResult is NetworkResult.Success && histResult.data.messages.isEmpty()) {
+                                        semaphore.withPermit { chatIntro(chapterItem.id, language) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            // Best effort background prefetch
+        } finally {
+            isPrefetchingAiLearn.set(false)
         }
     }
 
@@ -348,21 +693,33 @@ class StudentRepository(
     suspend fun quizSection(sectionId: String): NetworkResult<QuizStartResponse> =
         safeApiCall { aiApi.quizSection(sectionId) }
 
-    suspend fun quizHistory(): NetworkResult<List<QuizAttemptSummary>> =
-        safeApiCall { aiApi.quizHistory() }
+    suspend fun quizHistory(forceRefresh: Boolean = false): NetworkResult<List<QuizAttemptSummary>> {
+        if (!forceRefresh) {
+            quizHistoryCache.get()?.let { return NetworkResult.Success(it) }
+        }
+        val result = safeApiCall { aiApi.quizHistory() }
+        if (result is NetworkResult.Success) {
+            quizHistoryCache.set(result.data)
+        }
+        return result
+    }
 
     suspend fun submitQuiz(
         attemptId: String,
         answers: List<AnswerSubmission>,
         timeTakenSeconds: Int? = null,
-    ): NetworkResult<QuizSubmitResponse> = safeApiCall {
-        aiApi.quizSubmit(
-            QuizSubmitRequest(
-                attempt_id = attemptId,
-                answers = answers,
-                time_taken_seconds = timeTakenSeconds,
-            ),
-        )
+    ): NetworkResult<QuizSubmitResponse> {
+        quizHistoryCache.set(null)
+        progressDashboardCache.set(null)
+        return safeApiCall {
+            aiApi.quizSubmit(
+                QuizSubmitRequest(
+                    attempt_id = attemptId,
+                    answers = answers,
+                    time_taken_seconds = timeTakenSeconds,
+                ),
+            )
+        }
     }
 
     suspend fun myParents(): NetworkResult<List<ParentLinkOut>> =

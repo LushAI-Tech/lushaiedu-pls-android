@@ -1,5 +1,14 @@
 package com.lushaiedupls.ui.student.calendar
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,6 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,22 +32,36 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lushaiedupls.R
@@ -47,6 +71,7 @@ import com.lushaiedupls.data.mock.StudentMockRepository
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
+import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
@@ -59,11 +84,10 @@ import java.time.format.TextStyle
 import java.util.Locale
 
 private val LegendShape = RoundedCornerShape(14.dp)
-private val CalendarShape = RoundedCornerShape(28.dp)
+private val CalendarShape = RoundedCornerShape(22.dp)
 private val HolidayRed = Color(0xFFEF4444)
 private val ExamOrange = Color(0xFFF97316)
 private val EventBlue = Color(0xFF3B82F6)
-private val SelectedGold = Color(0xFFE8A317)
 private val DowGray = Color(0xFF9CA3AF)
 
 @Composable
@@ -153,10 +177,12 @@ fun StudentCalendarScreen(
         CalendarCard(
             month = uiState.visibleMonth,
             selectedDay = uiState.selectedDay,
+            selectedDayEvents = uiState.selectedDayEvents,
             dayMarks = uiState.dayMarks,
             onPreviousMonth = onPreviousMonth,
             onNextMonth = onNextMonth,
             onSelectDay = onSelectDay,
+            onDismissDay = { onSelectDay(-1) },
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -168,15 +194,6 @@ fun StudentCalendarScreen(
             fontSize = 13.sp,
             fontFamily = FontFamily.SansSerif,
         )
-
-        if (uiState.selectedDay != null) {
-            Spacer(modifier = Modifier.height(20.dp))
-            SelectedDayEvents(
-                month = uiState.visibleMonth,
-                day = uiState.selectedDay,
-                events = uiState.selectedDayEvents,
-            )
-        }
     }
 }
 
@@ -185,8 +202,8 @@ private fun LegendCard() {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, BorderGray.copy(alpha = 0.8f), LegendShape)
-            .background(BgWhite, LegendShape)
+            .clip(LegendShape)
+            .background(BgLight)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
@@ -220,18 +237,20 @@ private fun LegendItem(color: Color, label: String) {
 private fun CalendarCard(
     month: YearMonth,
     selectedDay: Int?,
+    selectedDayEvents: List<CalendarEvent>,
     dayMarks: Map<Int, AcademicEventType>,
     onPreviousMonth: () -> Unit,
     onNextMonth: () -> Unit,
     onSelectDay: (Int) -> Unit,
+    onDismissDay: () -> Unit,
 ) {
     val monthLabel = "${month.month.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} ${month.year}"
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, BorderGray.copy(alpha = 0.75f), CalendarShape)
-            .background(BgWhite, CalendarShape)
+            .clip(CalendarShape)
+            .background(BgLight)
             .padding(horizontal = 14.dp, vertical = 18.dp),
     ) {
         Row(
@@ -319,12 +338,22 @@ private fun CalendarCard(
                         contentAlignment = Alignment.Center,
                     ) {
                         if (day != null) {
+                            val isSelected = selectedDay == day
                             CalendarDayCell(
                                 day = day,
-                                selected = selectedDay == day,
+                                selected = isSelected,
                                 mark = dayMarks[day],
-                                onClick = { onSelectDay(day) },
+                                onClick = {
+                                    if (isSelected) onDismissDay() else onSelectDay(day)
+                                },
                             )
+                            if (isSelected) {
+                                DayEventPopover(
+                                    day = day,
+                                    events = selectedDayEvents,
+                                    onDismiss = onDismissDay,
+                                )
+                            }
                         }
                     }
                 }
@@ -340,6 +369,11 @@ private fun CalendarDayCell(
     mark: AcademicEventType?,
     onClick: () -> Unit,
 ) {
+    val dayColor = when {
+        selected && mark != null -> colorFor(mark)
+        selected -> BrandOrange
+        else -> BrandBlack
+    }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -350,8 +384,8 @@ private fun CalendarDayCell(
     ) {
         Text(
             text = day.toString(),
-            color = if (selected) SelectedGold else BrandBlack,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = dayColor,
+            fontWeight = if (selected || mark != null) FontWeight.Bold else FontWeight.Normal,
             fontSize = 15.sp,
             fontFamily = FontFamily.SansSerif,
         )
@@ -372,77 +406,140 @@ private fun CalendarDayCell(
     }
 }
 
-private fun colorFor(type: AcademicEventType): Color = when (type) {
-    AcademicEventType.Holiday -> HolidayRed
-    AcademicEventType.Exam -> ExamOrange
-    AcademicEventType.Event -> EventBlue
-}
-
 @Composable
-private fun SelectedDayEvents(
-    month: YearMonth,
+private fun DayEventPopover(
     day: Int,
     events: List<CalendarEvent>,
+    onDismiss: () -> Unit,
 ) {
-    val dateLabel = "${month.month.getDisplayName(TextStyle.SHORT, Locale.ENGLISH)} $day, ${month.year}"
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = stringResource(R.string.calendar_events_for, dateLabel),
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 15.sp,
-            color = BrandBlack,
-            fontFamily = FontFamily.SansSerif,
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        if (events.isEmpty()) {
-            Text(
-                text = stringResource(R.string.calendar_no_events),
-                color = TextSecondary,
-                fontSize = 13.sp,
-                fontFamily = FontFamily.SansSerif,
-            )
-        } else {
-            events.forEach { event ->
-                EventRow(event = event)
-                Spacer(modifier = Modifier.height(8.dp))
+    var transformOrigin by remember { mutableStateOf(TransformOrigin(0.5f, 1f)) }
+
+    val positionProvider = remember {
+        object : PopupPositionProvider {
+            override fun calculatePosition(
+                anchorBounds: IntRect,
+                windowSize: IntSize,
+                layoutDirection: LayoutDirection,
+                popupContentSize: IntSize,
+            ): IntOffset {
+                val horizontalMargin = 16
+                val idealX = anchorBounds.left + (anchorBounds.width - popupContentSize.width) / 2
+                val clampedX = idealX.coerceIn(
+                    horizontalMargin,
+                    (windowSize.width - popupContentSize.width - horizontalMargin).coerceAtLeast(horizontalMargin),
+                )
+
+                val anchorCenterX = anchorBounds.left + anchorBounds.width / 2f
+                val pivotX = if (popupContentSize.width > 0) {
+                    ((anchorCenterX - clampedX) / popupContentSize.width.toFloat()).coerceIn(0.05f, 0.95f)
+                } else 0.5f
+
+                val spaceAbove = anchorBounds.top
+                val spaceBelow = windowSize.height - anchorBounds.bottom
+                val placeAbove = spaceAbove >= popupContentSize.height + 6 || spaceAbove >= spaceBelow
+                val pivotY = if (placeAbove) 1f else 0f
+
+                transformOrigin = TransformOrigin(pivotX, pivotY)
+
+                val y = if (placeAbove) {
+                    (anchorBounds.top - popupContentSize.height - 6).coerceAtLeast(6)
+                } else {
+                    (anchorBounds.bottom + 6).coerceAtMost(windowSize.height - popupContentSize.height - 6)
+                }
+                return IntOffset(clampedX, y)
+            }
+        }
+    }
+
+    Popup(
+        popupPositionProvider = positionProvider,
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(
+            focusable = true,
+            dismissOnClickOutside = true,
+            dismissOnBackPress = true,
+        ),
+    ) {
+        var visible by remember { mutableStateOf(false) }
+        LaunchedEffect(day) {
+            visible = true
+        }
+
+        AnimatedVisibility(
+            visible = visible,
+            enter = scaleIn(
+                initialScale = 0.15f,
+                transformOrigin = transformOrigin,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium,
+                ),
+            ) + fadeIn(animationSpec = tween(150)),
+            exit = scaleOut(
+                targetScale = 0.15f,
+                transformOrigin = transformOrigin,
+                animationSpec = tween(120),
+            ) + fadeOut(animationSpec = tween(120)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .widthIn(min = 100.dp, max = 200.dp)
+                    .shadow(8.dp, RoundedCornerShape(12.dp), spotColor = Color(0x2B000000))
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(BgWhite)
+                    .border(1.dp, BorderGray.copy(alpha = 0.85f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
+            ) {
+                if (events.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.calendar_no_events),
+                        color = TextSecondary,
+                        fontSize = 11.5.sp,
+                        fontFamily = FontFamily.SansSerif,
+                    )
+                } else {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        events.forEach { event ->
+                            PopoverEventItem(event = event)
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun EventRow(event: CalendarEvent) {
+private fun PopoverEventItem(event: CalendarEvent) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, BorderGray.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
-                .size(10.dp)
+                .size(7.dp)
                 .clip(CircleShape)
                 .background(colorFor(event.type)),
         )
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = event.title,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 14.sp,
-                color = BrandBlack,
-                fontFamily = FontFamily.SansSerif,
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = "${event.timeLabel} · ${event.type.name}",
-                fontSize = 12.sp,
-                color = TextSecondary,
-                fontFamily = FontFamily.SansSerif,
-            )
-        }
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = event.title,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 12.sp,
+            color = BrandBlack,
+            fontFamily = FontFamily.SansSerif,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
+}
+
+private fun colorFor(type: AcademicEventType): Color = when (type) {
+    AcademicEventType.Holiday -> HolidayRed
+    AcademicEventType.Exam -> ExamOrange
+    AcademicEventType.Event -> EventBlue
 }
 
 @Preview(showBackground = true, heightDp = 900)

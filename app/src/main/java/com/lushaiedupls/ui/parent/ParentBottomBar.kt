@@ -84,10 +84,9 @@ fun ParentBottomBar(
             )
             BottomNavIcon(
                 icon = Icons.Outlined.Person,
-                label = stringResource(R.string.tab_attendance),
+                label = stringResource(R.string.parent_tab_attendance),
                 selected = selectedTab == ParentTab.Attendance,
                 onClick = { onTabSelected(ParentTab.Attendance) },
-                showCheckBadge = true,
             )
             BottomNavIcon(
                 icon = Icons.Outlined.Menu,

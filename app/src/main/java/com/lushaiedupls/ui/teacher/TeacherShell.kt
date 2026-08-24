@@ -149,6 +149,7 @@ fun TeacherShell(
                 TeacherHomeRoute(
                     userSessionStore = userSessionStore,
                     teacherRepository = teacherRepository,
+                    studentRepository = studentRepository,
                     onNotificationsClick = {
                         tabNavController.navigate(TeacherRoutes.NOTIFICATIONS)
                     },

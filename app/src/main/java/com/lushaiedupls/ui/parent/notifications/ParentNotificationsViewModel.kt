@@ -1,4 +1,4 @@
-package com.lushaiedupls.ui.student.secondary
+package com.lushaiedupls.ui.parent.notifications
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -7,6 +7,7 @@ import com.lushaiedupls.data.mapper.StudentUiMappers
 import com.lushaiedupls.data.mock.AppNotification
 import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.userMessage
+import com.lushaiedupls.data.repository.ParentRepository
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.ui.common.viewModelFactory
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,18 +16,25 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-data class NotificationsUiState(
+/**
+ * Notifications ViewModel for the Parent org.
+ *
+ * Fetches notifications via [StudentRepository.notifications] (same API endpoint as student)
+ * but updates [ParentRepository.setUnreadNotificationCount] to keep the parent's badge in sync.
+ */
+data class ParentNotificationsUiState(
     val notifications: List<AppNotification> = emptyList(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
 )
 
-class NotificationsViewModel(
+class ParentNotificationsViewModel(
     private val studentRepository: StudentRepository,
+    private val parentRepository: ParentRepository,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(NotificationsUiState(isLoading = true))
-    val uiState: StateFlow<NotificationsUiState> = _uiState.asStateFlow()
+    private val _uiState = MutableStateFlow(ParentNotificationsUiState(isLoading = true))
+    val uiState: StateFlow<ParentNotificationsUiState> = _uiState.asStateFlow()
 
     init {
         refresh()
@@ -44,7 +52,8 @@ class NotificationsViewModel(
                             notifications = list,
                         )
                     }
-                    studentRepository.setUnreadNotificationCount(list.count { it.unread })
+                    // Sync unread count badge into the parent repository
+                    parentRepository.setUnreadNotificationCount(list.count { it.unread })
                 }
                 else -> _uiState.update {
                     it.copy(isLoading = false, errorMessage = result.userMessage())
@@ -61,7 +70,8 @@ class NotificationsViewModel(
                     notifications = state.notifications.map { it.copy(unread = false) },
                 )
             }
-            studentRepository.setUnreadNotificationCount(0)
+            // Sync badge to zero
+            parentRepository.setUnreadNotificationCount(0)
             unread.forEach { n -> studentRepository.markNotificationRead(n.id) }
         }
     }
@@ -77,12 +87,18 @@ class NotificationsViewModel(
                     },
                 )
             }
+            // Only decrement if it was truly unread
+            parentRepository.decrementUnreadNotificationCount()
             studentRepository.markNotificationRead(id)
         }
     }
 
     companion object {
-        fun provideFactory(studentRepository: StudentRepository): ViewModelProvider.Factory =
-            viewModelFactory { NotificationsViewModel(studentRepository) }
+        fun provideFactory(
+            studentRepository: StudentRepository,
+            parentRepository: ParentRepository,
+        ): ViewModelProvider.Factory = viewModelFactory {
+            ParentNotificationsViewModel(studentRepository, parentRepository)
+        }
     }
 }

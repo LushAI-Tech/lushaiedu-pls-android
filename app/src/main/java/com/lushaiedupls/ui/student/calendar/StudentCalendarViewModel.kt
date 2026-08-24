@@ -40,13 +40,22 @@ class StudentCalendarViewModel(
 
     fun selectDay(day: Int) {
         _uiState.update { state ->
+            val newDay = if (state.selectedDay == day || day <= 0) null else day
             state.copy(
-                selectedDay = day,
-                selectedDayEvents = state.allEvents.filter {
-                    it.yearMonth == state.visibleMonth.toString() && it.dayOfMonth == day
+                selectedDay = newDay,
+                selectedDayEvents = if (newDay != null) {
+                    state.allEvents.filter {
+                        it.yearMonth == state.visibleMonth.toString() && it.dayOfMonth == newDay
+                    }
+                } else {
+                    emptyList()
                 },
             )
         }
+    }
+
+    fun dismissSelectedDay() {
+        _uiState.update { it.copy(selectedDay = null, selectedDayEvents = emptyList()) }
     }
 
     private fun loadMonth(month: YearMonth, selectedDay: Int? = _uiState.value.selectedDay) {

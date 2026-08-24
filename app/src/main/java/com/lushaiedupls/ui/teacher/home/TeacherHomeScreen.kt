@@ -48,6 +48,7 @@ import com.lushaiedupls.data.mock.TeacherAttendanceBlock
 import com.lushaiedupls.data.mock.TeacherGroupOutcome
 import com.lushaiedupls.data.mock.TeacherMockRepository
 import com.lushaiedupls.data.mock.TeacherPerformance
+import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.data.session.UserSessionStore
 import com.lushaiedupls.ui.common.AppTopBar
@@ -70,11 +71,12 @@ private val ExtraCardBg = Color(0xFFE8E8EA)
 fun TeacherHomeRoute(
     userSessionStore: UserSessionStore,
     teacherRepository: TeacherRepository,
+    studentRepository: StudentRepository? = null,
     onNotificationsClick: () -> Unit = {},
     onProfileClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     viewModel: TeacherHomeViewModel = viewModel(
-        factory = TeacherHomeViewModel.provideFactory(userSessionStore, teacherRepository),
+        factory = TeacherHomeViewModel.provideFactory(userSessionStore, teacherRepository, studentRepository),
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()

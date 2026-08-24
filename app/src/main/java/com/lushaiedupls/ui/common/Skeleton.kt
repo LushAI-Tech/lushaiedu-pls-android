@@ -50,6 +50,9 @@ enum class StudentSkeletonKind {
     Notifications,
     Account,
     Chat,
+    TextbookQuestions,
+    ExamPreparation,
+    Resources,
     List,
 }
 
@@ -118,6 +121,9 @@ fun StudentPageSkeleton(
             StudentSkeletonKind.Notifications -> ListSkeleton(rows = 5)
             StudentSkeletonKind.Account -> AccountSkeleton()
             StudentSkeletonKind.Chat -> ChatSkeleton()
+            StudentSkeletonKind.TextbookQuestions -> TextbookQuestionsSkeleton()
+            StudentSkeletonKind.ExamPreparation -> ExamPreparationSkeleton()
+            StudentSkeletonKind.Resources -> ResourcesSkeleton()
             StudentSkeletonKind.List -> ListSkeleton(rows = 4)
         }
     }
@@ -226,23 +232,138 @@ private fun AccountSkeleton() {
 
 @Composable
 private fun ChatSkeleton() {
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        SkeletonBox(
-            modifier = Modifier.fillMaxWidth(0.7f).height(56.dp).align(Alignment.Start),
-            shape = CardShape,
-        )
-        SkeletonBox(
-            modifier = Modifier.fillMaxWidth(0.55f).height(48.dp).align(Alignment.End),
-            shape = CardShape,
-        )
-        SkeletonBox(
-            modifier = Modifier.fillMaxWidth(0.8f).height(72.dp).align(Alignment.Start),
-            shape = CardShape,
-        )
-        SkeletonBox(
-            modifier = Modifier.fillMaxWidth(0.45f).height(40.dp).align(Alignment.End),
-            shape = CardShape,
-        )
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        // AI message with avatar
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Start,
+            verticalAlignment = Alignment.Top,
+        ) {
+            SkeletonBox(modifier = Modifier.size(32.dp), shape = CircleShape)
+            Spacer(modifier = Modifier.width(8.dp))
+            SkeletonBox(
+                modifier = Modifier.fillMaxWidth(0.75f).height(64.dp),
+                shape = RoundedCornerShape(16.dp),
+            )
+        }
+
+        // Student message
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.Top,
+        ) {
+            SkeletonBox(
+                modifier = Modifier.fillMaxWidth(0.55f).height(46.dp),
+                shape = RoundedCornerShape(16.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            SkeletonBox(modifier = Modifier.size(32.dp), shape = CircleShape)
+        }
+
+        // Detailed AI message with code/math block
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Start,
+            verticalAlignment = Alignment.Top,
+        ) {
+            SkeletonBox(modifier = Modifier.size(32.dp), shape = CircleShape)
+            Spacer(modifier = Modifier.width(8.dp))
+            Column(modifier = Modifier.fillMaxWidth(0.82f)) {
+                SkeletonBox(
+                    modifier = Modifier.fillMaxWidth().height(88.dp),
+                    shape = RoundedCornerShape(16.dp),
+                )
+            }
+        }
+
+        // Suggestion pills row
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SkeletonBox(modifier = Modifier.width(110.dp).height(32.dp), shape = PillShape)
+            SkeletonBox(modifier = Modifier.width(140.dp).height(32.dp), shape = PillShape)
+        }
+    }
+}
+
+@Composable
+private fun TextbookQuestionsSkeleton() {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        // Header
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SkeletonLine(modifier = Modifier.width(150.dp), height = 16.dp)
+            SkeletonBox(modifier = Modifier.width(64.dp).height(24.dp), shape = PillShape)
+        }
+
+        // Question cards
+        repeat(3) { index ->
+            SkeletonBox(
+                modifier = Modifier.fillMaxWidth().height(if (index == 1) 190.dp else 140.dp),
+                shape = CardShape,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExamPreparationSkeleton() {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        // Header
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SkeletonLine(modifier = Modifier.width(170.dp), height = 16.dp)
+            SkeletonBox(modifier = Modifier.width(72.dp).height(24.dp), shape = PillShape)
+        }
+
+        // PYQ cards
+        repeat(3) {
+            SkeletonBox(
+                modifier = Modifier.fillMaxWidth().height(135.dp),
+                shape = CardShape,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ResourcesSkeleton() {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        // Header
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SkeletonLine(modifier = Modifier.width(120.dp), height = 16.dp)
+            SkeletonBox(modifier = Modifier.width(56.dp).height(24.dp), shape = PillShape)
+        }
+
+        // File resource items
+        repeat(4) {
+            SkeletonBox(
+                modifier = Modifier.fillMaxWidth().height(76.dp),
+                shape = CardShape,
+            )
+        }
     }
 }
 

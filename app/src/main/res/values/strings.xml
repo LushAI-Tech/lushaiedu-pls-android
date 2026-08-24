@@ -349,6 +349,7 @@
     <string name="teacher_set_timetable_title">Set timetable</string>
     <string name="teacher_timetable_subtitle">Teaching week</string>
     <string name="teacher_timetable_empty">—</string>
+    <string name="teacher_reminder_card_title">Reminder</string>
     <string name="teacher_set_reminder">Set Reminder</string>
     <string name="teacher_set_reminder_stub">Reminder overlays arrive in a later teacher phase.</string>
     <string name="teacher_tap_to_set">Tap to set</string>
@@ -376,11 +377,12 @@
     <string name="teacher_session_room">Room</string>
     <string name="teacher_session_room_hint">e.g. A-201</string>
     <string name="teacher_clear_slot">clear slot</string>
-    <string name="teacher_session_done">Done</string>
+    <string name="teacher_session_done">Set</string>
     <string name="teacher_session_saved">Session set: %1$s · %2$s</string>
     <string name="teacher_day_detail_title">Day Detail</string>
     <string name="teacher_day_detail_subtitle">Periods Cards</string>
-    <string name="teacher_timetable_time_day">Time / Day</string>
+    <string name="teacher_timetable_day_time">Day / Time</string>
+    <string name="teacher_timetable_time_day">Day / Time</string>
     <string name="teacher_timetable_subject_label">SUBJECT</string>
     <string name="teacher_announcements_title">Announcements</string>
     <string name="teacher_announcements_subtitle">History of sent announcements</string>
@@ -435,6 +437,11 @@
     <string name="student_no_linked_parents">No parents linked yet.</string>
     <string name="student_unlink_parent">Unlink</string>
 
+    <string name="parent_menu_scan_qr">Scan QR</string>
+    <string name="parent_tab_attendance">Children</string>
+    <string name="parent_notifications_title">Notifications</string>
+    <string name="parent_menu_title">Menu</string>
+
     <string name="coming_soon_title">Coming soon</string>
     <string name="coming_soon_body">%1$s experience is not designed yet. Check back later.</string>
 
@@ -444,3 +451,4 @@
     <string name="home_refresh">Refresh session</string>
     <string name="home_sign_out">Sign out</string>
 </resources>
+

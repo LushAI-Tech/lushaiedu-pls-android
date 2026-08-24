@@ -31,6 +31,9 @@ import com.lushaiedupls.data.remote.dto.UpsertRollRequest
 import com.lushaiedupls.data.remote.dto.UserSummary
 import com.lushaiedupls.data.remote.dto.WeekView
 import com.lushaiedupls.data.remote.safeApiCall
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 class TeacherRepository(
     private val overviewApi: OverviewApi,
@@ -40,12 +43,28 @@ class TeacherRepository(
     private val timetableApi: TimetableApi,
     private val notificationsApi: NotificationsApi,
 ) {
+    private val _unreadNotificationCount = MutableStateFlow<Int?>(null)
+    val unreadNotificationCount: StateFlow<Int?> = _unreadNotificationCount.asStateFlow()
+
+    fun setUnreadNotificationCount(count: Int) {
+        _unreadNotificationCount.value = count.coerceAtLeast(0)
+    }
+
+    fun decrementUnreadNotificationCount() {
+        val current = _unreadNotificationCount.value ?: 1
+        setUnreadNotificationCount(current - 1)
+    }
+
     suspend fun overview(
         month: String? = null,
         classId: String? = null,
         topLimit: Int = 5,
-    ): NetworkResult<TeacherOverview> = safeApiCall {
-        overviewApi.teacherOverview(month, classId, topLimit)
+    ): NetworkResult<TeacherOverview> {
+        val res = safeApiCall { overviewApi.teacherOverview(month, classId, topLimit) }
+        if (res is NetworkResult.Success) {
+            _unreadNotificationCount.value = res.data.unread_notifications
+        }
+        return res
     }
 
     suspend fun teachingUnits(): NetworkResult<List<TeachingUnitOut>> =
@@ -141,14 +160,32 @@ class TeacherRepository(
     suspend fun periods(): NetworkResult<List<PeriodOut>> =
         safeApiCall { timetableApi.periods() }
 
-    suspend fun notifications(limit: Int = 50, offset: Int = 0): NetworkResult<List<NotificationOut>> =
-        safeApiCall { notificationsApi.list(limit, offset) }
+    suspend fun setSlots(
+        unitId: String,
+        slots: List<com.lushaiedupls.data.remote.dto.SlotInput>,
+    ): NetworkResult<List<com.lushaiedupls.data.remote.dto.SlotOut>> = safeApiCall {
+        timetableApi.setSlots(unitId, com.lushaiedupls.data.remote.dto.SetSlotsRequest(slots))
+    }
+
+    suspend fun deleteSlot(slotId: String): NetworkResult<MessageResponse> = safeApiCall {
+        timetableApi.deleteSlot(slotId)
+    }
+
+    suspend fun notifications(limit: Int = 50, offset: Int = 0): NetworkResult<List<NotificationOut>> {
+        val res = safeApiCall { notificationsApi.list(limit, offset) }
+        if (res is NetworkResult.Success) {
+            setUnreadNotificationCount(res.data.count { !it.is_read })
+        }
+        return res
+    }
 
     suspend fun unreadCount(): NetworkResult<UnreadCountResponse> =
         safeApiCall { notificationsApi.unreadCount() }
 
-    suspend fun markNotificationRead(id: String): NetworkResult<MessageResponse> =
-        safeApiCall { notificationsApi.markRead(id) }
+    suspend fun markNotificationRead(id: String): NetworkResult<MessageResponse> {
+        decrementUnreadNotificationCount()
+        return safeApiCall { notificationsApi.markRead(id) }
+    }
 
     suspend fun createNotification(
         title: String,

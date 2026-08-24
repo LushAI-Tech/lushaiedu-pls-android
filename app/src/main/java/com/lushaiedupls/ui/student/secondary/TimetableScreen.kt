@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -45,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lushaiedupls.R
@@ -58,13 +60,14 @@ import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
+import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.TextSecondary
 
 private val TableShape = RoundedCornerShape(14.dp)
-private val ChipBarShape = RoundedCornerShape(14.dp)
-private val ChipShape = RoundedCornerShape(50)
+private val ChipShape = RoundedCornerShape(10.dp)
+private val ChipBarShape = RoundedCornerShape(12.dp)
 private val HeaderBg = Color(0xFF4B5563)
-private val DayColWidth = 92.dp
+private val DayColWidth = 110.dp
 private val PeriodColWidth = 118.dp
 private val RowHeight = 48.dp
 private val HeaderHeight = 52.dp
@@ -79,6 +82,10 @@ fun TimetableRoute(
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    LifecycleResumeEffect(Unit) {
+        viewModel.refresh()
+        onPauseOrDispose { }
+    }
     when {
         uiState.needsApproval -> ApprovalNeededPanel(
             screenTitle = stringResource(R.string.timetable_title),
@@ -265,15 +272,16 @@ private fun WeeklyTimetableTable(
     rows: List<List<String>>,
 ) {
     val hScroll = rememberScrollState()
-    val gridLine = BorderGray
-    val headerLine = Color.White.copy(alpha = 0.35f)
+    val tableBorderColor = BorderGray
+    val cellDividerColor = Color(0xFFD1D5DB)
+    val headerLine = Color.White.copy(alpha = 0.2f)
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(3.dp, TableShape, clip = false)
+            .shadow(2.dp, TableShape, clip = false)
             .clip(TableShape)
-            .border(1.dp, gridLine, TableShape)
+            .border(1.dp, tableBorderColor, TableShape)
             .background(BgWhite),
     ) {
         Row(
@@ -292,6 +300,7 @@ private fun WeeklyTimetableTable(
                         text = stringResource(R.string.timetable_day_time),
                         modifier = Modifier.width(DayColWidth),
                         dividerColor = headerLine,
+                        bottomDividerColor = tableBorderColor,
                         showEndDivider = true,
                     )
                     timeSlots.forEachIndexed { index, slot ->
@@ -299,14 +308,15 @@ private fun WeeklyTimetableTable(
                             text = slot,
                             modifier = Modifier.width(PeriodColWidth),
                             dividerColor = headerLine,
+                            bottomDividerColor = tableBorderColor,
                             showEndDivider = index != timeSlots.lastIndex,
                             maxLines = 2,
                         )
                     }
                 }
-                HorizontalDivider(color = gridLine, thickness = 1.dp)
 
                 days.forEachIndexed { dayIndex, day ->
+                    val isLastRow = dayIndex == days.lastIndex
                     val cells = rows.getOrNull(dayIndex).orEmpty()
                     Row(
                         modifier = Modifier.height(RowHeight),
@@ -315,26 +325,29 @@ private fun WeeklyTimetableTable(
                         GridBodyCell(
                             text = day,
                             modifier = Modifier.width(DayColWidth),
-                            background = BgLight,
-                            dividerColor = gridLine,
+                            background = Color(0xFFF3F4F6),
+                            dividerColor = cellDividerColor,
                             showEndDivider = true,
+                            showBottomDivider = !isLastRow,
                             contentAlignment = Alignment.CenterStart,
-                            horizontalPadding = 10.dp,
+                            horizontalPadding = 8.dp,
+                            isDayLabel = true,
                         )
                         timeSlots.indices.forEach { col ->
+                            val cellText = cells.getOrNull(col) ?: "Off"
+                            val isOff = cellText.equals("Off", ignoreCase = true)
                             GridBodyCell(
-                                text = cells.getOrNull(col) ?: "Off",
+                                text = cellText,
                                 modifier = Modifier.width(PeriodColWidth),
-                                background = BgWhite,
-                                dividerColor = gridLine,
+                                background = if (isOff) BgWhite else Color(0xFFF4F5F7),
+                                dividerColor = cellDividerColor,
                                 showEndDivider = col != timeSlots.lastIndex,
+                                showBottomDivider = !isLastRow,
                                 contentAlignment = Alignment.Center,
                                 textAlign = TextAlign.Center,
+                                hasAccent = !isOff,
                             )
                         }
-                    }
-                    if (dayIndex != days.lastIndex) {
-                        HorizontalDivider(color = gridLine, thickness = 1.dp)
                     }
                 }
             }
@@ -347,6 +360,7 @@ private fun GridHeaderCell(
     text: String,
     modifier: Modifier = Modifier,
     dividerColor: Color,
+    bottomDividerColor: Color = BorderGray,
     showEndDivider: Boolean,
     maxLines: Int = 1,
 ) {
@@ -354,8 +368,8 @@ private fun GridHeaderCell(
         modifier = modifier
             .height(HeaderHeight)
             .drawBehind {
+                val stroke = 1.dp.toPx()
                 if (showEndDivider) {
-                    val stroke = 1.dp.toPx()
                     drawLine(
                         color = dividerColor,
                         start = Offset(size.width - stroke / 2f, 0f),
@@ -363,6 +377,12 @@ private fun GridHeaderCell(
                         strokeWidth = stroke,
                     )
                 }
+                drawLine(
+                    color = bottomDividerColor,
+                    start = Offset(0f, size.height - stroke / 2f),
+                    end = Offset(size.width, size.height - stroke / 2f),
+                    strokeWidth = stroke,
+                )
             }
             .padding(horizontal = 6.dp),
         contentAlignment = Alignment.Center,
@@ -370,8 +390,8 @@ private fun GridHeaderCell(
         Text(
             text = text,
             color = Color.White,
-            fontSize = if (maxLines > 1) 10.sp else 11.sp,
-            fontWeight = FontWeight.SemiBold,
+            fontSize = if (maxLines > 1) 10.sp else 11.5.sp,
+            fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
             fontFamily = FontFamily.SansSerif,
             lineHeight = 13.sp,
@@ -389,17 +409,21 @@ private fun GridBodyCell(
     background: Color,
     dividerColor: Color,
     showEndDivider: Boolean,
+    showBottomDivider: Boolean = true,
     contentAlignment: Alignment,
     horizontalPadding: Dp = 4.dp,
     textAlign: TextAlign = TextAlign.Start,
+    isDayLabel: Boolean = false,
+    hasAccent: Boolean = false,
 ) {
+    val isOff = text.equals("Off", ignoreCase = true)
     Box(
         modifier = modifier
             .height(RowHeight)
             .background(background)
             .drawBehind {
+                val stroke = 1.dp.toPx()
                 if (showEndDivider) {
-                    val stroke = 1.dp.toPx()
                     drawLine(
                         color = dividerColor,
                         start = Offset(size.width - stroke / 2f, 0f),
@@ -407,20 +431,38 @@ private fun GridBodyCell(
                         strokeWidth = stroke,
                     )
                 }
-            }
-            .padding(horizontal = horizontalPadding),
+                if (showBottomDivider) {
+                    drawLine(
+                        color = dividerColor,
+                        start = Offset(0f, size.height - stroke / 2f),
+                        end = Offset(size.width, size.height - stroke / 2f),
+                        strokeWidth = stroke,
+                    )
+                }
+            },
         contentAlignment = contentAlignment,
     ) {
+        if (hasAccent) {
+            Box(
+                modifier = Modifier
+                    .width(2.5.dp)
+                    .fillMaxHeight()
+                    .align(Alignment.CenterStart)
+                    .background(BrandOrange),
+            )
+        }
         Text(
             text = text,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            color = BrandBlack,
+            fontSize = 11.5.sp,
+            fontWeight = if (isDayLabel || !isOff) FontWeight.Bold else FontWeight.Medium,
+            color = if (isOff) Color(0xFF71717A) else BrandBlack,
             fontFamily = FontFamily.SansSerif,
             textAlign = textAlign,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            modifier = if (textAlign == TextAlign.Center) Modifier.fillMaxWidth() else Modifier,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = horizontalPadding),
         )
     }
 }

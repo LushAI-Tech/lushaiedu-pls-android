@@ -10,6 +10,7 @@ import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.session.UserSessionStore
 import com.lushaiedupls.ui.common.viewModelFactory
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,21 +22,45 @@ class StudentHomeViewModel(
     private val studentRepository: StudentRepository,
 ) : ViewModel() {
 
+    private val cachedOverview = studentRepository.getCachedOverview()
+
     private val _uiState = MutableStateFlow(
         StudentHomeUiState(
-            displayName = userSessionStore.getDisplayName(),
-            isLoading = true,
+            displayName = cachedOverview?.student?.name?.ifBlank { userSessionStore.getDisplayName() }
+                ?: userSessionStore.getDisplayName(),
+            isLoading = cachedOverview == null,
+            notificationCount = cachedOverview?.unread_notifications ?: 0,
+            overviewMetrics = cachedOverview?.let(StudentUiMappers::overviewMetrics).orEmpty(),
+            sessionSummary = cachedOverview?.let(StudentUiMappers::sessionSummary),
+            attendancePreview = cachedOverview?.let(StudentUiMappers::attendancePreview).orEmpty(),
         ),
     )
     val uiState: StateFlow<StudentHomeUiState> = _uiState.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            studentRepository.unreadNotificationCount.collect { count ->
+                if (count != null) {
+                    _uiState.update { it.copy(notificationCount = count) }
+                }
+            }
+        }
         refresh()
+        prefetchAiLearn()
+    }
+
+    private fun prefetchAiLearn() {
+        viewModelScope.launch(Dispatchers.IO) {
+            studentRepository.prefetchAiLearn()
+        }
     }
 
     fun refresh() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            if (_uiState.value.overviewMetrics.isEmpty()) {
+                _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            }
+            prefetchAiLearn()
             when (val result = studentRepository.overview()) {
                 is NetworkResult.Success -> {
                     val overview = result.data
@@ -58,7 +83,7 @@ class StudentHomeViewModel(
                     it.copy(
                         isLoading = false,
                         needsApproval = result.needsAdminApproval(),
-                        errorMessage = result.userMessage(),
+                        errorMessage = if (_uiState.value.overviewMetrics.isEmpty()) result.userMessage() else null,
                     )
                 }
             }

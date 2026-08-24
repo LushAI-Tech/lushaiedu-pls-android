@@ -80,7 +80,15 @@ object ApiClient {
     inline fun <reified T> createService(retrofit: Retrofit): T = retrofit.create(T::class.java)
 
     private fun baseClientBuilder(appVersion: String, isDebug: Boolean): OkHttpClient.Builder {
+        val dispatcher = okhttp3.Dispatcher().apply {
+            maxRequests = 128
+            maxRequestsPerHost = 64
+        }
+        val connectionPool = okhttp3.ConnectionPool(32, 5, TimeUnit.MINUTES)
+
         val builder = OkHttpClient.Builder()
+            .dispatcher(dispatcher)
+            .connectionPool(connectionPool)
             .connectTimeout(ApiConfig.CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(ApiConfig.READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .writeTimeout(ApiConfig.WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)

@@ -61,6 +61,7 @@ fun AppNavGraph(
 
     fun logOutToWelcome() {
         scope.launch {
+            studentRepository.clearAiCache()
             authRepository.logout()
             navController.navigate(AppRoutes.WELCOME) {
                 popUpTo(0) { inclusive = true }

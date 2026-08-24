@@ -25,6 +25,8 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,6 +41,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lushaiedupls.R
@@ -132,32 +135,34 @@ fun AppTopBar(
                 lineHeight = 24.sp,
             )
         }
-        Box {
-            IconButton(onClick = onNotificationClick) {
+        IconButton(
+            onClick = onNotificationClick,
+            modifier = Modifier.size(44.dp),
+        ) {
+            BadgedBox(
+                badge = {
+                    if (notificationCount > 0) {
+                        Badge(
+                            containerColor = Color(0xFFEF4444),
+                            contentColor = Color.White,
+                        ) {
+                            Text(
+                                text = if (notificationCount > 99) "99+" else notificationCount.toString(),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.SansSerif,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
+                },
+            ) {
                 Icon(
                     imageVector = Icons.Outlined.Notifications,
                     contentDescription = stringResource(R.string.cd_notifications),
                     tint = BrandBlack,
-                    modifier = Modifier.size(26.dp),
+                    modifier = Modifier.size(24.dp),
                 )
-            }
-            if (notificationCount > 0) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = 6.dp, end = 6.dp)
-                        .size(18.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFE11D48)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = notificationCount.coerceAtMost(9).toString(),
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
             }
         }
     }

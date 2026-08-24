@@ -21,7 +21,24 @@ class StudentAiHubViewModel(
     private val studentRepository: StudentRepository,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(StudentAiHubUiState(isLoading = true))
+    private val initialAiSubjects = studentRepository.getCachedAiSubjects()
+    private val initialUnits = studentRepository.getCachedTeachingUnits()
+    private val initialDashboard = studentRepository.getCachedProgressDashboard()
+    private val initialSubjects = when {
+        !initialAiSubjects.isNullOrEmpty() -> StudentUiMappers.aiSubjects(initialAiSubjects)
+        !initialUnits.isNullOrEmpty() -> StudentUiMappers.teachingUnitSubjects(initialUnits)
+        else -> emptyList()
+    }
+    private val initialStats = initialDashboard?.let(StudentUiMappers::aiHubStats)
+        ?: StudentUiMappers.emptyAiHubStats()
+
+    private val _uiState = MutableStateFlow(
+        StudentAiHubUiState(
+            isLoading = initialSubjects.isEmpty(),
+            subjects = initialSubjects,
+            stats = initialStats,
+        ),
+    )
     val uiState: StateFlow<StudentAiHubUiState> = _uiState.asStateFlow()
 
     init {
@@ -30,52 +47,60 @@ class StudentAiHubViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            if (_uiState.value.subjects.isEmpty()) {
+                _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            }
             coroutineScope {
                 val statsDeferred = async { studentRepository.progressDashboard() }
                 val aiSubjectsDeferred = async { studentRepository.aiSubjects() }
                 val unitsDeferred = async { studentRepository.teachingUnits() }
-                val statsResult = statsDeferred.await()
-                val aiSubjectsResult = aiSubjectsDeferred.await()
-                val unitsResult = unitsDeferred.await()
 
-                val stats = when (statsResult) {
-                    is NetworkResult.Success -> StudentUiMappers.aiHubStats(statsResult.data)
-                    else -> StudentUiMappers.emptyAiHubStats()
-                }
-                val aiSubjects = (aiSubjectsResult as? NetworkResult.Success)?.data.orEmpty()
-                val units = (unitsResult as? NetworkResult.Success)?.data.orEmpty()
-                val subjects = when {
-                    aiSubjects.isNotEmpty() -> StudentUiMappers.aiSubjects(aiSubjects)
-                    units.isNotEmpty() -> StudentUiMappers.teachingUnitSubjects(units)
-                    else -> emptyList()
-                }
-                val error = when {
-                    subjects.isNotEmpty() -> null
-                    aiSubjectsResult !is NetworkResult.Success &&
-                        unitsResult !is NetworkResult.Success -> {
-                        unitsResult.userMessage().ifBlank { aiSubjectsResult.userMessage() }
+                // Process subjects as soon as available
+                launch {
+                    val aiSubjectsResult = aiSubjectsDeferred.await()
+                    val unitsResult = unitsDeferred.await()
+                    val aiSubjects = (aiSubjectsResult as? NetworkResult.Success)?.data.orEmpty()
+                    val units = (unitsResult as? NetworkResult.Success)?.data.orEmpty()
+                    val subjects = when {
+                        aiSubjects.isNotEmpty() -> StudentUiMappers.aiSubjects(aiSubjects)
+                        units.isNotEmpty() -> StudentUiMappers.teachingUnitSubjects(units)
+                        else -> emptyList()
                     }
-                    else -> null
+                    val error = when {
+                        subjects.isNotEmpty() -> null
+                        aiSubjectsResult !is NetworkResult.Success &&
+                            unitsResult !is NetworkResult.Success -> {
+                            unitsResult.userMessage().ifBlank { aiSubjectsResult.userMessage() }
+                        }
+                        else -> null
+                    }
+                    val needsApproval = listOf(aiSubjectsResult, unitsResult).any { it.needsAdminApproval() }
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            subjects = subjects.ifEmpty { it.subjects },
+                            needsApproval = needsApproval,
+                            errorMessage = if (needsApproval) null else error,
+                        )
+                    }
+                    val firstSubjectId = subjects.firstOrNull()?.id
+                    if (!firstSubjectId.isNullOrBlank()) {
+                        val chResult = studentRepository.chapters(firstSubjectId)
+                        if (chResult is NetworkResult.Success) {
+                            val activeChapterIds = chResult.data.filter { it.is_active }.map { it.id }
+                            if (activeChapterIds.isNotEmpty()) {
+                                studentRepository.prefetchAiChat(activeChapterIds)
+                            }
+                        }
+                    }
                 }
-                val needsApproval = listOf(aiSubjectsResult, unitsResult, statsResult)
-                    .any { it.needsAdminApproval() }
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        stats = stats,
-                        subjects = subjects,
-                        needsApproval = needsApproval,
-                        errorMessage = if (needsApproval) null else error,
-                    )
-                }
-                val firstSubjectId = subjects.firstOrNull()?.id
-                if (!firstSubjectId.isNullOrBlank()) {
-                    val chResult = studentRepository.chapters(firstSubjectId)
-                    if (chResult is NetworkResult.Success) {
-                        val activeChapterIds = chResult.data.filter { it.is_active }.map { it.id }
-                        if (activeChapterIds.isNotEmpty()) {
-                            studentRepository.prefetchAiChat(activeChapterIds)
+
+                // Process stats as soon as available
+                launch {
+                    val statsResult = statsDeferred.await()
+                    if (statsResult is NetworkResult.Success) {
+                        _uiState.update {
+                            it.copy(stats = StudentUiMappers.aiHubStats(statsResult.data))
                         }
                     }
                 }

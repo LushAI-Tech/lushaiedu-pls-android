@@ -1,7 +1,6 @@
 package com.lushaiedupls.ui.parent.home
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -31,6 +30,7 @@ import com.lushaiedupls.R
 import com.lushaiedupls.data.mock.OverviewIcon
 import com.lushaiedupls.data.remote.dto.ParentChildSummary
 import com.lushaiedupls.data.repository.ParentRepository
+import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.session.UserSessionStore
 import com.lushaiedupls.ui.auth.components.PrimaryButton
 import com.lushaiedupls.ui.common.AppTopBar
@@ -40,9 +40,7 @@ import com.lushaiedupls.ui.common.SectionTitle
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.theme.BgWhite
-import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
-import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.TextSecondary
 import kotlin.math.roundToInt
 
@@ -52,13 +50,14 @@ private val CardShape = RoundedCornerShape(18.dp)
 fun ParentHomeRoute(
     userSessionStore: UserSessionStore,
     parentRepository: ParentRepository,
+    studentRepository: StudentRepository? = null,
     onNotificationsClick: () -> Unit,
     onProfileClick: () -> Unit,
     onScanClick: () -> Unit,
     onChildClick: (String, String) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: ParentHomeViewModel = viewModel(
-        factory = ParentHomeViewModel.provideFactory(userSessionStore, parentRepository),
+        factory = ParentHomeViewModel.provideFactory(userSessionStore, parentRepository, studentRepository),
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -135,7 +134,6 @@ fun ParentHomeScreen(
                 uiState.children.forEach { child ->
                     ChildCard(
                         child = child,
-                        selected = child.student.id == uiState.selectedStudentId,
                         onClick = { onChildClick(child) },
                     )
                     Spacer(modifier = Modifier.height(12.dp))
@@ -154,7 +152,6 @@ fun ParentHomeScreen(
 @Composable
 private fun ChildCard(
     child: ParentChildSummary,
-    selected: Boolean,
     onClick: () -> Unit,
 ) {
     val overall = child.overall
@@ -163,11 +160,6 @@ private fun ChildCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(CardShape)
-            .border(
-                width = if (selected) 2.dp else 1.dp,
-                color = if (selected) BrandOrange else BorderGray.copy(alpha = 0.75f),
-                shape = CardShape,
-            )
             .background(BgWhite)
             .clickable(onClick = onClick)
             .padding(16.dp),
@@ -211,14 +203,15 @@ private fun ChildCard(
         }
         val mastery = child.ai.stem_mastery_pct?.roundToInt()
         if (child.ai.available && mastery != null) {
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = stringResource(R.string.parent_ai_mastery, mastery),
-                color = BrandOrange,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
-                fontFamily = FontFamily.SansSerif,
+            Spacer(modifier = Modifier.height(12.dp))
+            MetricCard(
+                label = stringResource(R.string.parent_ai_mastery, mastery),
+                value = "$mastery%",
+                emphasized = false,
+                iconKind = OverviewIcon.StemMastery,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
 }
+

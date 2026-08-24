@@ -60,6 +60,9 @@ class ApiBodyLoggingInterceptor : Interceptor {
 
     private fun formatBody(raw: String?, contentType: MediaType?): String {
         if (raw.isNullOrBlank()) return "<empty>"
+        if (raw.length > MAX_PRETTY_PRINT_LENGTH) {
+            return raw.take(MAX_PRETTY_PRINT_LENGTH) + "... [truncated ${raw.length} bytes]"
+        }
         val isJson = contentType?.subtype?.contains("json", ignoreCase = true) == true ||
             raw.trimStart().startsWith("{") ||
             raw.trimStart().startsWith("[")
@@ -105,5 +108,6 @@ class ApiBodyLoggingInterceptor : Interceptor {
 
     private companion object {
         const val MAX_LOG_CHUNK = 3500
+        const val MAX_PRETTY_PRINT_LENGTH = 1500
     }
 }

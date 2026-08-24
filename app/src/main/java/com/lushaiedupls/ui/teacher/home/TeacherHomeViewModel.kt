@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.lushaiedupls.data.mapper.TeacherUiMappers
 import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.userMessage
+import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.data.session.UserSessionStore
 import com.lushaiedupls.ui.common.viewModelFactory
@@ -20,6 +21,7 @@ import kotlinx.coroutines.launch
 class TeacherHomeViewModel(
     private val userSessionStore: UserSessionStore,
     private val teacherRepository: TeacherRepository,
+    private val studentRepository: StudentRepository? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -31,6 +33,22 @@ class TeacherHomeViewModel(
     val uiState: StateFlow<TeacherHomeUiState> = _uiState.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            teacherRepository.unreadNotificationCount.collect { count ->
+                if (count != null) {
+                    _uiState.update { it.copy(notificationCount = count) }
+                }
+            }
+        }
+        if (studentRepository != null) {
+            viewModelScope.launch {
+                studentRepository.unreadNotificationCount.collect { count ->
+                    if (count != null) {
+                        _uiState.update { it.copy(notificationCount = count) }
+                    }
+                }
+            }
+        }
         refresh()
     }
 
@@ -97,8 +115,9 @@ class TeacherHomeViewModel(
         fun provideFactory(
             userSessionStore: UserSessionStore,
             teacherRepository: TeacherRepository,
+            studentRepository: StudentRepository? = null,
         ): ViewModelProvider.Factory = viewModelFactory {
-            TeacherHomeViewModel(userSessionStore, teacherRepository)
+            TeacherHomeViewModel(userSessionStore, teacherRepository, studentRepository)
         }
     }
 }

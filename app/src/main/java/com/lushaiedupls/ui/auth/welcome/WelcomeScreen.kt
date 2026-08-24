@@ -87,15 +87,7 @@ fun WelcomeScreen(
                 fullyRounded = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Spacer(modifier = Modifier.height(10.dp))
-            TextButton(onClick = onParent) {
-                Text(
-                    text = stringResource(R.string.welcome_im_a_parent),
-                    color = TextSecondary,
-                    fontSize = 14.sp,
-                )
-            }
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(20.dp))
             OrContinueWithDivider()
             Spacer(modifier = Modifier.height(16.dp))
             GoogleButton(onClick = onGoogle)
