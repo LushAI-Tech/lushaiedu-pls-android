@@ -51,6 +51,8 @@ import com.lushaiedupls.data.remote.dto.TeachingUnitOut
 import com.lushaiedupls.data.remote.dto.TeachingUnitStatus
 import com.lushaiedupls.data.remote.dto.WeekSlot
 import com.lushaiedupls.data.remote.dto.WeekView
+import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.YearMonth
@@ -284,7 +286,7 @@ object StudentUiMappers {
                 id = n.id,
                 title = n.title,
                 body = n.body,
-                timestampLabel = formatDateTimeLabel(n.published_at),
+                timestampLabel = formatRelativeTime(n.published_at),
                 unread = !n.is_read,
                 section = if (published == today) NotificationSection.Today else NotificationSection.Earlier,
                 authorName = n.author_name,
@@ -702,12 +704,28 @@ object StudentUiMappers {
         return odt.format(deviceFmt)
     }
 
+    private fun formatRelativeTime(value: String): String {
+        val instant = parseDateTime(value)?.toInstant() ?: return value
+        val seconds = Duration.between(instant, Instant.now()).seconds
+        if (seconds < 60) return "Just now"
+        val minutes = seconds / 60
+        if (minutes < 60) {
+            return if (minutes == 1L) "1 min ago" else "$minutes mins ago"
+        }
+        val hours = minutes / 60
+        if (hours < 24) {
+            return if (hours == 1L) "1 hour ago" else "$hours hours ago"
+        }
+        val days = hours / 24
+        return if (days == 1L) "1 day ago" else "$days days ago"
+    }
+
     private fun subjectIcon(name: String, code: String?): Int {
         val key = "${name.lowercase(Locale.ENGLISH)} ${code.orEmpty().lowercase(Locale.ENGLISH)}"
         return when {
             "chem" in key -> R.drawable.ic_subject_chemistry
             "math" in key -> R.drawable.ic_subject_mathematics
-            "phys" in key -> R.drawable.ic_subject_physics
+            "phys" in key || "science" in key -> R.drawable.ic_subject_physics
             else -> R.drawable.ic_subject_chemistry
         }
     }

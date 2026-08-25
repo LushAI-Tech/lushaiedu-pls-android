@@ -1,6 +1,5 @@
 package com.lushaiedupls.ui.teacher.overview
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,11 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -61,6 +56,10 @@ import com.lushaiedupls.data.mock.TeacherOverviewDashboard
 import com.lushaiedupls.data.mock.TeacherVolumeRow
 import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.ui.common.AppBackNav
+import com.lushaiedupls.ui.common.AttendanceDonut
+import com.lushaiedupls.ui.common.AttendanceRingAbsent
+import com.lushaiedupls.ui.common.AttendanceRingLeave
+import com.lushaiedupls.ui.common.AttendanceRingPresent
 import com.lushaiedupls.ui.common.LoadErrorPanel
 import com.lushaiedupls.ui.teacher.overlays.TakeAttendanceSetupOverlay
 import com.lushaiedupls.ui.teacher.overlays.TeacherScrimDialog
@@ -83,9 +82,6 @@ private val MetricShape = RoundedCornerShape(16.dp)
 private val ClassChipShape = RoundedCornerShape(12.dp)
 private val CalendarShape = RoundedCornerShape(22.dp)
 private val DaySelectedShape = RoundedCornerShape(10.dp)
-private val PresentOrange = BrandOrange
-private val AbsentPeach = Color(0xFFFFC9A8)
-private val LeaveCream = Color(0xFFFFE8DC)
 private val LegendGray = Color(0xFF8B93A7)
 private val DowGray = Color(0xFF9CA3AF)
 private val SelectedDayBg = Color(0xFFFFE0B8)
@@ -852,7 +848,7 @@ private fun OverallSessionsCard(dashboard: TeacherOverviewDashboard) {
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PresentDonut(
+            AttendanceDonut(
                 present = dashboard.presentCount,
                 absent = dashboard.absentCount,
                 leave = dashboard.leaveCount,
@@ -870,17 +866,17 @@ private fun OverallSessionsCard(dashboard: TeacherOverviewDashboard) {
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 LegendRow(
-                    color = PresentOrange,
+                    color = AttendanceRingPresent,
                     text = stringResource(R.string.legend_present, dashboard.presentCount),
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 LegendRow(
-                    color = AbsentPeach,
+                    color = AttendanceRingAbsent,
                     text = stringResource(R.string.legend_absent, dashboard.absentCount),
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 LegendRow(
-                    color = LeaveCream,
+                    color = AttendanceRingLeave,
                     text = stringResource(R.string.legend_leave, dashboard.leaveCount),
                 )
                 Spacer(modifier = Modifier.height(10.dp))
@@ -951,48 +947,6 @@ private fun VolumeSection(
                 .clip(RoundedCornerShape(50))
                 .background(BrandOrange),
         )
-    }
-}
-
-@Composable
-private fun PresentDonut(
-    present: Int,
-    absent: Int,
-    leave: Int,
-    percent: Int,
-    modifier: Modifier = Modifier,
-) {
-    val total = (present + absent + leave).coerceAtLeast(1).toFloat()
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val strokeWidth = size.minDimension * 0.13f
-            val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Butt)
-            val diameter = size.minDimension - strokeWidth
-            val topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
-            val arcSize = Size(diameter, diameter)
-            val presentSweep = 360f * (present / total)
-            val absentSweep = 360f * (absent / total)
-            val leaveSweep = 360f - presentSweep - absentSweep
-            var start = -90f
-            drawArc(PresentOrange, start, presentSweep, false, topLeft, arcSize, style = stroke)
-            start += presentSweep
-            drawArc(AbsentPeach, start, absentSweep, false, topLeft, arcSize, style = stroke)
-            start += absentSweep
-            drawArc(LeaveCream, start, leaveSweep, false, topLeft, arcSize, style = stroke)
-        }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = "$percent%",
-                fontWeight = FontWeight.Bold,
-                fontSize = 20.sp,
-                color = BrandBlack,
-            )
-            Text(
-                text = stringResource(R.string.teacher_present_label),
-                fontSize = 12.sp,
-                color = TextSecondary,
-            )
-        }
     }
 }
 

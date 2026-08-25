@@ -20,6 +20,7 @@ class MainActivity : ComponentActivity() {
                     studentRepository = container.studentRepository,
                     teacherRepository = container.teacherRepository,
                     parentRepository = container.parentRepository,
+                    adminRepository = container.adminRepository,
                 )
             }
         }

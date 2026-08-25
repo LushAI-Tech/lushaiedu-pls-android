@@ -5,11 +5,13 @@ import com.lushaiedupls.BuildConfig
 import com.lushaiedupls.data.mock.StudentMockRepository
 import com.lushaiedupls.data.mock.TeacherMockRepository
 import com.lushaiedupls.data.remote.ApiClient
+import com.lushaiedupls.data.remote.api.AdminApi
 import com.lushaiedupls.data.remote.api.AiApi
 import com.lushaiedupls.data.remote.api.AttendanceApi
 import com.lushaiedupls.data.remote.api.AuthApi
 import com.lushaiedupls.data.remote.api.CalendarApi
 import com.lushaiedupls.data.remote.api.ClassesApi
+import com.lushaiedupls.data.remote.api.FeesApi
 import com.lushaiedupls.data.remote.api.MeApi
 import com.lushaiedupls.data.remote.api.NotificationsApi
 import com.lushaiedupls.data.remote.api.OverviewApi
@@ -19,6 +21,7 @@ import com.lushaiedupls.data.remote.api.TimetableApi
 import com.lushaiedupls.data.remote.device.DeviceIdProvider
 import com.lushaiedupls.data.remote.token.SharedPrefsTokenProvider
 import com.lushaiedupls.data.remote.token.TokenProvider
+import com.lushaiedupls.data.repository.AdminRepository
 import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.data.repository.ParentRepository
 import com.lushaiedupls.data.repository.SessionRepository
@@ -66,6 +69,8 @@ class AppContainer(context: Context) {
     val aiApi: AiApi = createService()
     val parentApi: ParentApi = createService()
     val teachingUnitsApi: TeachingUnitsApi = createService()
+    val feesApi: FeesApi = createService()
+    val adminApi: AdminApi = createService()
 
     val authRepository = AuthRepository(
         authApi = authApi,
@@ -92,6 +97,8 @@ class AppContainer(context: Context) {
         parentApi = parentApi,
         overviewApi = overviewApi,
         attendanceApi = attendanceApi,
+        timetableApi = timetableApi,
+        feesApi = feesApi,
     )
 
     val teacherRepository = TeacherRepository(
@@ -100,6 +107,15 @@ class AppContainer(context: Context) {
         attendanceApi = attendanceApi,
         calendarApi = calendarApi,
         timetableApi = timetableApi,
+        notificationsApi = notificationsApi,
+    )
+
+    val adminRepository = AdminRepository(
+        adminApi = adminApi,
+        overviewApi = overviewApi,
+        calendarApi = calendarApi,
+        timetableApi = timetableApi,
+        teachingUnitsApi = teachingUnitsApi,
         notificationsApi = notificationsApi,
     )
 }

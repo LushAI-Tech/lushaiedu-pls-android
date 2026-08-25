@@ -378,7 +378,7 @@ object TeacherUiMappers {
         return when {
             "chem" in key -> R.drawable.ic_subject_chemistry
             "math" in key -> R.drawable.ic_subject_mathematics
-            "phys" in key -> R.drawable.ic_subject_physics
+            "phys" in key || "science" in key -> R.drawable.ic_subject_physics
             "bio" in key -> R.drawable.ic_subject_biology
             else -> R.drawable.ic_metric_subject
         }

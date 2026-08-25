@@ -18,6 +18,12 @@ interface TimetableApi {
         @Query("teaching_unit_id") teachingUnitId: String? = null,
     ): WeekView
 
+    @GET("api/v1/timetable/students/{student_id}")
+    suspend fun studentTimetable(
+        @Path("student_id") studentId: String,
+        @Query("teaching_unit_id") teachingUnitId: String? = null,
+    ): WeekView
+
     @GET("api/v1/timetable/periods")
     suspend fun periods(
         @Query("include_inactive") includeInactive: Boolean = false,

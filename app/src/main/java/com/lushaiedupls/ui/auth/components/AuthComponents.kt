@@ -164,6 +164,7 @@ fun OutlinedAuthField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     singleLine: Boolean = true,
+    enabled: Boolean = true,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
@@ -189,6 +190,7 @@ fun OutlinedAuthField(
                     )
                 }
             },
+            enabled = enabled,
             singleLine = singleLine,
             shape = FieldShape,
             keyboardOptions = keyboardOptions,

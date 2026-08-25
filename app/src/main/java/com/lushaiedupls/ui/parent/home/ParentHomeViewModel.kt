@@ -60,18 +60,25 @@ class ParentHomeViewModel(
             val month = YearMonth.now().toString()
             when (val result = parentRepository.overview(month)) {
                 is NetworkResult.Success -> {
-                    val children = result.data.children
+                    val overview = result.data
+                    val children = overview.children
                     val selected = _uiState.value.selectedStudentId
                         ?.takeIf { id -> children.any { it.student.id == id } }
                         ?: children.firstOrNull()?.student?.id
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            displayName = result.data.parent.name.ifBlank {
+                            displayName = overview.parent.name.ifBlank {
                                 userSessionStore.getDisplayName()
                             },
-                            monthLabel = result.data.month,
-                            notificationCount = result.data.unread_notifications,
+                            monthLabel = overview.month,
+                            notificationCount = overview.unread_notifications,
+                            totalChildren = overview.total_children.takeIf { count -> count > 0 }
+                                ?: children.size,
+                            overallAttendance = overview.overall_attendance,
+                            pendingFeePaise = overview.total_pending_fee_amount_paise,
+                            childrenWithPendingFees = overview.children_with_pending_fees,
+                            openFeedbackCount = overview.feedback_counts.unseen,
                             children = children,
                             selectedStudentId = selected,
                             errorMessage = null,

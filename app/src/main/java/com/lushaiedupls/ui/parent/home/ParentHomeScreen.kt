@@ -1,6 +1,7 @@
 package com.lushaiedupls.ui.parent.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lushaiedupls.R
 import com.lushaiedupls.data.mock.OverviewIcon
+import com.lushaiedupls.data.remote.dto.FeePaymentStatus
 import com.lushaiedupls.data.remote.dto.ParentChildSummary
 import com.lushaiedupls.data.repository.ParentRepository
 import com.lushaiedupls.data.repository.StudentRepository
@@ -39,7 +42,9 @@ import com.lushaiedupls.ui.common.MetricCard
 import com.lushaiedupls.ui.common.SectionTitle
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
+import com.lushaiedupls.ui.parent.formatInrFromPaise
 import com.lushaiedupls.ui.theme.BgWhite
+import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
 import com.lushaiedupls.ui.theme.TextSecondary
 import kotlin.math.roundToInt
@@ -55,12 +60,17 @@ fun ParentHomeRoute(
     onProfileClick: () -> Unit,
     onScanClick: () -> Unit,
     onChildClick: (String, String) -> Unit,
+    onFeesClick: () -> Unit = {},
+    onStudentReady: (String?) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: ParentHomeViewModel = viewModel(
         factory = ParentHomeViewModel.provideFactory(userSessionStore, parentRepository, studentRepository),
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(uiState.selectedStudentId, uiState.isLoading) {
+        if (!uiState.isLoading) onStudentReady(uiState.selectedStudentId)
+    }
     LifecycleResumeEffect(Unit) {
         viewModel.refresh()
         onPauseOrDispose { }
@@ -74,6 +84,7 @@ fun ParentHomeRoute(
             viewModel.selectStudent(child.student.id)
             onChildClick(child.student.id, child.student.name)
         },
+        onFeesClick = onFeesClick,
         onRefresh = viewModel::refresh,
         modifier = modifier,
     )
@@ -86,6 +97,7 @@ fun ParentHomeScreen(
     onProfileClick: () -> Unit,
     onScanClick: () -> Unit,
     onChildClick: (ParentChildSummary) -> Unit,
+    onFeesClick: () -> Unit,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -114,6 +126,13 @@ fun ParentHomeScreen(
                 onProfileClick = onProfileClick,
             )
             Spacer(modifier = Modifier.height(22.dp))
+            SectionTitle(text = stringResource(R.string.section_overview))
+            Spacer(modifier = Modifier.height(12.dp))
+            OverviewGrid(
+                uiState = uiState,
+                onFeesClick = onFeesClick,
+            )
+            Spacer(modifier = Modifier.height(24.dp))
             SectionTitle(text = stringResource(R.string.parent_section_children))
             Spacer(modifier = Modifier.height(12.dp))
             if (uiState.children.isEmpty()) {
@@ -138,14 +157,36 @@ fun ParentHomeScreen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                 }
-                PrimaryButton(
-                    text = stringResource(R.string.parent_scan_another),
-                    onClick = onScanClick,
-                    fullyRounded = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
             }
         }
+    }
+}
+
+@Composable
+private fun OverviewGrid(
+    uiState: ParentHomeUiState,
+    onFeesClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        MetricCard(
+            label = stringResource(R.string.parent_stat_children),
+            value = uiState.totalChildren.toString(),
+            emphasized = true,
+            iconKind = OverviewIcon.Children,
+            modifier = Modifier.weight(1f),
+        )
+        MetricCard(
+            label = stringResource(R.string.parent_stat_pending_fees),
+            value = uiState.childrenWithPendingFees.toString(),
+            emphasized = false,
+            iconKind = OverviewIcon.Fees,
+            modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = onFeesClick),
+        )
     }
 }
 
@@ -160,6 +201,7 @@ private fun ChildCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(CardShape)
+            .border(1.dp, BorderGray.copy(alpha = 0.7f), CardShape)
             .background(BgWhite)
             .clickable(onClick = onClick)
             .padding(16.dp),
@@ -205,13 +247,43 @@ private fun ChildCard(
         if (child.ai.available && mastery != null) {
             Spacer(modifier = Modifier.height(12.dp))
             MetricCard(
-                label = stringResource(R.string.parent_ai_mastery, mastery),
+                label = stringResource(R.string.parent_ai_mastery),
                 value = "$mastery%",
                 emphasized = false,
                 iconKind = OverviewIcon.StemMastery,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+        val feeLine = childFeeLine(child)
+        if (feeLine != null) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = feeLine,
+                color = TextSecondary,
+                fontSize = 13.sp,
+                fontFamily = FontFamily.SansSerif,
+            )
+        }
     }
 }
 
+@Composable
+private fun childFeeLine(child: ParentChildSummary): String? {
+    if (child.pending_fee_amount_paise > 0) {
+        val amount = formatInrFromPaise(child.pending_fee_amount_paise)
+        return if (child.pending_fee_months > 0) {
+            stringResource(
+                R.string.parent_child_fee_pending_months,
+                amount,
+                child.pending_fee_months,
+            )
+        } else {
+            stringResource(R.string.parent_child_fee_pending, amount)
+        }
+    }
+    return when (child.selected_month_fee_status) {
+        FeePaymentStatus.PAID -> stringResource(R.string.parent_child_fee_paid)
+        FeePaymentStatus.NOT_PAID -> stringResource(R.string.parent_child_fee_unpaid)
+        null -> null
+    }
+}

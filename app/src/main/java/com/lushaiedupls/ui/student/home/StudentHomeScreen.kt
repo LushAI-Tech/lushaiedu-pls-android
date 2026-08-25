@@ -1,6 +1,5 @@
 package com.lushaiedupls.ui.student.home
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -23,11 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -46,7 +41,11 @@ import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.session.UserSessionStore
 import com.lushaiedupls.ui.common.AppTopBar
 import com.lushaiedupls.ui.common.ApprovalNeededPanel
+import com.lushaiedupls.ui.common.AttendanceDonut
 import com.lushaiedupls.ui.common.AttendanceRecordCard
+import com.lushaiedupls.ui.common.AttendanceRingAbsent
+import com.lushaiedupls.ui.common.AttendanceRingLeave
+import com.lushaiedupls.ui.common.AttendanceRingPresent
 import com.lushaiedupls.ui.common.LoadErrorPanel
 import com.lushaiedupls.ui.common.MetricCard
 import com.lushaiedupls.ui.common.SectionTitle
@@ -57,12 +56,8 @@ import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
 import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.LushAIEdu_PLSTheme
-import com.lushaiedupls.ui.theme.TextSecondary
 
 private val CardShape = RoundedCornerShape(18.dp)
-private val PresentOrange = BrandOrange
-private val AbsentPeach = Color(0xFFFFC9A8)
-private val LeaveCream = Color(0xFFFFE8DC)
 private val LegendGray = Color(0xFF8B93A7)
 
 @Composable
@@ -215,7 +210,7 @@ private fun SessionsCard(summary: SessionSummary) {
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PresentDonut(
+            AttendanceDonut(
                 present = summary.present,
                 absent = summary.absent,
                 leave = summary.leave,
@@ -233,17 +228,17 @@ private fun SessionsCard(summary: SessionSummary) {
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 LegendRow(
-                    color = PresentOrange,
+                    color = AttendanceRingPresent,
                     text = stringResource(R.string.legend_present, summary.present),
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 LegendRow(
-                    color = AbsentPeach,
+                    color = AttendanceRingAbsent,
                     text = stringResource(R.string.legend_absent, summary.absent),
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 LegendRow(
-                    color = LeaveCream,
+                    color = AttendanceRingLeave,
                     text = stringResource(R.string.legend_leave, summary.leave),
                 )
                 Spacer(modifier = Modifier.height(10.dp))
@@ -289,76 +284,6 @@ private fun SessionsCard(summary: SessionSummary) {
 }
 
 @Composable
-private fun PresentDonut(
-    present: Int,
-    absent: Int,
-    leave: Int,
-    percent: Int,
-    modifier: Modifier = Modifier,
-) {
-    val total = (present + absent + leave).coerceAtLeast(1).toFloat()
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val strokeWidth = size.minDimension * 0.13f
-            val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Butt)
-            val diameter = size.minDimension - strokeWidth
-            val topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
-            val arcSize = Size(diameter, diameter)
-
-            val presentSweep = 360f * (present / total)
-            val absentSweep = 360f * (absent / total)
-            val leaveSweep = 360f - presentSweep - absentSweep
-
-            var start = -90f
-            drawArc(
-                color = PresentOrange,
-                startAngle = start,
-                sweepAngle = presentSweep,
-                useCenter = false,
-                topLeft = topLeft,
-                size = arcSize,
-                style = stroke,
-            )
-            start += presentSweep
-            drawArc(
-                color = AbsentPeach,
-                startAngle = start,
-                sweepAngle = absentSweep,
-                useCenter = false,
-                topLeft = topLeft,
-                size = arcSize,
-                style = stroke,
-            )
-            start += absentSweep
-            drawArc(
-                color = LeaveCream,
-                startAngle = start,
-                sweepAngle = leaveSweep,
-                useCenter = false,
-                topLeft = topLeft,
-                size = arcSize,
-                style = stroke,
-            )
-        }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = "$percent%",
-                fontWeight = FontWeight.Bold,
-                fontSize = 22.sp,
-                color = BrandBlack,
-                fontFamily = FontFamily.SansSerif,
-            )
-            Text(
-                text = stringResource(R.string.present_label),
-                fontSize = 13.sp,
-                color = BrandBlack,
-                fontFamily = FontFamily.SansSerif,
-            )
-        }
-    }
-}
-
-@Composable
 private fun LegendRow(color: Color, text: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
@@ -390,7 +315,7 @@ private fun SubjectProgressBar(percent: Int) {
             modifier = Modifier
                 .fillMaxWidth(fraction)
                 .height(8.dp)
-                .background(PresentOrange, RoundedCornerShape(50)),
+                .background(BrandOrange, RoundedCornerShape(50)),
         )
     }
 }

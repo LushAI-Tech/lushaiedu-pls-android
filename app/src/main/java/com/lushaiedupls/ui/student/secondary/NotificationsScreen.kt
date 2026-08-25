@@ -25,9 +25,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.outlined.Class
-import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.HorizontalDivider
@@ -42,8 +41,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -53,7 +50,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lushaiedupls.R
 import com.lushaiedupls.data.mock.AppNotification
-import com.lushaiedupls.data.mock.NotificationSection
 import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
@@ -62,7 +58,6 @@ import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.TextSecondary
 
 private val CardShape = RoundedCornerShape(16.dp)
-private val SoftOrange = Color(0xFFFFF4ED)
 
 @Composable
 fun NotificationsScreen(
@@ -74,8 +69,14 @@ fun NotificationsScreen(
 ) {
     var items by remember(notifications) { mutableStateOf(notifications) }
     var selected by remember { mutableStateOf<AppNotification?>(null) }
-    val today = items.filter { it.section == NotificationSection.Today }
-    val earlier = items.filter { it.section == NotificationSection.Earlier }
+
+    fun openItem(item: AppNotification) {
+        items = items.map { n ->
+            if (n.id == item.id) n.copy(unread = false) else n
+        }
+        onOpenNotification(item)
+        selected = item.copy(unread = false)
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(
@@ -132,62 +133,18 @@ fun NotificationsScreen(
                         )
                     }
                 }
-            } else {
-                Spacer(modifier = Modifier.height(8.dp))
             }
+            Spacer(modifier = Modifier.height(20.dp))
 
             if (items.isEmpty()) {
                 EmptyNotificationsState()
             } else {
-                SectionLabel(stringResource(R.string.notifications_today))
-                Spacer(modifier = Modifier.height(8.dp))
-                if (today.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.notifications_empty_today),
-                        color = TextSecondary,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(vertical = 4.dp),
+                items.forEach { item ->
+                    NotificationCard(
+                        item = item,
+                        onClick = { openItem(item) },
                     )
-                } else {
-                    today.forEach { item ->
-                        NotificationCard(
-                            item = item,
-                            onClick = {
-                                items = items.map { n ->
-                                    if (n.id == item.id) n.copy(unread = false) else n
-                                }
-                                onOpenNotification(item)
-                                selected = item.copy(unread = false)
-                            },
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-                SectionLabel(stringResource(R.string.notifications_earlier))
-                Spacer(modifier = Modifier.height(8.dp))
-                if (earlier.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.notifications_empty),
-                        color = TextSecondary,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(vertical = 4.dp),
-                    )
-                } else {
-                    earlier.forEach { item ->
-                        NotificationCard(
-                            item = item,
-                            onClick = {
-                                items = items.map { n ->
-                                    if (n.id == item.id) n.copy(unread = false) else n
-                                }
-                                onOpenNotification(item)
-                                selected = item.copy(unread = false)
-                            },
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                    }
+                    Spacer(modifier = Modifier.height(10.dp))
                 }
             }
         }
@@ -219,13 +176,13 @@ private fun EmptyNotificationsState() {
             modifier = Modifier
                 .size(72.dp)
                 .clip(CircleShape)
-                .background(SoftOrange),
+                .background(BgLight),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = Icons.Outlined.Notifications,
+                imageVector = Icons.Filled.Notifications,
                 contentDescription = null,
-                tint = BrandOrange,
+                tint = BrandBlack,
                 modifier = Modifier.size(32.dp),
             )
         }
@@ -240,98 +197,66 @@ private fun EmptyNotificationsState() {
 }
 
 @Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text = text,
-        color = TextSecondary,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.Bold,
-        fontFamily = FontFamily.SansSerif,
-        letterSpacing = 0.6.sp,
-    )
-}
-
-@Composable
 private fun NotificationCard(
     item: AppNotification,
     onClick: () -> Unit,
 ) {
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(if (item.unread) 2.dp else 0.dp, CardShape, clip = false)
             .clip(CardShape)
-            .background(if (item.unread) SoftOrange else BgLight)
-            .border(
-                width = 1.dp,
-                color = if (item.unread) BrandOrange.copy(alpha = 0.25f) else BorderGray.copy(alpha = 0.75f),
-                shape = CardShape,
-            )
+            .background(BgLight)
+            .border(1.dp, BorderGray.copy(alpha = 0.75f), CardShape)
             .clickable(onClick = onClick)
-            .padding(14.dp),
-        verticalAlignment = Alignment.Top,
+            .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Filled.Notifications,
+                contentDescription = null,
+                tint = BrandBlack,
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = item.title,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
                     color = BrandBlack,
+                    fontFamily = FontFamily.SansSerif,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(end = if (item.unread) 16.dp else 0.dp),
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = item.body,
+                    color = TextSecondary,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    fontFamily = FontFamily.SansSerif,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                if (item.unread) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(BrandOrange),
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = item.body,
-                color = TextSecondary,
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = item.timestampLabel,
-                    color = TextSecondary.copy(alpha = 0.85f),
-                    fontSize = 11.sp,
-                )
-                Text(
-                    text = "·",
-                    color = TextSecondary.copy(alpha = 0.6f),
-                    fontSize = 11.sp,
-                )
-                Text(
-                    text = stringResource(R.string.notifications_tap_hint),
-                    color = BrandOrange.copy(alpha = 0.9f),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(end = 80.dp),
                 )
             }
         }
-        Spacer(modifier = Modifier.width(4.dp))
-        Icon(
-            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-            contentDescription = null,
-            tint = TextSecondary,
-            modifier = Modifier
-                .padding(top = 8.dp)
-                .size(20.dp),
+        if (item.unread) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(BrandOrange),
+            )
+        }
+        Text(
+            text = item.timestampLabel,
+            color = TextSecondary,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.SansSerif,
+            modifier = Modifier.align(Alignment.BottomEnd),
         )
     }
 }

@@ -213,12 +213,27 @@ data class ParentChildSummary(
     val subjects: List<String> = emptyList(),
     val overall: AttendanceTotals,
     val ai: AiSnapshot,
+    val pending_fee_months: Int = 0,
+    val pending_fee_amount_paise: Int = 0,
+    val selected_month_fee_status: FeePaymentStatus? = null,
+)
+
+@Serializable
+data class ParentFeedbackCounts(
+    val total: Int = 0,
+    val unseen: Int = 0,
+    val seen: Int = 0,
 )
 
 @Serializable
 data class ParentOverview(
     val parent: UserSummary,
     val month: String,
+    val total_children: Int = 0,
+    val overall_attendance: AttendanceTotals = AttendanceTotals(),
+    val total_pending_fee_amount_paise: Int = 0,
+    val children_with_pending_fees: Int = 0,
+    val feedback_counts: ParentFeedbackCounts = ParentFeedbackCounts(),
     val children: List<ParentChildSummary> = emptyList(),
     val unread_notifications: Int = 0,
 )

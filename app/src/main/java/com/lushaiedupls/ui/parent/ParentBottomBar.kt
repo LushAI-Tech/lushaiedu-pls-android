@@ -15,11 +15,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
@@ -43,16 +43,15 @@ import com.lushaiedupls.ui.theme.BrandBlack
 
 enum class ParentTab(val route: String) {
     Home(ParentRoutes.HOME),
-    Scan(ParentRoutes.SCAN),
+    Calendar(ParentRoutes.CALENDAR),
     Attendance(ParentRoutes.ATTENDANCE),
-    More(ParentRoutes.HOME),
+    More(ParentRoutes.MORE),
 }
 
 @Composable
 fun ParentBottomBar(
     selectedTab: ParentTab,
     onTabSelected: (ParentTab) -> Unit,
-    onMoreClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -77,10 +76,10 @@ fun ParentBottomBar(
                 onClick = { onTabSelected(ParentTab.Home) },
             )
             BottomNavIcon(
-                icon = Icons.Outlined.QrCodeScanner,
-                label = stringResource(R.string.parent_tab_scan),
-                selected = selectedTab == ParentTab.Scan,
-                onClick = { onTabSelected(ParentTab.Scan) },
+                icon = Icons.Outlined.CalendarMonth,
+                label = stringResource(R.string.tab_calendar),
+                selected = selectedTab == ParentTab.Calendar,
+                onClick = { onTabSelected(ParentTab.Calendar) },
             )
             BottomNavIcon(
                 icon = Icons.Outlined.Person,
@@ -92,7 +91,7 @@ fun ParentBottomBar(
                 icon = Icons.Outlined.Menu,
                 label = stringResource(R.string.tab_more),
                 selected = selectedTab == ParentTab.More,
-                onClick = onMoreClick,
+                onClick = { onTabSelected(ParentTab.More) },
             )
         }
     }

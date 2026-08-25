@@ -100,3 +100,15 @@ enum class RollStatus {
     @SerialName("PROPOSED") PROPOSED,
     @SerialName("APPROVED") APPROVED,
 }
+
+@Serializable
+enum class FeePaymentStatus {
+    @SerialName("not_paid") NOT_PAID,
+    @SerialName("paid") PAID,
+}
+
+@Serializable
+enum class FeedbackStatus {
+    @SerialName("UNSEEN") UNSEEN,
+    @SerialName("SEEN") SEEN,
+}

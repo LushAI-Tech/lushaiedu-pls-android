@@ -11,11 +11,14 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.lushaiedupls.data.remote.NetworkResult
+import com.lushaiedupls.data.repository.AdminRepository
 import com.lushaiedupls.data.repository.AuthRepository
+import com.lushaiedupls.data.repository.ParentRepository
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.data.session.UserSessionStore
 import com.lushaiedupls.ui.auth.google.GoogleSignInHelper
+import com.lushaiedupls.ui.admin.AdminShell
 import com.lushaiedupls.ui.auth.selectclass.SelectClassRoute
 import com.lushaiedupls.ui.auth.selectrole.SelectRoleRoute
 import com.lushaiedupls.ui.auth.selectrole.SelectRoleViewModel
@@ -24,7 +27,6 @@ import com.lushaiedupls.ui.auth.selectsubject.SelectSubjectRoute
 import com.lushaiedupls.ui.auth.signin.SignInRoute
 import com.lushaiedupls.ui.auth.signup.CreateAccountRoute
 import com.lushaiedupls.ui.auth.welcome.WelcomeRoute
-import com.lushaiedupls.data.repository.ParentRepository
 import com.lushaiedupls.ui.common.ComingSoonScreen
 import com.lushaiedupls.ui.parent.ParentShell
 import com.lushaiedupls.ui.student.StudentShell
@@ -36,6 +38,7 @@ private val AppFadeRoutes = setOf(
     AppRoutes.STUDENT_SHELL,
     AppRoutes.TEACHER_SHELL,
     AppRoutes.PARENT_SHELL,
+    AppRoutes.ADMIN_SHELL,
     AppRoutes.COMING_SOON,
 )
 
@@ -46,6 +49,7 @@ fun AppNavGraph(
     studentRepository: StudentRepository,
     teacherRepository: TeacherRepository,
     parentRepository: ParentRepository,
+    adminRepository: AdminRepository,
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController(),
     startDestination: String = authRepository.routeForStoredSession(),
@@ -205,6 +209,15 @@ fun AppNavGraph(
                 onLogOut = { logOutToWelcome() },
             )
         }
+        composable(AppRoutes.ADMIN_SHELL) {
+            AdminShell(
+                userSessionStore = userSessionStore,
+                adminRepository = adminRepository,
+                studentRepository = studentRepository,
+                authRepository = authRepository,
+                onLogOut = { logOutToWelcome() },
+            )
+        }
         composable(AppRoutes.TEACHER_SHELL) {
             TeacherShell(
                 userSessionStore = userSessionStore,
@@ -218,7 +231,7 @@ fun AppNavGraph(
                         UserRole.Student -> AppRoutes.STUDENT_SHELL
                         UserRole.Teacher -> AppRoutes.TEACHER_SHELL
                         UserRole.Parents -> AppRoutes.PARENT_SHELL
-                        UserRole.Admin -> AppRoutes.COMING_SOON
+                        UserRole.Admin -> AppRoutes.ADMIN_SHELL
                     }
                     navController.navigate(dest) {
                         popUpTo(0) { inclusive = true }

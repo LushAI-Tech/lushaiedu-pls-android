@@ -8,7 +8,7 @@ fun UserSessionStore.destinationForRole(): String {
         UserRole.Student -> AppRoutes.STUDENT_SHELL
         UserRole.Teacher -> AppRoutes.TEACHER_SHELL
         UserRole.Parents -> AppRoutes.PARENT_SHELL
-        UserRole.Admin -> AppRoutes.COMING_SOON
+        UserRole.Admin -> AppRoutes.ADMIN_SHELL
         null -> AppRoutes.STUDENT_SHELL
     }
 }

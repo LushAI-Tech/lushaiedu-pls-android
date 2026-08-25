@@ -155,7 +155,7 @@ class AuthRepository(
         OnboardingState.COMPLETE -> when (user.role) {
             UserRole.TEACHER -> AppRoutes.TEACHER_SHELL
             UserRole.PARENT -> AppRoutes.PARENT_SHELL
-            UserRole.ADMIN -> AppRoutes.COMING_SOON
+            UserRole.ADMIN -> AppRoutes.ADMIN_SHELL
             UserRole.STUDENT -> AppRoutes.STUDENT_SHELL
         }
     }

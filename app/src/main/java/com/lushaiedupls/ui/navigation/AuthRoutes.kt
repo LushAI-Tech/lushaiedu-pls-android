@@ -11,6 +11,7 @@ object AppRoutes {
     const val STUDENT_SHELL = "student_shell"
     const val TEACHER_SHELL = "teacher_shell"
     const val PARENT_SHELL = "parent_shell"
+    const val ADMIN_SHELL = "admin_shell"
     const val COMING_SOON = "coming_soon"
 }
 

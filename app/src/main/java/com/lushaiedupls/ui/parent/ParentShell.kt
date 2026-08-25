@@ -32,10 +32,15 @@ import com.lushaiedupls.ui.navigation.lushExitTransition
 import com.lushaiedupls.ui.navigation.lushPopEnterTransition
 import com.lushaiedupls.ui.navigation.lushPopExitTransition
 import com.lushaiedupls.ui.parent.attendance.ParentChildAttendanceRoute
+import com.lushaiedupls.ui.parent.fees.ParentFeesRoute
+import com.lushaiedupls.ui.parent.feedback.ParentFeedbackRoute
 import com.lushaiedupls.ui.parent.home.ParentHomeRoute
 import com.lushaiedupls.ui.parent.menu.ParentMenuOverlay
+import com.lushaiedupls.ui.parent.more.ParentMoreScreen
 import com.lushaiedupls.ui.parent.notifications.ParentNotificationsViewModel
-import com.lushaiedupls.ui.parent.scan.ParentScanRoute
+import com.lushaiedupls.ui.parent.scan.rememberParentQrScanLauncher
+import com.lushaiedupls.ui.parent.timetable.ParentChildTimetableRoute
+import com.lushaiedupls.ui.student.calendar.StudentCalendarRoute
 import com.lushaiedupls.ui.student.menu.LegalDocumentScreen
 import com.lushaiedupls.ui.student.menu.StudentAccountRoute
 import com.lushaiedupls.ui.student.secondary.NotificationsScreen
@@ -43,8 +48,9 @@ import com.lushaiedupls.ui.theme.BgWhite
 
 private val ParentTabRoutes = setOf(
     ParentRoutes.HOME,
-    ParentRoutes.SCAN,
+    ParentRoutes.CALENDAR,
     ParentRoutes.ATTENDANCE,
+    ParentRoutes.MORE,
 )
 
 @Composable
@@ -62,9 +68,16 @@ fun ParentShell(
     var showMenuOverlay by remember { mutableStateOf(false) }
     var selectedStudentId by rememberSaveable { mutableStateOf<String?>(null) }
 
-    val selectedTab = when (currentRoute) {
-        ParentRoutes.SCAN -> ParentTab.Scan
-        ParentRoutes.ATTENDANCE -> ParentTab.Attendance
+    val inMoreStack = currentRoute in setOf(
+        ParentRoutes.MORE,
+        ParentRoutes.TIMETABLE,
+        ParentRoutes.FEES,
+        ParentRoutes.FEEDBACK,
+    )
+    val selectedTab = when {
+        currentRoute == ParentRoutes.CALENDAR -> ParentTab.Calendar
+        currentRoute == ParentRoutes.ATTENDANCE -> ParentTab.Attendance
+        inMoreStack -> ParentTab.More
         else -> ParentTab.Home
     }
 
@@ -78,6 +91,11 @@ fun ParentShell(
         }
     }
 
+    val launchQrScanner = rememberParentQrScanLauncher(
+        parentRepository = parentRepository,
+        onLinked = { navigateTab(ParentRoutes.HOME) },
+    )
+
     Scaffold(
         modifier = modifier
             .fillMaxSize()
@@ -86,9 +104,8 @@ fun ParentShell(
         containerColor = BgWhite,
         bottomBar = {
             ParentBottomBar(
-                selectedTab = if (showMenuOverlay) ParentTab.More else selectedTab,
+                selectedTab = selectedTab,
                 onTabSelected = { tab -> navigateTab(tab.route) },
-                onMoreClick = { showMenuOverlay = true },
             )
         },
     ) { innerPadding ->
@@ -112,23 +129,59 @@ fun ParentShell(
                         tabNavController.navigate(ParentRoutes.NOTIFICATIONS)
                     },
                     onProfileClick = { showMenuOverlay = true },
-                    onScanClick = { navigateTab(ParentRoutes.SCAN) },
+                    onScanClick = launchQrScanner,
                     onChildClick = { studentId, _ ->
                         selectedStudentId = studentId
                         navigateTab(ParentRoutes.ATTENDANCE)
                     },
+                    onFeesClick = { tabNavController.navigate(ParentRoutes.FEES) },
+                    onStudentReady = { studentId ->
+                        selectedStudentId = studentId
+                    },
                 )
             }
-            composable(ParentRoutes.SCAN) {
-                ParentScanRoute(
-                    parentRepository = parentRepository,
-                    onLinked = { navigateTab(ParentRoutes.HOME) },
+            composable(ParentRoutes.CALENDAR) {
+                StudentCalendarRoute(
+                    studentRepository = studentRepository,
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
             composable(ParentRoutes.ATTENDANCE) {
                 ParentChildAttendanceRoute(
                     parentRepository = parentRepository,
                     studentId = selectedStudentId,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            composable(ParentRoutes.MORE) {
+                ParentMoreScreen(
+                    onTimetable = { tabNavController.navigate(ParentRoutes.TIMETABLE) },
+                    onFees = { tabNavController.navigate(ParentRoutes.FEES) },
+                    onFeedback = { tabNavController.navigate(ParentRoutes.FEEDBACK) },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            composable(ParentRoutes.TIMETABLE) {
+                ParentChildTimetableRoute(
+                    parentRepository = parentRepository,
+                    studentId = selectedStudentId,
+                    onBack = { tabNavController.popBackStack() },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            composable(ParentRoutes.FEES) {
+                ParentFeesRoute(
+                    parentRepository = parentRepository,
+                    studentId = selectedStudentId,
+                    onBack = { tabNavController.popBackStack() },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            composable(ParentRoutes.FEEDBACK) {
+                ParentFeedbackRoute(
+                    parentRepository = parentRepository,
+                    studentId = selectedStudentId,
+                    onBack = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -194,7 +247,7 @@ fun ParentShell(
             },
             onScanQr = {
                 showMenuOverlay = false
-                navigateTab(ParentRoutes.SCAN)
+                launchQrScanner()
             },
             onPrivacy = {
                 showMenuOverlay = false

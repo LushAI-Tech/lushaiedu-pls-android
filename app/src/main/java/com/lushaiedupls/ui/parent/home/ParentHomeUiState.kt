@@ -1,5 +1,6 @@
 package com.lushaiedupls.ui.parent.home
 
+import com.lushaiedupls.data.remote.dto.AttendanceTotals
 import com.lushaiedupls.data.remote.dto.ParentChildSummary
 import com.lushaiedupls.data.remote.dto.ParentRelationship
 
@@ -7,6 +8,11 @@ data class ParentHomeUiState(
     val displayName: String = "",
     val monthLabel: String = "",
     val notificationCount: Int = 0,
+    val totalChildren: Int = 0,
+    val overallAttendance: AttendanceTotals = AttendanceTotals(),
+    val pendingFeePaise: Int = 0,
+    val childrenWithPendingFees: Int = 0,
+    val openFeedbackCount: Int = 0,
     val children: List<ParentChildSummary> = emptyList(),
     val selectedStudentId: String? = null,
     val isLoading: Boolean = false,

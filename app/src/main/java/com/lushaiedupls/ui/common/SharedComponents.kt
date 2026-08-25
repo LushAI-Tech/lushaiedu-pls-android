@@ -1,5 +1,6 @@
 package com.lushaiedupls.ui.common
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -21,9 +23,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.automirrored.outlined.TrendingUp
+import androidx.compose.material.icons.automirrored.outlined.FactCheck
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Class
+import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Payments
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -35,13 +43,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lushaiedupls.R
@@ -62,6 +75,9 @@ private val LabelGray = Color(0xFF9CA3AF)
 private val ValueGray = Color(0xFF6B7280)
 private val PresentGreen = Color(0xFF22C55E)
 private val LeaveAmber = Color(0xFFD97706)
+val AttendanceRingPresent = BrandOrange
+val AttendanceRingAbsent = Color(0xFFFFC9A8)
+val AttendanceRingLeave = Color(0xFFFFE8DC)
 
 @Composable
 fun AppBackNav(
@@ -190,6 +206,7 @@ fun MetricCard(
     emphasized: Boolean,
     iconKind: OverviewIcon,
     modifier: Modifier = Modifier,
+    cardHeight: Dp = 88.dp,
 ) {
     val bg = if (emphasized) BrandBlack else BgLight
     val fg = if (emphasized) Color.White else BrandBlack
@@ -200,7 +217,7 @@ fun MetricCard(
         modifier = modifier
             .clip(MetricShape)
             .background(bg)
-            .height(88.dp),
+            .height(cardHeight),
     ) {
         Box(
             modifier = Modifier
@@ -243,11 +260,61 @@ fun MetricCard(
     }
 }
 
+@Composable
+fun AttendanceDonut(
+    present: Int,
+    absent: Int,
+    leave: Int,
+    percent: Int,
+    modifier: Modifier = Modifier,
+) {
+    val total = (present + absent + leave).coerceAtLeast(1).toFloat()
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val strokeWidth = size.minDimension * 0.13f
+            val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Butt)
+            val diameter = size.minDimension - strokeWidth
+            val topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
+            val arcSize = Size(diameter, diameter)
+            val presentSweep = 360f * (present / total)
+            val absentSweep = 360f * (absent / total)
+            val leaveSweep = 360f - presentSweep - absentSweep
+            var start = -90f
+            drawArc(AttendanceRingPresent, start, presentSweep, false, topLeft, arcSize, style = stroke)
+            start += presentSweep
+            drawArc(AttendanceRingAbsent, start, absentSweep, false, topLeft, arcSize, style = stroke)
+            start += absentSweep
+            drawArc(AttendanceRingLeave, start, leaveSweep, false, topLeft, arcSize, style = stroke)
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "$percent%",
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp,
+                color = BrandBlack,
+                fontFamily = FontFamily.SansSerif,
+            )
+            Text(
+                text = stringResource(R.string.section_attendance),
+                fontSize = 13.sp,
+                color = BrandBlack,
+                fontFamily = FontFamily.SansSerif,
+            )
+        }
+    }
+}
+
 private fun iconFor(kind: OverviewIcon): ImageVector = when (kind) {
     OverviewIcon.Subject -> Icons.AutoMirrored.Outlined.MenuBook
     OverviewIcon.StemMastery -> Icons.Outlined.Speed
     OverviewIcon.ReadingProgress -> Icons.AutoMirrored.Outlined.TrendingUp
     OverviewIcon.AverageProgress -> Icons.Outlined.CalendarMonth
+    OverviewIcon.Children -> Icons.Outlined.Groups
+    OverviewIcon.Fees -> Icons.Outlined.Payments
+    OverviewIcon.Feedback -> Icons.Outlined.Forum
+    OverviewIcon.Staff -> Icons.Outlined.Person
+    OverviewIcon.Classes -> Icons.Outlined.Class
+    OverviewIcon.Attendance -> Icons.AutoMirrored.Outlined.FactCheck
 }
 
 @Composable

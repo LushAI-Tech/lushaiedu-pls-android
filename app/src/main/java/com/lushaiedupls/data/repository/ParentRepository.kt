@@ -2,16 +2,23 @@ package com.lushaiedupls.data.repository
 
 import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.api.AttendanceApi
+import com.lushaiedupls.data.remote.api.FeesApi
 import com.lushaiedupls.data.remote.api.OverviewApi
 import com.lushaiedupls.data.remote.api.ParentApi
+import com.lushaiedupls.data.remote.api.TimetableApi
 import com.lushaiedupls.data.remote.dto.AttendanceCalendar
+import com.lushaiedupls.data.remote.dto.FeeHistoryResponse
 import com.lushaiedupls.data.remote.dto.LinkedStudentOut
 import com.lushaiedupls.data.remote.dto.MessageResponse
+import com.lushaiedupls.data.remote.dto.ParentFeedbackCreateRequest
+import com.lushaiedupls.data.remote.dto.ParentFeedbackOut
+import com.lushaiedupls.data.remote.dto.ParentFeedbackUpdateRequest
 import com.lushaiedupls.data.remote.dto.ParentLinkOut
 import com.lushaiedupls.data.remote.dto.ParentOverview
 import com.lushaiedupls.data.remote.dto.ParentRelationship
 import com.lushaiedupls.data.remote.dto.RedeemLinkRequest
 import com.lushaiedupls.data.remote.dto.StudentAttendanceSummary
+import com.lushaiedupls.data.remote.dto.WeekView
 import com.lushaiedupls.data.remote.safeApiCall
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +28,8 @@ class ParentRepository(
     private val parentApi: ParentApi,
     private val overviewApi: OverviewApi,
     private val attendanceApi: AttendanceApi,
+    private val timetableApi: TimetableApi,
+    private val feesApi: FeesApi,
 ) {
     private val _unreadNotificationCount = MutableStateFlow<Int?>(null)
     val unreadNotificationCount: StateFlow<Int?> = _unreadNotificationCount.asStateFlow()
@@ -71,4 +80,49 @@ class ParentRepository(
         month: String? = null,
     ): NetworkResult<AttendanceCalendar> =
         safeApiCall { attendanceApi.studentCalendar(studentId, month) }
+
+    suspend fun linkedTimetable(teachingUnitId: String? = null): NetworkResult<WeekView> =
+        safeApiCall { timetableApi.myTimetable(teachingUnitId) }
+
+    suspend fun studentFeeHistory(
+        studentId: String,
+        month: String? = "all",
+    ): NetworkResult<FeeHistoryResponse> =
+        safeApiCall { feesApi.studentHistory(studentId, month) }
+
+    suspend fun feedback(): NetworkResult<List<ParentFeedbackOut>> =
+        safeApiCall { parentApi.feedback() }
+
+    suspend fun createFeedback(
+        subject: String,
+        message: String,
+        studentId: String? = null,
+    ): NetworkResult<ParentFeedbackOut> = safeApiCall {
+        parentApi.createFeedback(
+            ParentFeedbackCreateRequest(
+                student_id = studentId?.takeIf { it.isNotBlank() },
+                subject = subject.trim(),
+                message = message.trim(),
+            ),
+        )
+    }
+
+    suspend fun updateFeedback(
+        feedbackId: String,
+        subject: String? = null,
+        message: String? = null,
+        studentId: String? = null,
+    ): NetworkResult<ParentFeedbackOut> = safeApiCall {
+        parentApi.updateFeedback(
+            feedbackId,
+            ParentFeedbackUpdateRequest(
+                student_id = studentId?.takeIf { it.isNotBlank() },
+                subject = subject?.trim()?.takeIf { it.isNotEmpty() },
+                message = message?.trim()?.takeIf { it.isNotEmpty() },
+            ),
+        )
+    }
+
+    suspend fun deleteFeedback(feedbackId: String): NetworkResult<MessageResponse> =
+        safeApiCall { parentApi.deleteFeedback(feedbackId) }
 }

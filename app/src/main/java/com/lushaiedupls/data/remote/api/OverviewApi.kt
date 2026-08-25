@@ -1,5 +1,6 @@
 package com.lushaiedupls.data.remote.api
 
+import com.lushaiedupls.data.remote.dto.AdminOverview
 import com.lushaiedupls.data.remote.dto.ParentOverview
 import com.lushaiedupls.data.remote.dto.StudentOverview
 import com.lushaiedupls.data.remote.dto.TeacherOverview
@@ -19,4 +20,7 @@ interface OverviewApi {
         @Query("class_id") classId: String? = null,
         @Query("top_limit") topLimit: Int = 5,
     ): TeacherOverview
+
+    @GET("api/v1/overview/admin")
+    suspend fun adminOverview(@Query("month") month: String? = null): AdminOverview
 }
