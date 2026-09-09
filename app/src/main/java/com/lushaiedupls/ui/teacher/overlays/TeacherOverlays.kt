@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -38,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,13 +59,18 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.lushaiedupls.R
 import com.lushaiedupls.data.mock.TeacherDayPeriod
+import com.lushaiedupls.data.remote.NetworkResult
+import com.lushaiedupls.data.remote.userMessage
+import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
 import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.TextSecondary
-
+import com.lushaiedupls.ui.common.scrollIntoViewOnFocus
+import com.lushaiedupls.ui.common.verticalScrollWithIme
+import kotlinx.coroutines.launch
 data class AttendancePeriodOption(
     val periodId: String,
     val label: String,
@@ -89,6 +97,7 @@ fun TeacherScrimDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .imePadding()
                 .background(Color.Black.copy(alpha = 0.45f))
                 .clickable(onClick = onDismiss),
             contentAlignment = Alignment.Center,
@@ -168,7 +177,7 @@ fun InviteParentOverlay(
                 .clip(CardShape)
                 .background(BgWhite)
                 .padding(20.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScrollWithIme(rememberScrollState()),
         ) {
             Text(
                 text = stringResource(R.string.teacher_invite_parent_title),
@@ -401,15 +410,34 @@ fun TakeAttendanceSetupOverlay(
 
 @Composable
 fun SetReminderOverlay(
+    teacherRepository: TeacherRepository,
     onDismiss: () -> Unit,
-    onSave: (enabled: Boolean, minutes: Int) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
-    var enabled by remember { mutableStateOf(true) }
+    val scope = rememberCoroutineScope()
+    var enabled by remember { mutableStateOf(false) }
     var minutes by remember { mutableStateOf("30") }
+    var isLoading by remember { mutableStateOf(true) }
+    var isSaving by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     val savedMessage = stringResource(R.string.teacher_reminders_saved)
+    val rangeError = stringResource(R.string.teacher_reminder_minutes_range)
 
-    TeacherScrimDialog(onDismiss = onDismiss) {
+    LaunchedEffect(Unit) {
+        isLoading = true
+        errorMessage = null
+        when (val result = teacherRepository.profile()) {
+            is NetworkResult.Success -> {
+                val lead = result.data.period_reminder_lead_minutes
+                enabled = lead != null
+                minutes = (lead ?: 30).toString()
+            }
+            else -> errorMessage = result.userMessage()
+        }
+        isLoading = false
+    }
+
+    TeacherScrimDialog(onDismiss = { if (!isSaving) onDismiss() }) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -417,6 +445,16 @@ fun SetReminderOverlay(
                 .background(BgWhite)
                 .padding(20.dp),
         ) {
+            if (isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(120.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(color = BrandOrange, modifier = Modifier.size(28.dp))
+                }
+            } else {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -430,7 +468,11 @@ fun SetReminderOverlay(
                 )
                 Switch(
                     checked = enabled,
-                    onCheckedChange = { enabled = it },
+                    onCheckedChange = {
+                        enabled = it
+                        errorMessage = null
+                    },
+                    enabled = !isSaving,
                     colors = SwitchDefaults.colors(
                         checkedTrackColor = BrandOrange,
                         checkedThumbColor = Color.White,
@@ -441,29 +483,63 @@ fun SetReminderOverlay(
             Text(
                 text = stringResource(R.string.teacher_minutes_before_lesson),
                 fontSize = 14.sp,
-                color = BrandBlack,
+                color = if (enabled) BrandBlack else TextSecondary,
             )
             Spacer(modifier = Modifier.height(8.dp))
             OverlayTextField(
                 value = minutes,
                 onValueChange = { value ->
-                    if (value.length <= 3 && value.all { it.isDigit() }) minutes = value
+                    if (value.length <= 3 && value.all { it.isDigit() }) {
+                        minutes = value
+                        errorMessage = null
+                    }
                 },
                 placeholder = "30",
                 minHeight = 48.dp,
                 singleLine = true,
+                enabled = enabled && !isSaving,
             )
+            errorMessage?.takeIf { it.isNotBlank() }?.let { message ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(text = message, color = BrandOrange, fontSize = 12.sp)
+            }
             Spacer(modifier = Modifier.height(16.dp))
             PrimaryPillButton(
-                label = stringResource(R.string.teacher_save_reminders),
+                label = if (isSaving) {
+                    stringResource(R.string.teacher_saving)
+                } else {
+                    stringResource(R.string.teacher_save_reminders)
+                },
+                enabled = !isSaving,
                 onClick = {
-                    onSave(enabled, minutes.toIntOrNull() ?: 30)
-                    Toast.makeText(context, savedMessage, Toast.LENGTH_SHORT).show()
-                    onDismiss()
+                    val lead = if (enabled) {
+                        val parsed = minutes.toIntOrNull()
+                        if (parsed == null || parsed !in 5..120) {
+                            errorMessage = rangeError
+                            return@PrimaryPillButton
+                        }
+                        parsed
+                    } else {
+                        null
+                    }
+                    isSaving = true
+                    errorMessage = null
+                    scope.launch {
+                        when (val result = teacherRepository.updatePeriodReminder(lead)) {
+                            is NetworkResult.Success -> {
+                                Toast.makeText(context, savedMessage, Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            }
+                            else -> {
+                                errorMessage = result.userMessage()
+                                isSaving = false
+                            }
+                        }
+                    }
                 },
             )
             Spacer(modifier = Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.Top) {
                 Icon(
                     imageVector = Icons.Outlined.Info,
                     contentDescription = null,
@@ -477,24 +553,37 @@ fun SetReminderOverlay(
                     fontSize = 11.sp,
                 )
             }
+            }
         }
     }
 }
 
+data class SessionSubjectOption(
+    val id: String,
+    val name: String,
+)
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SetSessionOverlay(
-    subjects: List<String>,
-    initialSubject: String? = null,
+    subjects: List<SessionSubjectOption>,
+    initialSubjectId: String? = null,
+    initialSubjectName: String? = null,
     initialRoom: String? = null,
+    isLoading: Boolean = false,
     onDismiss: () -> Unit,
-    onDone: (subject: String, room: String) -> Unit = { _, _ -> },
+    onDone: (subjectId: String, subjectName: String, room: String) -> Unit = { _, _, _ -> },
     onClear: () -> Unit = {},
 ) {
-    var selectedSubject by remember(initialSubject, subjects) {
-        mutableStateOf(initialSubject?.takeIf { it in subjects } ?: subjects.firstOrNull().orEmpty())
+    var selectedSubjectId by remember(initialSubjectId, initialSubjectName, subjects.map { it.id }) {
+        mutableStateOf(
+            initialSubjectId?.takeIf { id -> subjects.any { it.id == id } }
+                ?: subjects.firstOrNull { it.name.equals(initialSubjectName, ignoreCase = true) }?.id
+                ?: subjects.firstOrNull()?.id.orEmpty(),
+        )
     }
     var room by remember(initialRoom) { mutableStateOf(initialRoom.orEmpty()) }
+    val selected = subjects.firstOrNull { it.id == selectedSubjectId }
 
     TeacherScrimDialog(onDismiss = onDismiss) {
         Column(
@@ -518,16 +607,37 @@ fun SetSessionOverlay(
                 color = BrandBlack,
             )
             Spacer(modifier = Modifier.height(8.dp))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                subjects.forEach { subject ->
-                    SelectChip(
-                        label = subject,
-                        selected = selectedSubject == subject,
-                        onClick = { selectedSubject = subject },
+            when {
+                isLoading && subjects.isEmpty() -> Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(
+                        color = BrandBlack,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(22.dp),
                     )
+                }
+                subjects.isEmpty() -> Text(
+                    text = stringResource(R.string.teacher_session_no_subjects),
+                    color = TextSecondary,
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.SansSerif,
+                )
+                else -> FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    subjects.forEach { subject ->
+                        SelectChip(
+                            label = subject.name,
+                            selected = selectedSubjectId == subject.id,
+                            onClick = { selectedSubjectId = subject.id },
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
@@ -597,9 +707,10 @@ fun SetSessionOverlay(
                     modifier = Modifier
                         .height(40.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(BrandBlack)
-                        .clickable {
-                            onDone(selectedSubject, room)
+                        .background(if (selected == null) BgLight else BrandBlack)
+                        .clickable(enabled = selected != null) {
+                            val choice = selected ?: return@clickable
+                            onDone(choice.id, choice.name, room)
                             onDismiss()
                         }
                         .padding(horizontal = 16.dp),
@@ -607,7 +718,7 @@ fun SetSessionOverlay(
                 ) {
                     Text(
                         text = stringResource(R.string.teacher_session_done),
-                        color = Color.White,
+                        color = if (selected == null) TextSecondary else Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
                     )
@@ -709,6 +820,7 @@ private fun OverlayTextField(
     placeholder: String,
     minHeight: androidx.compose.ui.unit.Dp,
     singleLine: Boolean = false,
+    enabled: Boolean = true,
 ) {
     Box(
         modifier = Modifier
@@ -716,7 +828,7 @@ private fun OverlayTextField(
             .heightIn(min = minHeight)
             .clip(FieldShape)
             .border(1.dp, BorderGray.copy(alpha = 0.7f), FieldShape)
-            .background(BgLight)
+            .background(if (enabled) BgLight else BgLight.copy(alpha = 0.6f))
             .padding(horizontal = 12.dp, vertical = 12.dp),
     ) {
         if (value.isEmpty()) {
@@ -725,14 +837,17 @@ private fun OverlayTextField(
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
+            enabled = enabled,
             singleLine = singleLine,
             cursorBrush = SolidColor(BrandBlack),
             textStyle = TextStyle(
-                color = BrandBlack,
+                color = if (enabled) BrandBlack else TextSecondary,
                 fontSize = 14.sp,
                 fontFamily = FontFamily.SansSerif,
             ),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .scrollIntoViewOnFocus(),
         )
     }
 }

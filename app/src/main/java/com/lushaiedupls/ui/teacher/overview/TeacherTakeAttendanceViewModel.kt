@@ -46,10 +46,22 @@ class TeacherTakeAttendanceViewModel(
         }
     }
 
+    fun setNote(studentId: String, note: String) {
+        val clipped = note.take(NOTE_MAX_LENGTH)
+        _uiState.update { current ->
+            current.copy(
+                notes = current.notes + (studentId to clipped),
+                saved = false,
+            )
+        }
+    }
+
     fun saveAttendance() {
-        val entries = _uiState.value.marks.mapNotNull { (studentId, mark) ->
+        val state = _uiState.value
+        val entries = state.marks.mapNotNull { (studentId, mark) ->
             val status = TeacherUiMappers.attendanceMarkToStatus(mark) ?: return@mapNotNull null
-            studentId to status
+            val note = state.notes[studentId]?.trim()?.take(NOTE_MAX_LENGTH)?.takeIf { it.isNotEmpty() }
+            Triple(studentId, status, note)
         }
         if (entries.isEmpty()) {
             _uiState.update { it.copy(errorMessage = "Mark at least one student before saving.") }
@@ -85,7 +97,14 @@ class TeacherTakeAttendanceViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val hasContent = _uiState.value.session != null
+            _uiState.update {
+                if (hasContent) {
+                    it.copy(isRefreshing = true, isLoading = false, errorMessage = null)
+                } else {
+                    it.copy(isLoading = true, isRefreshing = false, errorMessage = null)
+                }
+            }
             val rosterResult = teacherRepository.unitRoster(
                 unitId = unitId,
                 date = dateLabel,
@@ -103,19 +122,29 @@ class TeacherTakeAttendanceViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            isRefreshing = false,
                             session = session,
                             marks = session.students.associate { row -> row.student.id to row.mark },
+                            notes = session.students.associate { row ->
+                                row.student.id to (row.note.orEmpty())
+                            },
                         )
                     }
                 }
                 else -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = rosterResult.userMessage())
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        errorMessage = rosterResult.userMessage(),
+                    )
                 }
             }
         }
     }
 
     companion object {
+        private const val NOTE_MAX_LENGTH = 255
+
         fun provideFactory(
             teacherRepository: TeacherRepository,
             unitId: String,

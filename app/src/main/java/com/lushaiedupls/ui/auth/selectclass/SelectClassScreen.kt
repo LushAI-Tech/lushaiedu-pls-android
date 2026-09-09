@@ -33,6 +33,7 @@ import com.lushaiedupls.R
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.session.UserSessionStore
 import com.lushaiedupls.ui.auth.components.LushAiEduBrandHeader
+import com.lushaiedupls.ui.auth.components.OnboardingStepHeader
 import com.lushaiedupls.ui.auth.components.SelectionNavButtons
 import com.lushaiedupls.ui.auth.components.SelectionTile
 import com.lushaiedupls.ui.theme.BgWhite
@@ -80,25 +81,15 @@ fun SelectClassScreen(
             .padding(horizontal = 24.dp, vertical = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        LushAiEduBrandHeader(logoSize = 96.dp)
+        LushAiEduBrandHeader(logoSize = 104.dp)
         Spacer(modifier = Modifier.height(28.dp))
-        Text(
-            text = stringResource(
+        OnboardingStepHeader(
+            title = stringResource(
                 if (uiState.allowMultiSelect) R.string.select_classes else R.string.select_class,
             ),
-            fontWeight = FontWeight.Bold,
-            fontSize = 22.sp,
-            fontFamily = FontFamily.SansSerif,
+            step = 2,
+            totalSteps = 3,
         )
-        if (uiState.allowMultiSelect) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.select_classes_hint),
-                color = TextSecondary,
-                fontSize = 14.sp,
-                fontFamily = FontFamily.SansSerif,
-            )
-        }
         Spacer(modifier = Modifier.height(24.dp))
 
         when {

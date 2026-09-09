@@ -24,6 +24,7 @@ data class ChaptersUiState(
     val subjectId: String = "",
     val subjectTitle: String = "",
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
 )
 
@@ -54,8 +55,13 @@ class ChaptersViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            if (_uiState.value.chapters.isEmpty()) {
-                _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val hasContent = _uiState.value.chapters.isNotEmpty()
+            _uiState.update {
+                if (hasContent) {
+                    it.copy(isRefreshing = true, errorMessage = null)
+                } else {
+                    it.copy(isLoading = true, errorMessage = null)
+                }
             }
             coroutineScope {
                 val resolvedSubjectId = subjectIdHint?.takeIf { it.isNotBlank() }
@@ -78,6 +84,7 @@ class ChaptersViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            isRefreshing = false,
                             errorMessage = "No AI subjects available.",
                         )
                     }
@@ -95,19 +102,20 @@ class ChaptersViewModel(
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
+                                isRefreshing = false,
                                 subjectId = subjectId,
                                 subjectTitle = subjectTitle.ifBlank { it.subjectTitle },
                                 chapters = StudentUiMappers.chapters(chapters.data),
                             )
                         }
                         val activeChapterIds = chapters.data.filter { it.is_active }.map { it.id }
-                        if (activeChapterIds.isNotEmpty()) {
-                            studentRepository.prefetchAiChat(activeChapterIds)
-                        }
+                        studentRepository.preferredChatPrefetchChapterId(activeChapterIds)
+                            ?.let { studentRepository.prefetchAiChat(listOf(it)) }
                     } else {
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
+                                isRefreshing = false,
                                 errorMessage = if (_uiState.value.chapters.isEmpty()) chapters.userMessage() else null,
                             )
                         }

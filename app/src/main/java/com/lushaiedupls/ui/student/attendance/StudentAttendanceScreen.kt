@@ -1,5 +1,10 @@
 package com.lushaiedupls.ui.student.attendance
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,16 +28,20 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -49,12 +58,13 @@ import com.lushaiedupls.data.mock.AttendanceDashboard
 import com.lushaiedupls.data.mock.AttendanceDayMark
 import com.lushaiedupls.data.mock.AttendanceSession
 import com.lushaiedupls.data.mock.AttendanceStat
-import com.lushaiedupls.data.mock.AttendanceStatus
 import com.lushaiedupls.data.mock.StudentMockRepository
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.mock.SubjectAttendanceRow
 import com.lushaiedupls.ui.common.ApprovalNeededPanel
+import com.lushaiedupls.ui.common.AttendanceDayPopover
 import com.lushaiedupls.ui.common.LoadErrorPanel
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.theme.BgLight
@@ -64,9 +74,7 @@ import com.lushaiedupls.ui.theme.BrandBlack
 import com.lushaiedupls.ui.theme.LushAIEdu_PLSTheme
 import com.lushaiedupls.ui.theme.TextSecondary
 import java.time.DayOfWeek
-import java.time.LocalDate
 import java.time.YearMonth
-import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 
@@ -110,6 +118,7 @@ fun StudentAttendanceScreen(
     onThisMonth: () -> Unit,
     onSelectDay: (Int) -> Unit,
     onRefresh: () -> Unit = {},
+    showTitle: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     when {
@@ -123,25 +132,37 @@ fun StudentAttendanceScreen(
             title = stringResource(R.string.attendance_title),
             modifier = modifier,
         )
-        uiState.dashboard == null -> LoadErrorPanel(
-            screenTitle = stringResource(R.string.attendance_title),
-            message = uiState.errorMessage.orEmpty()
-                .ifBlank { stringResource(R.string.load_error_title) },
-            onRetry = onRefresh,
-            isRetrying = uiState.isLoading,
-            modifier = modifier,
-        )
+        uiState.dashboard == null -> LushPullToRefreshBox(
+            isRefreshing = uiState.isLoading || uiState.isRefreshing,
+            onRefresh = onRefresh,
+            modifier = modifier.fillMaxSize(),
+        ) {
+            LoadErrorPanel(
+                screenTitle = stringResource(R.string.attendance_title),
+                message = uiState.errorMessage.orEmpty()
+                    .ifBlank { stringResource(R.string.load_error_title) },
+                onRetry = onRefresh,
+                isRetrying = uiState.isLoading || uiState.isRefreshing,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         else -> {
             val dashboard = uiState.dashboard ?: return
-            AttendanceDashboardContent(
-                uiState = uiState,
-                dashboard = dashboard,
-                onPreviousMonth = onPreviousMonth,
-                onNextMonth = onNextMonth,
-                onThisMonth = onThisMonth,
-                onSelectDay = onSelectDay,
-                modifier = modifier,
-            )
+            LushPullToRefreshBox(
+                isRefreshing = uiState.isRefreshing,
+                onRefresh = onRefresh,
+                modifier = modifier.fillMaxSize(),
+            ) {
+                AttendanceDashboardContent(
+                    uiState = uiState,
+                    dashboard = dashboard,
+                    onPreviousMonth = onPreviousMonth,
+                    onNextMonth = onNextMonth,
+                    onThisMonth = onThisMonth,
+                    onSelectDay = onSelectDay,
+                    showTitle = showTitle,
+                )
+            }
         }
     }
 }
@@ -154,6 +175,7 @@ private fun AttendanceDashboardContent(
     onNextMonth: () -> Unit,
     onThisMonth: () -> Unit,
     onSelectDay: (Int) -> Unit,
+    showTitle: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -162,33 +184,27 @@ private fun AttendanceDashboardContent(
             .background(BgWhite)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
-            .padding(top = 12.dp, bottom = 24.dp),
+            .padding(top = if (showTitle) 12.dp else 0.dp, bottom = 24.dp),
     ) {
-        Text(
-            text = stringResource(R.string.attendance_title),
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.Center,
-            fontWeight = FontWeight.Bold,
-            fontSize = 22.sp,
-            color = BrandBlack,
-            fontFamily = FontFamily.SansSerif,
-        )
-        Spacer(modifier = Modifier.height(18.dp))
+        if (showTitle) {
+            Text(
+                text = stringResource(R.string.attendance_title),
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp,
+                color = BrandBlack,
+                fontFamily = FontFamily.SansSerif,
+            )
+            Spacer(modifier = Modifier.height(18.dp))
+        }
 
-        StatsRow(stats = dashboard.primaryStats)
+        StatsRow(stats = dashboard.primaryStats, darkTheme = true)
         Spacer(modifier = Modifier.height(10.dp))
-        StatsRow(stats = dashboard.secondaryStats)
+        StatsRow(stats = dashboard.secondaryStats, darkTheme = false)
         Spacer(modifier = Modifier.height(22.dp))
 
-        Text(
-            text = stringResource(R.string.attendance_by_subject),
-            fontWeight = FontWeight.Bold,
-            fontSize = 18.sp,
-            color = BrandBlack,
-            fontFamily = FontFamily.SansSerif,
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        BySubjectTable(rows = dashboard.bySubject)
+        BySubjectSection(rows = dashboard.bySubject)
         Spacer(modifier = Modifier.height(22.dp))
 
         MonthToolbar(
@@ -204,20 +220,17 @@ private fun AttendanceDashboardContent(
             month = uiState.visibleMonth,
             dayMarks = dashboard.dayMarks,
             selectedDay = uiState.selectedDay,
+            sessions = dashboard.sessions,
             onSelectDay = onSelectDay,
         )
-        uiState.selectedDay?.let { day ->
-            Spacer(modifier = Modifier.height(22.dp))
-            SelectedDaySessions(
-                date = uiState.visibleMonth.atDay(day),
-                sessions = dashboard.sessions.filter { it.dayOfMonth == day },
-            )
-        }
     }
 }
 
 @Composable
-private fun StatsRow(stats: List<AttendanceStat>) {
+private fun StatsRow(
+    stats: List<AttendanceStat>,
+    darkTheme: Boolean,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -225,6 +238,7 @@ private fun StatsRow(stats: List<AttendanceStat>) {
         stats.forEach { stat ->
             AttendanceStatCard(
                 stat = stat,
+                darkTheme = darkTheme,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -234,11 +248,12 @@ private fun StatsRow(stats: List<AttendanceStat>) {
 @Composable
 private fun AttendanceStatCard(
     stat: AttendanceStat,
+    darkTheme: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val bg = if (stat.emphasized) BrandBlack else BgLight
-    val fg = if (stat.emphasized) Color.White else BrandBlack
-    val glow = if (stat.emphasized) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.04f)
+    val bg = if (darkTheme) BrandBlack else BgLight
+    val fg = if (darkTheme) Color.White else BrandBlack
+    val glow = if (darkTheme) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.04f)
 
     Box(
         modifier = modifier
@@ -283,6 +298,44 @@ private fun AttendanceStatCard(
 }
 
 @Composable
+private fun BySubjectSection(rows: List<SubjectAttendanceRow>) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = stringResource(R.string.attendance_by_subject),
+            fontWeight = FontWeight.Bold,
+            fontSize = 18.sp,
+            color = BrandBlack,
+            fontFamily = FontFamily.SansSerif,
+        )
+        Icon(
+            imageVector = Icons.Outlined.KeyboardArrowDown,
+            contentDescription = null,
+            tint = BrandBlack,
+            modifier = Modifier
+                .size(24.dp)
+                .rotate(if (expanded) 180f else 0f),
+        )
+    }
+    AnimatedVisibility(
+        visible = expanded,
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut(),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Spacer(modifier = Modifier.height(10.dp))
+            BySubjectTable(rows = rows)
+        }
+    }
+}
+
+@Composable
 private fun BySubjectTable(rows: List<SubjectAttendanceRow>) {
     Column(
         modifier = Modifier
@@ -302,17 +355,20 @@ private fun BySubjectTable(rows: List<SubjectAttendanceRow>) {
             TableHeaderCell(stringResource(R.string.attendance_col_leave), Modifier.weight(1f), TextAlign.Center)
         }
         rows.forEachIndexed { index, row ->
+            if (index > 0) {
+                HorizontalDivider(color = BorderGray.copy(alpha = 0.6f))
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(BgWhite)
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = row.subject,
+                    text = row.subject.replaceFirstChar { it.uppercase() },
                     modifier = Modifier.weight(1.4f),
-                    color = TextSecondary,
+                    color = BrandBlack,
                     fontSize = 13.sp,
                     fontFamily = FontFamily.SansSerif,
                 )
@@ -320,24 +376,17 @@ private fun BySubjectTable(rows: List<SubjectAttendanceRow>) {
                 TableValueCell(row.absent.toString(), Modifier.weight(1f))
                 TableValueCell(row.leave.toString(), Modifier.weight(1f))
             }
-            if (index != rows.lastIndex) {
-                HorizontalDivider(color = BorderGray.copy(alpha = 0.6f))
-            }
         }
     }
 }
 
 @Composable
-private fun TableHeaderCell(
-    text: String,
-    modifier: Modifier,
-    align: TextAlign,
-) {
+private fun TableHeaderCell(text: String, modifier: Modifier, align: TextAlign) {
     Text(
         text = text,
         modifier = modifier,
         color = Color.White,
-        fontSize = 11.sp,
+        fontSize = 12.sp,
         fontWeight = FontWeight.SemiBold,
         textAlign = align,
         fontFamily = FontFamily.SansSerif,
@@ -482,14 +531,7 @@ private fun LegendChip(
             modifier = Modifier
                 .size(7.dp)
                 .clip(CircleShape)
-                .background(dot)
-                .then(
-                    if (dot == Color.White) {
-                        Modifier.border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape)
-                    } else {
-                        Modifier
-                    },
-                ),
+                .background(dot),
         )
         Spacer(modifier = Modifier.width(5.dp))
         Text(
@@ -508,6 +550,7 @@ private fun AttendanceCalendarGrid(
     month: YearMonth,
     dayMarks: Map<Int, AttendanceDayMark>,
     selectedDay: Int?,
+    sessions: List<AttendanceSession>,
     onSelectDay: (Int) -> Unit,
 ) {
     val firstDay = month.atDay(1)
@@ -560,148 +603,33 @@ private fun AttendanceCalendarGrid(
                     if (day == null) {
                         Spacer(modifier = Modifier.weight(1f).aspectRatio(1f))
                     } else {
-                        DayCell(
-                            day = day,
-                            mark = dayMarks[day],
-                            selected = selectedDay == day,
-                            onClick = { onSelectDay(day) },
-                            modifier = Modifier.weight(1f),
-                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .aspectRatio(1f),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            val isSelected = selectedDay == day
+                            DayCell(
+                                day = day,
+                                mark = dayMarks[day],
+                                selected = isSelected,
+                                onClick = { onSelectDay(day) },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            if (isSelected) {
+                                AttendanceDayPopover(
+                                    day = day,
+                                    date = month.atDay(day),
+                                    sessions = sessions.filter { it.dayOfMonth == day },
+                                    onDismiss = { onSelectDay(day) },
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
-    }
-}
-
-private val selectedDateFmt = DateTimeFormatter.ofPattern("EEE, d MMM yyyy", Locale.ENGLISH)
-
-@Composable
-private fun SelectedDaySessions(
-    date: LocalDate,
-    sessions: List<AttendanceSession>,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-            text = date.format(selectedDateFmt),
-            fontWeight = FontWeight.Bold,
-            fontSize = 16.sp,
-            color = BrandBlack,
-            fontFamily = FontFamily.SansSerif,
-        )
-        if (sessions.isEmpty()) {
-            NoSessionsCard()
-        } else {
-            sessions.forEach { session ->
-                AttendanceSessionCard(session = session)
-            }
-        }
-    }
-}
-
-@Composable
-private fun AttendanceSessionCard(session: AttendanceSession) {
-    val statusColor = when (session.status) {
-        AttendanceStatus.Present -> PresentGreen
-        AttendanceStatus.Absent -> AbsentRed
-        AttendanceStatus.Leave -> LeaveYellow
-    }
-    val statusLabel = when (session.status) {
-        AttendanceStatus.Present -> stringResource(R.string.attendance_legend_present)
-        AttendanceStatus.Absent -> stringResource(R.string.attendance_legend_absent)
-        AttendanceStatus.Leave -> stringResource(R.string.attendance_legend_leave)
-    }
-    val title = if (session.className.isBlank()) {
-        session.subject
-    } else {
-        "${session.className} : ${session.subject}"
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, BorderGray.copy(alpha = 0.75f), CardShape)
-            .background(BgWhite, CardShape)
-            .padding(horizontal = 14.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(BrandBlack),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.CalendarMonth,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(22.dp),
-            )
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
-                color = BrandBlack,
-                fontFamily = FontFamily.SansSerif,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (session.time.isNotBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = session.time,
-                    color = TextSecondary,
-                    fontSize = 13.sp,
-                    fontFamily = FontFamily.SansSerif,
-                )
-            }
-        }
-        Spacer(modifier = Modifier.width(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(statusColor),
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = statusLabel,
-                color = statusColor,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                fontFamily = FontFamily.SansSerif,
-            )
-        }
-    }
-}
-
-@Composable
-private fun NoSessionsCard() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, BorderGray.copy(alpha = 0.75f), CardShape)
-            .background(BgWhite, CardShape)
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-    ) {
-        Text(
-            text = stringResource(R.string.attendance_no_sessions),
-            fontWeight = FontWeight.Bold,
-            fontSize = 15.sp,
-            color = BrandBlack,
-            fontFamily = FontFamily.SansSerif,
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = stringResource(R.string.attendance_no_sessions_body),
-            color = TextSecondary,
-            fontSize = 13.sp,
-            fontFamily = FontFamily.SansSerif,
-        )
     }
 }
 
@@ -728,7 +656,6 @@ private fun DayCell(
 
     Column(
         modifier = modifier
-            .aspectRatio(1f)
             .clip(RoundedCornerShape(10.dp))
             .border(borderWidth, borderColor, RoundedCornerShape(10.dp))
             .background(BgWhite)

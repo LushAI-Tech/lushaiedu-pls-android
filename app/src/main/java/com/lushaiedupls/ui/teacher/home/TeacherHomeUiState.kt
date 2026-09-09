@@ -7,6 +7,9 @@ import com.lushaiedupls.data.mock.TeacherPerformance
 data class TeacherHomeUiState(
     val displayName: String = "",
     val notificationCount: Int = 0,
+    val institutions: List<String> = emptyList(),
+    val institutionIds: List<String> = emptyList(),
+    val selectedInstitutionId: String? = null,
     val selectedClass: String = "",
     val selectedClassId: String? = null,
     val classes: List<String> = emptyList(),
@@ -16,5 +19,6 @@ data class TeacherHomeUiState(
     val extraAttendance: TeacherAttendanceBlock = TeacherAttendanceBlock("", "", ""),
     val topPerformances: List<TeacherPerformance> = emptyList(),
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
 )

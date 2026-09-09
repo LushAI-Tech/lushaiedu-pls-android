@@ -16,12 +16,14 @@ import com.lushaiedupls.data.mock.AiMenuTab
 import com.lushaiedupls.data.mock.AiSubjectItem
 import com.lushaiedupls.data.mock.AiSyllabusItem
 import com.lushaiedupls.data.mock.TeacherMockRepository
+import com.lushaiedupls.data.mock.isQuestionAskMessage
 import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.needsAdminApproval
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.ui.common.viewModelFactory
+import com.lushaiedupls.ui.student.ai.PendingAsk
 import com.lushaiedupls.ui.student.ai.StudentAiChatScreen
 import com.lushaiedupls.ui.student.ai.StudentAiChatUiState
 import com.lushaiedupls.ui.student.ai.StudentAiHubScreen
@@ -55,7 +57,16 @@ class TeacherAiHubViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val hasContent = allSubjects.isNotEmpty() ||
+                _uiState.value.subjects.isNotEmpty() ||
+                _uiState.value.classOptions.isNotEmpty()
+            _uiState.update {
+                if (hasContent) {
+                    it.copy(isRefreshing = true, isLoading = false, errorMessage = null)
+                } else {
+                    it.copy(isLoading = true, isRefreshing = false, errorMessage = null)
+                }
+            }
             coroutineScope {
                 val statsDeferred = async { studentRepository.progressDashboard() }
                 val aiSubjectsDeferred = async { studentRepository.aiSubjects() }
@@ -95,6 +106,7 @@ class TeacherAiHubViewModel(
                 applyFilter(
                     _uiState.value.copy(
                         isLoading = false,
+                        isRefreshing = false,
                         stats = stats,
                         classOptions = classes,
                         selectedClass = selected,
@@ -107,9 +119,8 @@ class TeacherAiHubViewModel(
                     val chResult = studentRepository.chapters(firstSubjectId)
                     if (chResult is NetworkResult.Success) {
                         val activeChapterIds = chResult.data.filter { it.is_active }.map { it.id }
-                        if (activeChapterIds.isNotEmpty()) {
-                            studentRepository.prefetchAiChat(activeChapterIds)
-                        }
+                        studentRepository.preferredChatPrefetchChapterId(activeChapterIds)
+                            ?.let { studentRepository.prefetchAiChat(listOf(it)) }
                     }
                 }
             }
@@ -151,25 +162,89 @@ class TeacherAiChatViewModel(
     }
 
     fun sendDraft() {
-        val text = _uiState.value.draft.trim()
-        if (text.isEmpty()) return
-        appendUserMessage(text)
-        _uiState.update { it.copy(draft = "") }
+        val state = _uiState.value
+        val text = state.draft.trim()
+        val pending = state.pendingAsk
+        if (text.isEmpty() && pending == null) return
+        appendPendingOrPlain(text, pending)
+        _uiState.update { it.copy(draft = "", pendingAsk = null) }
     }
 
     fun sendSuggestion(text: String) {
-        appendUserMessage(text)
+        val pending = _uiState.value.pendingAsk
+        appendPendingOrPlain(text, pending)
+        _uiState.update { it.copy(pendingAsk = null) }
     }
 
     fun askAboutContent(item: AiMenuContentItem) {
-        closeMenu()
-        _uiState.update { it.copy(menuTab = AiMenuTab.Chats) }
-        val prompt = if (item.title.isNotBlank()) {
-            "Ask tutor about this question: ${item.title}"
-        } else {
-            "Ask tutor about this question"
+        val tab = when {
+            _uiState.value.menuTab == AiMenuTab.TextbookQuestions -> AiMenuTab.TextbookQuestions
+            _uiState.value.menuTab == AiMenuTab.ExamPreparation -> AiMenuTab.ExamPreparation
+            _uiState.value.textbookQuestions.any { it.id == item.id } -> AiMenuTab.TextbookQuestions
+            _uiState.value.examPrepPyqs.any { it.id == item.id } -> AiMenuTab.ExamPreparation
+            else -> AiMenuTab.TextbookQuestions
         }
-        appendUserMessage(prompt)
+        startPendingAsk(item, tab)
+    }
+
+    fun askAboutResource(item: AiMenuContentItem) {
+        startPendingAsk(item, AiMenuTab.Resources)
+    }
+
+    fun clearPendingAsk() {
+        _uiState.update { it.copy(pendingAsk = null) }
+    }
+
+    private fun startPendingAsk(item: AiMenuContentItem, tab: AiMenuTab) {
+        closeMenu()
+        _uiState.update {
+            it.copy(
+                menuTab = AiMenuTab.Chats,
+                pendingAsk = PendingAsk(item = item, tab = tab),
+                composerFocusNonce = it.composerFocusNonce + 1,
+            )
+        }
+    }
+
+    fun returnToQuestion(message: AiChatMessage) {
+        val state = _uiState.value
+        if (!message.fromUser || !message.isQuestionAskMessage()) return
+
+        val link = message.linkedQuestionId?.takeIf { it.isNotBlank() }?.let { id ->
+            val tab = message.linkedQuestionTab ?: when {
+                state.examPrepPyqs.any { it.id == id } -> AiMenuTab.ExamPreparation
+                state.textbookQuestions.any { it.id == id } -> AiMenuTab.TextbookQuestions
+                else -> return
+            }
+            id to tab
+        } ?: run {
+            val title = message.text.substringAfter(":", "").trim().takeIf { it.isNotBlank() } ?: return
+            val normalized = title.lowercase()
+            state.textbookQuestions.firstOrNull { it.title.lowercase() == normalized }
+                ?.let { it.id to AiMenuTab.TextbookQuestions }
+                ?: state.examPrepPyqs.firstOrNull { it.title.lowercase() == normalized }
+                    ?.let { it.id to AiMenuTab.ExamPreparation }
+                ?: return
+        }
+
+        _uiState.update {
+            it.copy(
+                menuTab = link.second,
+                scrollToQuestionId = link.first,
+                scrollToQuestionNonce = it.scrollToQuestionNonce + 1,
+            )
+        }
+    }
+
+    fun returnToResource(message: AiChatMessage) {
+        val id = message.linkedResourceId?.takeIf { it.isNotBlank() } ?: return
+        _uiState.update {
+            it.copy(
+                menuTab = AiMenuTab.Resources,
+                scrollToQuestionId = id,
+                scrollToQuestionNonce = it.scrollToQuestionNonce + 1,
+            )
+        }
     }
 
     fun openSection(item: AiSyllabusItem) {
@@ -184,12 +259,17 @@ class TeacherAiChatViewModel(
         }
     }
 
+    fun selectAllSyllabus() {
+        _uiState.update { it.copy(selectedSyllabusIds = emptySet()) }
+    }
+
     fun clearChat() {
         _uiState.update {
             it.copy(
                 messages = emptyList(),
                 selectedQuickOption = null,
                 showQuickCheck = false,
+                pendingAsk = null,
             )
         }
     }
@@ -203,7 +283,7 @@ class TeacherAiChatViewModel(
     }
 
     fun selectMenuTab(tab: AiMenuTab) {
-        _uiState.update { it.copy(menuTab = tab, showMenu = false) }
+        _uiState.update { it.copy(menuTab = tab) }
     }
 
     fun selectQuickOption(option: String) {
@@ -233,13 +313,47 @@ class TeacherAiChatViewModel(
         )
     }
 
-    private fun appendUserMessage(text: String) {
+    private fun appendPendingOrPlain(text: String, pending: PendingAsk?) {
+        if (pending == null) {
+            appendUserMessage(text)
+            return
+        }
+        val item = pending.item
+        if (pending.tab == AiMenuTab.Resources) {
+            appendUserMessage(
+                text = text,
+                linkedResourceId = item.id.takeIf { it.isNotBlank() },
+                linkedResourceTitle = item.title.takeIf { it.isNotBlank() },
+            )
+        } else {
+            appendUserMessage(
+                text = text,
+                linkedQuestionId = item.id.takeIf { it.isNotBlank() },
+                linkedQuestionTab = pending.tab,
+                linkedQuestionTitle = item.title.takeIf { it.isNotBlank() },
+            )
+        }
+    }
+
+    private fun appendUserMessage(
+        text: String,
+        linkedQuestionId: String? = null,
+        linkedQuestionTab: AiMenuTab? = null,
+        linkedQuestionTitle: String? = null,
+        linkedResourceId: String? = null,
+        linkedResourceTitle: String? = null,
+    ) {
         _uiState.update { state ->
             state.copy(
                 messages = state.messages + AiChatMessage(
                     id = UUID.randomUUID().toString(),
                     text = text,
                     fromUser = true,
+                    linkedQuestionId = linkedQuestionId,
+                    linkedQuestionTab = linkedQuestionTab,
+                    linkedQuestionTitle = linkedQuestionTitle,
+                    linkedResourceId = linkedResourceId,
+                    linkedResourceTitle = linkedResourceTitle,
                 ),
             )
         }
@@ -270,6 +384,7 @@ fun TeacherAiHubRoute(
         uiState = uiState,
         onSubjectClick = onSubjectClick,
         onClassSelected = viewModel::onClassSelected,
+        onRefresh = viewModel::refresh,
         modifier = modifier,
     )
 }
@@ -300,7 +415,12 @@ fun TeacherAiChatRoute(
         onLanguageSelected = viewModel::setLanguage,
         onTakeQuiz = onTakeQuiz,
         onAskAboutContent = viewModel::askAboutContent,
+        onAskAboutResource = viewModel::askAboutResource,
+        onClearPendingAsk = viewModel::clearPendingAsk,
+        onBackToQuestion = viewModel::returnToQuestion,
+        onBackToResource = viewModel::returnToResource,
         onToggleSyllabus = viewModel::toggleSyllabusSelection,
+        onSelectAllSyllabus = viewModel::selectAllSyllabus,
         modifier = modifier,
     )
 }

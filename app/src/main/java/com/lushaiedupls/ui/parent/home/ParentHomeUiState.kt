@@ -16,7 +16,9 @@ data class ParentHomeUiState(
     val children: List<ParentChildSummary> = emptyList(),
     val selectedStudentId: String? = null,
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
+    val needsApproval: Boolean = false,
 )
 
 fun ParentRelationship.label(): String = when (this) {

@@ -29,6 +29,12 @@ import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.data.session.SharedPrefsUserSessionStore
 import com.lushaiedupls.data.session.UserSessionStore
+import com.lushaiedupls.push.FirebaseFcmTokenSource
+import com.lushaiedupls.push.PushRouter
+import com.lushaiedupls.push.PushTokenSynchronizer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import retrofit2.Retrofit
 
 /**
@@ -41,7 +47,11 @@ class AppContainer(context: Context) {
 
     val userSessionStore: UserSessionStore = SharedPrefsUserSessionStore(context)
 
-    val deviceIdProvider = DeviceIdProvider(context)
+    val deviceIdProvider = DeviceIdProvider(
+        context = context,
+        appVersion = BuildConfig.VERSION_NAME,
+        fcmTokenSource = FirebaseFcmTokenSource(),
+    )
 
     val studentMockRepository = StudentMockRepository()
 
@@ -72,11 +82,23 @@ class AppContainer(context: Context) {
     val feesApi: FeesApi = createService()
     val adminApi: AdminApi = createService()
 
+    val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    val pushRouter = PushRouter()
+
+    val pushTokenSynchronizer = PushTokenSynchronizer(
+        meApi = meApi,
+        deviceIdProvider = deviceIdProvider,
+        sessionRepository = sessionRepository,
+        scope = applicationScope,
+    )
+
     val authRepository = AuthRepository(
         authApi = authApi,
         sessionRepository = sessionRepository,
         deviceIdProvider = deviceIdProvider,
         userSessionStore = userSessionStore,
+        pushTokenSynchronizer = pushTokenSynchronizer,
     )
 
     val studentRepository = StudentRepository(
@@ -91,6 +113,7 @@ class AppContainer(context: Context) {
         parentApi = parentApi,
         teachingUnitsApi = teachingUnitsApi,
         deviceIdProvider = deviceIdProvider,
+        feesApi = feesApi,
     )
 
     val parentRepository = ParentRepository(
@@ -108,6 +131,7 @@ class AppContainer(context: Context) {
         calendarApi = calendarApi,
         timetableApi = timetableApi,
         notificationsApi = notificationsApi,
+        meApi = meApi,
     )
 
     val adminRepository = AdminRepository(

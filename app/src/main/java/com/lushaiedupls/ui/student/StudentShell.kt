@@ -6,13 +6,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -33,15 +31,18 @@ import com.lushaiedupls.ui.student.ai.StudentAiChatRoute
 import com.lushaiedupls.ui.student.ai.StudentAiHubRoute
 import com.lushaiedupls.ui.student.attendance.StudentAttendanceRoute
 import com.lushaiedupls.ui.student.calendar.StudentCalendarRoute
+import com.lushaiedupls.ui.student.fees.StudentFeesRoute
 import com.lushaiedupls.ui.student.home.StudentHomeRoute
 import com.lushaiedupls.ui.student.linkparent.StudentLinkParentRoute
-import com.lushaiedupls.ui.student.menu.LegalDocumentScreen
+import com.lushaiedupls.ui.common.LegalDocumentScreen
 import com.lushaiedupls.ui.student.menu.StudentAccountRoute
 import com.lushaiedupls.ui.student.menu.StudentMenuOverlay
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.student.secondary.ChaptersScreen
 import com.lushaiedupls.ui.student.secondary.ChaptersViewModel
+import com.lushaiedupls.ui.student.secondary.SubjectContentUnavailableScreen
 import com.lushaiedupls.ui.student.secondary.MoreRoute
 import com.lushaiedupls.ui.student.secondary.NotificationsScreen
 import com.lushaiedupls.ui.student.secondary.NotificationsViewModel
@@ -49,7 +50,6 @@ import com.lushaiedupls.ui.student.secondary.QuizScreen
 import com.lushaiedupls.ui.student.secondary.QuizViewModel
 import com.lushaiedupls.ui.student.secondary.TimetableRoute
 import com.lushaiedupls.ui.theme.BgWhite
-import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.navigation.lushEnterTransition
 import com.lushaiedupls.ui.navigation.lushExitTransition
 import com.lushaiedupls.ui.navigation.lushPopEnterTransition
@@ -75,6 +75,7 @@ fun StudentShell(
         StudentRoutes.MORE,
         StudentRoutes.CHAPTERS,
         StudentRoutes.CALENDAR,
+        StudentRoutes.FEES,
     ) || currentRoute?.startsWith("student_quiz") == true
     val inProfileStack = currentRoute in setOf(
         StudentRoutes.ACCOUNT,
@@ -151,18 +152,33 @@ fun StudentShell(
                         title = stringResource(R.string.notifications_title),
                     )
                     state.errorMessage != null && state.notifications.isEmpty() ->
-                        ErrorBox(state.errorMessage.orEmpty())
+                        LushPullToRefreshBox(
+                            isRefreshing = state.isLoading || state.isRefreshing,
+                            onRefresh = vm::refresh,
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            ErrorBox(state.errorMessage.orEmpty())
+                        }
                     else -> NotificationsScreen(
                         notifications = state.notifications,
                         onBack = { tabNavController.popBackStack() },
                         onMarkAllRead = vm::markAllRead,
                         onOpenNotification = { vm.markRead(it.id) },
+                        onRefresh = vm::refresh,
+                        isRefreshing = state.isRefreshing,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
             }
             composable(StudentRoutes.CALENDAR) {
                 StudentCalendarRoute(
+                    studentRepository = studentRepository,
+                    onBack = { tabNavController.popBackStack() },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            composable(StudentRoutes.FEES) {
+                StudentFeesRoute(
                     studentRepository = studentRepository,
                     onBack = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),
@@ -207,7 +223,18 @@ fun StudentShell(
                         title = subjectName.ifBlank { stringResource(R.string.chapters_subject_title) },
                     )
                     state.errorMessage != null && state.chapters.isEmpty() ->
-                        ErrorBox(state.errorMessage.orEmpty())
+                        LushPullToRefreshBox(
+                            isRefreshing = state.isLoading || state.isRefreshing,
+                            onRefresh = vm::refresh,
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            SubjectContentUnavailableScreen(
+                                title = state.subjectTitle.ifBlank { subjectName },
+                                message = state.errorMessage.orEmpty(),
+                                onBack = { tabNavController.popBackStack() },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
                     else -> ChaptersScreen(
                         title = state.subjectTitle.ifBlank { subjectName },
                         stats = state.stats ?: SubjectChapterStats("0%", "0%", "0", "0"),
@@ -218,6 +245,8 @@ fun StudentShell(
                                 StudentRoutes.aiChats(subjectId, chapter.id),
                             )
                         },
+                        onRefresh = vm::refresh,
+                        isRefreshing = state.isRefreshing,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -258,6 +287,7 @@ fun StudentShell(
                 MoreRoute(
                     studentRepository = studentRepository,
                     onAcademicCalendar = { tabNavController.navigate(StudentRoutes.CALENDAR) },
+                    onFees = { tabNavController.navigate(StudentRoutes.FEES) },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -272,7 +302,20 @@ fun StudentShell(
                         title = stringResource(R.string.chapters_subject_title),
                     )
                     state.errorMessage != null && state.chapters.isEmpty() ->
-                        ErrorBox(state.errorMessage.orEmpty())
+                        LushPullToRefreshBox(
+                            isRefreshing = state.isLoading || state.isRefreshing,
+                            onRefresh = vm::refresh,
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            SubjectContentUnavailableScreen(
+                                title = state.subjectTitle.ifBlank {
+                                    stringResource(R.string.chapters_subject_title)
+                                },
+                                message = state.errorMessage.orEmpty(),
+                                onBack = { tabNavController.popBackStack() },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
                     else -> ChaptersScreen(
                         title = state.subjectTitle,
                         stats = state.stats ?: SubjectChapterStats("0%", "0%", "0", "0"),
@@ -281,6 +324,8 @@ fun StudentShell(
                         onChapterClick = { chapter ->
                             tabNavController.navigate(StudentRoutes.quiz(chapter.id))
                         },
+                        onRefresh = vm::refresh,
+                        isRefreshing = state.isRefreshing,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -343,6 +388,7 @@ fun StudentShell(
                     userSessionStore = userSessionStore,
                     studentRepository = studentRepository,
                     authRepository = authRepository,
+                    showStudentEnrollment = true,
                     onBack = { tabNavController.popBackStack() },
                     onLogOut = onLogOut,
                     onDeleteAccountConfirmed = onLogOut,
@@ -359,7 +405,7 @@ fun StudentShell(
             composable(StudentRoutes.PRIVACY) {
                 LegalDocumentScreen(
                     title = stringResource(R.string.privacy_title),
-                    body = stringResource(R.string.privacy_body),
+                    bodyResId = R.raw.privacy_policy,
                     onBack = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -367,7 +413,7 @@ fun StudentShell(
             composable(StudentRoutes.TERMS) {
                 LegalDocumentScreen(
                     title = stringResource(R.string.terms_title),
-                    body = stringResource(R.string.terms_body),
+                    bodyResId = R.raw.terms_conditions,
                     onBack = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -404,7 +450,10 @@ fun StudentShell(
 
 @Composable
 private fun ErrorBox(message: String) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(text = message, color = BrandOrange)
-    }
+    SubjectContentUnavailableScreen(
+        title = "",
+        message = message,
+        onBack = null,
+        modifier = Modifier.fillMaxSize(),
+    )
 }

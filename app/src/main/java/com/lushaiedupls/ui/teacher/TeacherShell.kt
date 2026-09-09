@@ -7,13 +7,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -31,14 +29,16 @@ import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.data.session.UserSessionStore
-import com.lushaiedupls.ui.auth.selectrole.UserRole
+// Switch Roles (re-enable later):
+// import com.lushaiedupls.ui.auth.selectrole.UserRole
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.student.ai.StudentAiChatRoute
-import com.lushaiedupls.ui.student.menu.LegalDocumentScreen
+import com.lushaiedupls.ui.common.LegalDocumentScreen
 import com.lushaiedupls.ui.student.menu.StudentAccountRoute
 import com.lushaiedupls.ui.student.secondary.ChaptersScreen
 import com.lushaiedupls.ui.student.secondary.ChaptersViewModel
+import com.lushaiedupls.ui.student.secondary.SubjectContentUnavailableScreen
 import com.lushaiedupls.ui.student.secondary.NotificationsScreen
 import com.lushaiedupls.ui.student.secondary.NotificationsViewModel
 import com.lushaiedupls.ui.student.secondary.QuizScreen
@@ -51,12 +51,12 @@ import com.lushaiedupls.ui.teacher.menu.TeacherMenuOverlay
 import com.lushaiedupls.ui.teacher.overview.TeacherClassOverviewRoute
 import com.lushaiedupls.ui.teacher.overview.TeacherOverviewRoute
 import com.lushaiedupls.ui.teacher.overview.TeacherTakeAttendanceRoute
+import com.lushaiedupls.ui.teacher.periods.TeacherPeriodsRoute
 import com.lushaiedupls.ui.teacher.secondary.TeacherAnnouncementsRoute
 import com.lushaiedupls.ui.teacher.secondary.TeacherMoreScreen
 import com.lushaiedupls.ui.teacher.secondary.TeacherNewAnnouncementRoute
 import com.lushaiedupls.ui.teacher.secondary.TeacherTimetableRoute
 import com.lushaiedupls.ui.theme.BgWhite
-import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.navigation.lushEnterTransition
 import com.lushaiedupls.ui.navigation.lushExitTransition
 import com.lushaiedupls.ui.navigation.lushPopEnterTransition
@@ -71,7 +71,7 @@ fun TeacherShell(
     studentRepository: StudentRepository,
     authRepository: AuthRepository,
     onLogOut: () -> Unit,
-    onSwitchRole: (UserRole) -> Unit,
+    // onSwitchRole: (UserRole) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val tabNavController = rememberNavController()
@@ -202,6 +202,7 @@ fun TeacherShell(
             composable(TeacherRoutes.OVERVIEW) {
                 TeacherOverviewRoute(
                     teacherRepository = teacherRepository,
+                    userSessionStore = userSessionStore,
                     onBack = { tabNavController.popBackStack() },
                     onTakeAttendance = { unitId, dateLabel, periodId, isExtraClass, extraLabel ->
                         tabNavController.navigate(
@@ -294,7 +295,12 @@ fun TeacherShell(
                         title = subjectName.ifBlank { stringResource(R.string.chapters_subject_title) },
                     )
                     state.errorMessage != null && state.chapters.isEmpty() ->
-                        TeacherErrorBox(state.errorMessage.orEmpty())
+                        SubjectContentUnavailableScreen(
+                            title = state.subjectTitle.ifBlank { subjectName },
+                            message = state.errorMessage.orEmpty(),
+                            onBack = { tabNavController.popBackStack() },
+                            modifier = Modifier.fillMaxSize(),
+                        )
                     else -> ChaptersScreen(
                         title = state.subjectTitle.ifBlank { subjectName },
                         stats = state.stats ?: SubjectChapterStats("0%", "0%", "0", "0"),
@@ -339,6 +345,7 @@ fun TeacherShell(
                 TeacherTimetableRoute(
                     teacherRepository = teacherRepository,
                     editable = false,
+                    initialInstitutionId = userSessionStore.getInstitutionId(),
                     onBack = null,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -368,6 +375,8 @@ fun TeacherShell(
                     userSessionStore = userSessionStore,
                     studentRepository = studentRepository,
                     authRepository = authRepository,
+                    teacherRepository = teacherRepository,
+                    showTeacherProfile = true,
                     onBack = { tabNavController.popBackStack() },
                     onLogOut = onLogOut,
                     onDeleteAccountConfirmed = onLogOut,
@@ -377,7 +386,7 @@ fun TeacherShell(
             composable(TeacherRoutes.PRIVACY) {
                 LegalDocumentScreen(
                     title = stringResource(R.string.privacy_title),
-                    body = stringResource(R.string.privacy_body),
+                    bodyResId = R.raw.privacy_policy,
                     onBack = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -385,7 +394,7 @@ fun TeacherShell(
             composable(TeacherRoutes.TERMS) {
                 LegalDocumentScreen(
                     title = stringResource(R.string.terms_title),
-                    body = stringResource(R.string.terms_body),
+                    bodyResId = R.raw.terms_conditions,
                     onBack = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -401,7 +410,14 @@ fun TeacherShell(
                         title = stringResource(R.string.chapters_subject_title),
                     )
                     state.errorMessage != null && state.chapters.isEmpty() ->
-                        TeacherErrorBox(state.errorMessage.orEmpty())
+                        SubjectContentUnavailableScreen(
+                            title = state.subjectTitle.ifBlank {
+                                stringResource(R.string.chapters_subject_title)
+                            },
+                            message = state.errorMessage.orEmpty(),
+                            onBack = { tabNavController.popBackStack() },
+                            modifier = Modifier.fillMaxSize(),
+                        )
                     else -> ChaptersScreen(
                         title = state.subjectTitle,
                         stats = state.stats ?: SubjectChapterStats("0%", "0%", "0", "0"),
@@ -461,9 +477,9 @@ fun TeacherShell(
                 }
             }
             composable(TeacherRoutes.TIMETABLE) {
-                TeacherTimetableRoute(
+                TeacherPeriodsRoute(
                     teacherRepository = teacherRepository,
-                    editable = true,
+                    initialInstitutionId = userSessionStore.getInstitutionId(),
                     onBack = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -491,10 +507,10 @@ fun TeacherShell(
     if (showMenuOverlay) {
         TeacherMenuOverlay(
             onDismiss = { showMenuOverlay = false },
-            onSwitchRole = { role ->
-                showMenuOverlay = false
-                onSwitchRole(role)
-            },
+            // onSwitchRole = { role ->
+            //     showMenuOverlay = false
+            //     onSwitchRole(role)
+            // },
             onAccount = {
                 showMenuOverlay = false
                 tabNavController.navigate(TeacherRoutes.ACCOUNT)
@@ -523,7 +539,7 @@ fun TeacherShellScaffold(
     studentRepository: StudentRepository,
     authRepository: AuthRepository,
     onLogOut: () -> Unit,
-    onSwitchRole: (UserRole) -> Unit = {},
+    // onSwitchRole: (UserRole) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     TeacherShell(
@@ -532,14 +548,17 @@ fun TeacherShellScaffold(
         studentRepository = studentRepository,
         authRepository = authRepository,
         onLogOut = onLogOut,
-        onSwitchRole = onSwitchRole,
+        // onSwitchRole = onSwitchRole,
         modifier = modifier,
     )
 }
 
 @Composable
 private fun TeacherErrorBox(message: String) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(text = message, color = BrandOrange)
-    }
+    SubjectContentUnavailableScreen(
+        title = "",
+        message = message,
+        onBack = null,
+        modifier = Modifier.fillMaxSize(),
+    )
 }

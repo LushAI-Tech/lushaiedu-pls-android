@@ -25,6 +25,8 @@ import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.data.repository.ParentRepository
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.session.UserSessionStore
+import com.lushaiedupls.ui.common.LegalDocumentScreen
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.navigation.lushEnterTransition
@@ -41,7 +43,6 @@ import com.lushaiedupls.ui.parent.notifications.ParentNotificationsViewModel
 import com.lushaiedupls.ui.parent.scan.rememberParentQrScanLauncher
 import com.lushaiedupls.ui.parent.timetable.ParentChildTimetableRoute
 import com.lushaiedupls.ui.student.calendar.StudentCalendarRoute
-import com.lushaiedupls.ui.student.menu.LegalDocumentScreen
 import com.lushaiedupls.ui.student.menu.StudentAccountRoute
 import com.lushaiedupls.ui.student.secondary.NotificationsScreen
 import com.lushaiedupls.ui.theme.BgWhite
@@ -130,10 +131,6 @@ fun ParentShell(
                     },
                     onProfileClick = { showMenuOverlay = true },
                     onScanClick = launchQrScanner,
-                    onChildClick = { studentId, _ ->
-                        selectedStudentId = studentId
-                        navigateTab(ParentRoutes.ATTENDANCE)
-                    },
                     onFeesClick = { tabNavController.navigate(ParentRoutes.FEES) },
                     onStudentReady = { studentId ->
                         selectedStudentId = studentId
@@ -150,6 +147,7 @@ fun ParentShell(
                 ParentChildAttendanceRoute(
                     parentRepository = parentRepository,
                     studentId = selectedStudentId,
+                    onScanClick = launchQrScanner,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -165,6 +163,7 @@ fun ParentShell(
                 ParentChildTimetableRoute(
                     parentRepository = parentRepository,
                     studentId = selectedStudentId,
+                    onScanClick = launchQrScanner,
                     onBack = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -173,6 +172,7 @@ fun ParentShell(
                 ParentFeesRoute(
                     parentRepository = parentRepository,
                     studentId = selectedStudentId,
+                    onScanClick = launchQrScanner,
                     onBack = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -181,6 +181,7 @@ fun ParentShell(
                 ParentFeedbackRoute(
                     parentRepository = parentRepository,
                     studentId = selectedStudentId,
+                    onScanClick = launchQrScanner,
                     onBack = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -199,13 +200,19 @@ fun ParentShell(
                         kind = StudentSkeletonKind.Notifications,
                         title = stringResource(R.string.parent_notifications_title),
                     )
-                    else -> NotificationsScreen(
-                        notifications = state.notifications,
-                        onBack = { tabNavController.popBackStack() },
-                        onMarkAllRead = vm::markAllRead,
-                        onOpenNotification = { vm.markRead(it.id) },
+                    else -> LushPullToRefreshBox(
+                        isRefreshing = state.isRefreshing,
+                        onRefresh = { vm.refresh(asPullRefresh = true) },
                         modifier = Modifier.fillMaxSize(),
-                    )
+                    ) {
+                        NotificationsScreen(
+                            notifications = state.notifications,
+                            onBack = { tabNavController.popBackStack() },
+                            onMarkAllRead = vm::markAllRead,
+                            onOpenNotification = { vm.markRead(it.id) },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
             }
             composable(ParentRoutes.ACCOUNT) {
@@ -213,6 +220,8 @@ fun ParentShell(
                     userSessionStore = userSessionStore,
                     studentRepository = studentRepository,
                     authRepository = authRepository,
+                    parentRepository = parentRepository,
+                    showParentProfile = true,
                     onBack = { tabNavController.popBackStack() },
                     onLogOut = onLogOut,
                     onDeleteAccountConfirmed = onLogOut,
@@ -222,7 +231,7 @@ fun ParentShell(
             composable(ParentRoutes.PRIVACY) {
                 LegalDocumentScreen(
                     title = stringResource(R.string.privacy_title),
-                    body = stringResource(R.string.privacy_body),
+                    bodyResId = R.raw.privacy_policy,
                     onBack = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -230,7 +239,7 @@ fun ParentShell(
             composable(ParentRoutes.TERMS) {
                 LegalDocumentScreen(
                     title = stringResource(R.string.terms_title),
-                    body = stringResource(R.string.terms_body),
+                    bodyResId = R.raw.terms_conditions,
                     onBack = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),
                 )

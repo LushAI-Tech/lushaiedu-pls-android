@@ -71,6 +71,7 @@ import com.lushaiedupls.data.mock.TeacherMockRepository
 import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.ui.common.AppBackNav
 import com.lushaiedupls.ui.common.LoadErrorPanel
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.theme.BgLight
@@ -123,6 +124,7 @@ fun TeacherCalendarRoute(
                 onPreviousMonth = viewModel::previousMonth,
                 onNextMonth = viewModel::nextMonth,
                 onSelectDay = viewModel::selectDay,
+                onRefresh = viewModel::refresh,
                 modifier = modifier,
             )
         }
@@ -136,16 +138,23 @@ fun TeacherCalendarScreen(
     onNextMonth: () -> Unit,
     onSelectDay: (Int) -> Unit,
     onBack: (() -> Unit)? = null,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    Column(
+    LushPullToRefreshBox(
+        isRefreshing = uiState.isRefreshing,
+        onRefresh = onRefresh,
         modifier = modifier
             .fillMaxSize()
-            .background(BgWhite)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-            .padding(top = if (onBack == null) 12.dp else 0.dp, bottom = 24.dp),
+            .background(BgWhite),
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(top = if (onBack == null) 12.dp else 0.dp, bottom = 24.dp),
+        ) {
         if (onBack != null) {
             AppBackNav(
                 onBack = onBack,
@@ -207,6 +216,7 @@ fun TeacherCalendarScreen(
             fontSize = 13.sp,
             fontFamily = FontFamily.SansSerif,
         )
+        }
     }
 }
 

@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Lock
@@ -24,13 +22,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,17 +33,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lushaiedupls.R
 import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.ui.auth.components.AuthTextLink
-import com.lushaiedupls.ui.auth.components.GoogleButton
 import com.lushaiedupls.ui.auth.components.LushAiEduBrandHeader
-import com.lushaiedupls.ui.auth.components.OrContinueWithDivider
 import com.lushaiedupls.ui.auth.components.OutlinedAuthField
 import com.lushaiedupls.ui.auth.components.PrimaryButton
-import com.lushaiedupls.ui.auth.google.GoogleSignInHelper
+import com.lushaiedupls.ui.common.verticalScrollWithIme
 import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.LushAIEdu_PLSTheme
-import kotlinx.coroutines.launch
 
 @Composable
 fun SignInRoute(
@@ -62,8 +53,12 @@ fun SignInRoute(
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        authRepository.consumePendingSignInMessage()?.let { message ->
+            viewModel.setError(message)
+        }
+    }
 
     LaunchedEffect(uiState.successRoute) {
         uiState.successRoute?.let { route ->
@@ -78,13 +73,6 @@ fun SignInRoute(
         onPasswordChange = viewModel::onPasswordChange,
         onSignIn = viewModel::signIn,
         onSignUp = onSignUp,
-        onGoogle = {
-            scope.launch {
-                GoogleSignInHelper.requestIdToken(context)
-                    .onSuccess { viewModel.signInWithGoogle(it) }
-                    .onFailure { viewModel.setError(it.message ?: "Google sign-in failed.") }
-            }
-        },
         modifier = modifier,
     )
 }
@@ -96,7 +84,6 @@ fun SignInScreen(
     onPasswordChange: (String) -> Unit,
     onSignIn: () -> Unit,
     onSignUp: () -> Unit,
-    onGoogle: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(
@@ -109,15 +96,14 @@ fun SignInScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = maxHeight)
-                .verticalScroll(rememberScrollState())
+                .verticalScrollWithIme(rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(top = 12.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             LushAiEduBrandHeader(
-                subtitle = stringResource(R.string.sign_in_subtitle),
-                logoSize = 120.dp,
+                logoSize = 112.dp,
             )
             Spacer(modifier = Modifier.height(28.dp))
             Card(
@@ -141,8 +127,7 @@ fun SignInScreen(
                         onValueChange = onPasswordChange,
                         placeholder = stringResource(R.string.password_placeholder),
                         leadingIcon = Icons.Outlined.Lock,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        visualTransformation = PasswordVisualTransformation(),
+                        isPassword = true,
                     )
                     uiState.errorMessage?.let { error ->
                         Spacer(modifier = Modifier.height(8.dp))
@@ -169,10 +154,6 @@ fun SignInScreen(
                         linkColor = BrandOrange,
                         modifier = Modifier.align(Alignment.CenterHorizontally),
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    OrContinueWithDivider()
-                    Spacer(modifier = Modifier.height(12.dp))
-                    GoogleButton(onClick = onGoogle)
                 }
             }
         }

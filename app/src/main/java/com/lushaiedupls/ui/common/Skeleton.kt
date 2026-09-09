@@ -7,9 +7,12 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,6 +38,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lushaiedupls.ui.theme.BgWhite
+import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
 
 private val Bone = Color(0xFFE6E8EC)
@@ -230,87 +234,159 @@ private fun AccountSkeleton() {
     SkeletonBox(modifier = Modifier.fillMaxWidth().height(140.dp), shape = CardShape)
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ChatSkeleton() {
+fun AiChatIntroSkeleton(modifier: Modifier = Modifier) {
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        // AI message with avatar
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Start,
-            verticalAlignment = Alignment.Top,
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 2.dp, bottom = 6.dp, end = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            SkeletonBox(modifier = Modifier.size(32.dp), shape = CircleShape)
-            Spacer(modifier = Modifier.width(8.dp))
-            SkeletonBox(
-                modifier = Modifier.fillMaxWidth(0.75f).height(64.dp),
-                shape = RoundedCornerShape(16.dp),
-            )
+            SkeletonLine(modifier = Modifier.fillMaxWidth(), height = 14.dp)
+            SkeletonLine(modifier = Modifier.fillMaxWidth(0.94f), height = 14.dp)
+            SkeletonLine(modifier = Modifier.fillMaxWidth(0.88f), height = 14.dp)
+            SkeletonLine(modifier = Modifier.fillMaxWidth(0.62f), height = 14.dp)
         }
-
-        // Student message
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            SkeletonBox(
-                modifier = Modifier.fillMaxWidth(0.55f).height(46.dp),
-                shape = RoundedCornerShape(16.dp),
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            SkeletonBox(modifier = Modifier.size(32.dp), shape = CircleShape)
+            SkeletonBox(modifier = Modifier.width(108.dp).height(34.dp), shape = PillShape)
+            SkeletonBox(modifier = Modifier.width(132.dp).height(34.dp), shape = PillShape)
+            SkeletonBox(modifier = Modifier.width(96.dp).height(34.dp), shape = PillShape)
         }
+        Spacer(modifier = Modifier.height(8.dp))
+        AiQuickCheckCardSkeleton()
+    }
+}
 
-        // Detailed AI message with code/math block
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Start,
-            verticalAlignment = Alignment.Top,
-        ) {
-            SkeletonBox(modifier = Modifier.size(32.dp), shape = CircleShape)
-            Spacer(modifier = Modifier.width(8.dp))
-            Column(modifier = Modifier.fillMaxWidth(0.82f)) {
-                SkeletonBox(
-                    modifier = Modifier.fillMaxWidth().height(88.dp),
-                    shape = RoundedCornerShape(16.dp),
-                )
+@Composable
+fun AiQuickCheckCardSkeleton(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(CardShape)
+            .background(BgWhite)
+            .border(1.dp, BorderGray.copy(alpha = 0.5f), CardShape)
+            .padding(16.dp),
+    ) {
+        SkeletonLine(modifier = Modifier.width(92.dp), height = 12.dp)
+        Spacer(modifier = Modifier.height(10.dp))
+        SkeletonLine(modifier = Modifier.fillMaxWidth(0.96f), height = 14.dp)
+        SkeletonLine(modifier = Modifier.fillMaxWidth(0.72f), height = 14.dp)
+        Spacer(modifier = Modifier.height(14.dp))
+        repeat(4) {
+            SkeletonBox(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
+                shape = PillShape,
+            )
+            if (it != 3) {
+                Spacer(modifier = Modifier.height(8.dp))
             }
         }
+    }
+}
 
-        // Suggestion pills row
+@Composable
+fun AiMenuSectionHeaderSkeleton(
+    titleWidth: Dp,
+    trailingWidth: Dp,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp, bottom = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SkeletonLine(modifier = Modifier.width(titleWidth), height = 16.dp)
+        SkeletonLine(modifier = Modifier.width(trailingWidth), height = 12.dp)
+    }
+}
+
+@Composable
+fun AiMenuQuestionCardSkeleton(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(CardShape)
+            .background(BgWhite)
+            .border(1.dp, BorderGray.copy(alpha = 0.65f), CardShape)
+            .padding(14.dp),
+    ) {
+        SkeletonLine(modifier = Modifier.width(28.dp), height = 12.dp)
+        Spacer(modifier = Modifier.height(8.dp))
+        SkeletonLine(modifier = Modifier.fillMaxWidth(), height = 14.dp)
+        Spacer(modifier = Modifier.height(8.dp))
+        SkeletonLine(modifier = Modifier.fillMaxWidth(0.92f), height = 14.dp)
+        Spacer(modifier = Modifier.height(8.dp))
+        SkeletonLine(modifier = Modifier.fillMaxWidth(0.68f), height = 14.dp)
         Spacer(modifier = Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SkeletonBox(modifier = Modifier.width(110.dp).height(32.dp), shape = PillShape)
-            SkeletonBox(modifier = Modifier.width(140.dp).height(32.dp), shape = PillShape)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SkeletonLine(modifier = Modifier.weight(1f), height = 12.dp)
+            SkeletonBox(modifier = Modifier.width(72.dp).height(32.dp), shape = PillShape)
         }
     }
+}
+
+@Composable
+fun AiResourceItemSkeleton(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(BgWhite)
+            .border(1.dp, BorderGray.copy(alpha = 0.65f), RoundedCornerShape(16.dp)),
+    ) {
+        SkeletonBox(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp),
+            shape = RoundedCornerShape(0.dp),
+        )
+        Column(modifier = Modifier.padding(14.dp)) {
+            SkeletonLine(modifier = Modifier.fillMaxWidth(0.86f), height = 14.dp)
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SkeletonLine(modifier = Modifier.weight(1f), height = 12.dp)
+                Spacer(modifier = Modifier.width(12.dp))
+                SkeletonBox(modifier = Modifier.width(62.dp).height(32.dp), shape = PillShape)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatSkeleton() {
+    AiChatIntroSkeleton()
 }
 
 @Composable
 private fun TextbookQuestionsSkeleton() {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // Header
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            SkeletonLine(modifier = Modifier.width(150.dp), height = 16.dp)
-            SkeletonBox(modifier = Modifier.width(64.dp).height(24.dp), shape = PillShape)
-        }
-
-        // Question cards
-        repeat(3) { index ->
-            SkeletonBox(
-                modifier = Modifier.fillMaxWidth().height(if (index == 1) 190.dp else 140.dp),
-                shape = CardShape,
-            )
+        AiMenuSectionHeaderSkeleton(titleWidth = 150.dp, trailingWidth = 52.dp)
+        repeat(3) {
+            AiMenuQuestionCardSkeleton()
         }
     }
 }
@@ -319,24 +395,11 @@ private fun TextbookQuestionsSkeleton() {
 private fun ExamPreparationSkeleton() {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // Header
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            SkeletonLine(modifier = Modifier.width(170.dp), height = 16.dp)
-            SkeletonBox(modifier = Modifier.width(72.dp).height(24.dp), shape = PillShape)
-        }
-
-        // PYQ cards
+        AiMenuSectionHeaderSkeleton(titleWidth = 140.dp, trailingWidth = 72.dp)
         repeat(3) {
-            SkeletonBox(
-                modifier = Modifier.fillMaxWidth().height(135.dp),
-                shape = CardShape,
-            )
+            AiMenuQuestionCardSkeleton()
         }
     }
 }
@@ -345,24 +408,11 @@ private fun ExamPreparationSkeleton() {
 private fun ResourcesSkeleton() {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Header
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            SkeletonLine(modifier = Modifier.width(120.dp), height = 16.dp)
-            SkeletonBox(modifier = Modifier.width(56.dp).height(24.dp), shape = PillShape)
-        }
-
-        // File resource items
-        repeat(4) {
-            SkeletonBox(
-                modifier = Modifier.fillMaxWidth().height(76.dp),
-                shape = CardShape,
-            )
+        AiMenuSectionHeaderSkeleton(titleWidth = 92.dp, trailingWidth = 48.dp)
+        repeat(3) {
+            AiResourceItemSkeleton()
         }
     }
 }

@@ -9,7 +9,6 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,16 +27,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.outlined.Class
-import androidx.compose.material.icons.outlined.DeleteOutline
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.PersonOutline
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -48,9 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -70,27 +59,27 @@ import com.lushaiedupls.data.remote.dto.NotificationCreate
 import com.lushaiedupls.data.remote.dto.NotificationUpdate
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.AdminRepository
-import com.lushaiedupls.ui.admin.AdminDeleteRed
+import com.lushaiedupls.ui.admin.AdminEditDeleteIcons
+import com.lushaiedupls.ui.admin.AdminManageToggle
 import com.lushaiedupls.ui.admin.AdminFilterRow
 import com.lushaiedupls.ui.auth.components.OutlinedAuthField
 import com.lushaiedupls.ui.auth.components.PrimaryButton
 import com.lushaiedupls.ui.common.LoadErrorPanel
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
+import com.lushaiedupls.ui.common.NotificationDetailScreen
+import com.lushaiedupls.ui.common.NotificationEmptyState
+import com.lushaiedupls.ui.common.NotificationListCard
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.common.viewModelFactory
-import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
-import com.lushaiedupls.ui.theme.BrandOrange
-import com.lushaiedupls.ui.theme.TextSecondary
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-private val CardShape = RoundedCornerShape(16.dp)
 
 data class AdminAnnouncementsUiState(
     val items: List<AppNotification> = emptyList(),
@@ -100,6 +89,7 @@ data class AdminAnnouncementsUiState(
     val body: String = "",
     val audience: NotificationAudience = NotificationAudience.ALL,
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
 )
@@ -114,13 +104,28 @@ class AdminAnnouncementsViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val hasContent = _uiState.value.items.isNotEmpty()
+            _uiState.update {
+                it.copy(
+                    isLoading = !hasContent,
+                    isRefreshing = hasContent,
+                    errorMessage = null,
+                )
+            }
             when (val result = adminRepository.notifications()) {
                 is NetworkResult.Success -> _uiState.update {
-                    it.copy(isLoading = false, items = StudentUiMappers.notifications(result.data))
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        items = StudentUiMappers.notifications(result.data),
+                    )
                 }
                 else -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = result.userMessage())
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        errorMessage = result.userMessage(),
+                    )
                 }
             }
         }
@@ -255,7 +260,7 @@ fun AdminAnnouncementsScreen(
             screenTitle = stringResource(R.string.admin_announce_title),
             message = uiState.errorMessage.orEmpty(),
             onRetry = onRetry,
-            isRetrying = uiState.isLoading,
+            isRetrying = uiState.isLoading || uiState.isRefreshing,
             modifier = modifier,
         )
         else -> {
@@ -268,8 +273,13 @@ fun AdminAnnouncementsScreen(
                     else -> selected = null
                 }
             }
+            LushPullToRefreshBox(
+                isRefreshing = uiState.isRefreshing,
+                onRefresh = onRetry,
+                modifier = modifier.fillMaxSize(),
+            ) {
             Box(
-                modifier = modifier
+                modifier = Modifier
                     .fillMaxSize()
                     .background(BgWhite)
                     .imePadding(),
@@ -289,8 +299,8 @@ fun AdminAnnouncementsScreen(
                             else -> stringResource(R.string.admin_announce_title)
                         },
                         onBack = onBack,
-                        managing = managing,
                         showManage = !uiState.composing,
+                        managing = managing,
                         onToggleManage = { managing = !managing },
                     )
                     if (uiState.composing) {
@@ -341,15 +351,34 @@ fun AdminAnnouncementsScreen(
                     } else {
                         Spacer(modifier = Modifier.height(20.dp))
                         if (uiState.items.isEmpty()) {
-                            EmptyAnnouncementsState()
+                            NotificationEmptyState(
+                                message = stringResource(R.string.admin_announce_empty),
+                            )
                         } else {
                             uiState.items.forEach { item ->
-                                AnnouncementListCard(
+                                NotificationListCard(
                                     item = item,
-                                    managing = managing,
                                     onClick = { selected = item.id },
-                                    onEdit = { onStartEdit(item) },
-                                    onDelete = { onDelete(item.id) },
+                                    showUnreadDot = false,
+                                    trailingContent = if (managing) {
+                                        {
+                                            AdminEditDeleteIcons(
+                                                onEdit = {
+                                            selected = null
+                                            onStartEdit(item)
+                                        },
+                                                onDelete = { onDelete(item.id) },
+                                                editDescription = stringResource(
+                                                    R.string.admin_edit_announcement,
+                                                ),
+                                                deleteDescription = stringResource(
+                                                    R.string.admin_delete_announcement,
+                                                ),
+                                            )
+                                        }
+                                    } else {
+                                        null
+                                    },
                                 )
                                 Spacer(modifier = Modifier.height(10.dp))
                             }
@@ -378,12 +407,13 @@ fun AdminAnnouncementsScreen(
                     exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
                 ) {
                     selectedItem?.let { announcement ->
-                        AnnouncementDetailPane(
+                        NotificationDetailScreen(
                             notification = announcement,
                             onBack = { selected = null },
                         )
                     }
                 }
+            }
             }
         }
     }
@@ -428,269 +458,11 @@ private fun AnnouncementTopBar(
             overflow = TextOverflow.Ellipsis,
         )
         if (showManage) {
-            IconButton(
-                onClick = onToggleManage,
-                modifier = Modifier.size(40.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Edit,
-                    contentDescription = stringResource(R.string.admin_manage_announcements),
-                    tint = if (managing) BrandOrange else BrandBlack,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun EmptyAnnouncementsState() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 72.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(72.dp)
-                .clip(CircleShape)
-                .background(BgLight),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Notifications,
-                contentDescription = null,
-                tint = BrandBlack,
-                modifier = Modifier.size(32.dp),
+            AdminManageToggle(
+                managing = managing,
+                onToggle = onToggleManage,
+                contentDescription = stringResource(R.string.admin_manage_announcements),
             )
         }
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = stringResource(R.string.admin_announce_empty),
-            color = TextSecondary,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Medium,
-        )
-    }
-}
-
-@Composable
-private fun AnnouncementListCard(
-    item: AppNotification,
-    managing: Boolean,
-    onClick: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(CardShape)
-            .background(BgLight)
-            .border(1.dp, BorderGray.copy(alpha = 0.75f), CardShape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = Icons.Filled.Notifications,
-                contentDescription = null,
-                tint = BrandBlack,
-                modifier = Modifier.size(24.dp),
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.title,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = BrandBlack,
-                    fontFamily = FontFamily.SansSerif,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(end = if (managing) 0.dp else 16.dp),
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = item.body,
-                    color = TextSecondary,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                    fontFamily = FontFamily.SansSerif,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(end = if (managing) 8.dp else 80.dp),
-                )
-            }
-            if (managing) {
-                AnnouncementEditDeleteIcons(onEdit = onEdit, onDelete = onDelete)
-            }
-        }
-        if (!managing) {
-            Text(
-                text = item.timestampLabel,
-                color = TextSecondary,
-                fontSize = 11.sp,
-                fontFamily = FontFamily.SansSerif,
-                modifier = Modifier.align(Alignment.BottomEnd),
-            )
-        }
-    }
-}
-
-@Composable
-private fun AnnouncementDetailPane(
-    notification: AppNotification,
-    onBack: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(BgWhite),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .border(1.dp, BorderGray, RoundedCornerShape(10.dp))
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable(onClick = onBack),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
-                    contentDescription = stringResource(R.string.cd_back),
-                    tint = BrandBlack,
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = stringResource(R.string.notifications_detail_title),
-                fontWeight = FontWeight.Bold,
-                fontSize = 20.sp,
-                color = BrandBlack,
-            )
-        }
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp),
-        ) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = notification.title,
-                fontWeight = FontWeight.Bold,
-                fontSize = 24.sp,
-                color = BrandBlack,
-                lineHeight = 30.sp,
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(BgLight)
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                DetailMetaRow(
-                    icon = Icons.Outlined.Schedule,
-                    label = stringResource(R.string.notifications_posted),
-                    value = notification.timestampLabel,
-                )
-                notification.authorName?.takeIf { it.isNotBlank() }?.let { author ->
-                    DetailMetaRow(
-                        icon = Icons.Outlined.PersonOutline,
-                        label = stringResource(R.string.notifications_from),
-                        value = author,
-                    )
-                }
-                notification.teachingUnitLabel?.takeIf { it.isNotBlank() }?.let { unit ->
-                    DetailMetaRow(
-                        icon = Icons.Outlined.Class,
-                        label = stringResource(R.string.notifications_class),
-                        value = unit,
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(20.dp))
-            HorizontalDivider(color = BorderGray.copy(alpha = 0.7f), thickness = 0.5.dp)
-            Spacer(modifier = Modifier.height(20.dp))
-            Text(
-                text = notification.body,
-                color = BrandBlack,
-                fontSize = 16.sp,
-                lineHeight = 26.sp,
-                fontFamily = FontFamily.SansSerif,
-            )
-        }
-    }
-}
-
-@Composable
-private fun DetailMetaRow(
-    icon: ImageVector,
-    label: String,
-    value: String,
-) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = TextSecondary,
-            modifier = Modifier.size(18.dp),
-        )
-        Spacer(modifier = Modifier.width(10.dp))
-        Column {
-            Text(
-                text = label,
-                color = TextSecondary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-            )
-            Text(
-                text = value,
-                color = BrandBlack,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
-    }
-}
-
-@Composable
-private fun AnnouncementEditDeleteIcons(
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    IconButton(
-        onClick = onEdit,
-        modifier = Modifier.size(40.dp),
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.Edit,
-            contentDescription = stringResource(R.string.admin_edit_announcement),
-            tint = BrandBlack,
-            modifier = Modifier.size(20.dp),
-        )
-    }
-    IconButton(
-        onClick = onDelete,
-        modifier = Modifier.size(40.dp),
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.DeleteOutline,
-            contentDescription = stringResource(R.string.admin_delete_announcement),
-            tint = AdminDeleteRed,
-            modifier = Modifier.size(22.dp),
-        )
     }
 }

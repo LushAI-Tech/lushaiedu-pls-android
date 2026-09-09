@@ -4,8 +4,10 @@ import com.lushaiedupls.data.remote.dto.AvatarCommitRequest
 import com.lushaiedupls.data.remote.dto.AvatarPresignRequest
 import com.lushaiedupls.data.remote.dto.AvatarPresignResponse
 import com.lushaiedupls.data.remote.dto.DeviceOut
+import com.lushaiedupls.data.remote.dto.FcmTokenUpdateRequest
 import com.lushaiedupls.data.remote.dto.MessageResponse
 import com.lushaiedupls.data.remote.dto.MySubjectsResponse
+import com.lushaiedupls.data.remote.dto.PeriodReminderUpdateRequest
 import com.lushaiedupls.data.remote.dto.ProfileUpdate
 import com.lushaiedupls.data.remote.dto.SubjectsUpdateRequest
 import com.lushaiedupls.data.remote.dto.UserOut
@@ -25,6 +27,9 @@ interface MeApi {
     @PATCH("api/v1/me")
     suspend fun updateProfile(@Body body: ProfileUpdate): UserOut
 
+    @PUT("api/v1/me/period-reminder")
+    suspend fun updatePeriodReminder(@Body body: PeriodReminderUpdateRequest): UserOut
+
     @DELETE("api/v1/me")
     suspend fun deleteAccount(): MessageResponse
 
@@ -33,6 +38,12 @@ interface MeApi {
 
     @GET("api/v1/me/devices")
     suspend fun devices(@Query("device_id") deviceId: String? = null): List<DeviceOut>
+
+    @PUT("api/v1/me/devices/{device_row_id}/fcm-token")
+    suspend fun updateFcmToken(
+        @Path("device_row_id") deviceRowId: String,
+        @Body body: FcmTokenUpdateRequest,
+    ): DeviceOut
 
     @DELETE("api/v1/me/devices/{device_row_id}")
     suspend fun deleteDevice(@Path("device_row_id") deviceRowId: String): MessageResponse

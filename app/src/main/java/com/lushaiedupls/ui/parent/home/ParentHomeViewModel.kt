@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lushaiedupls.data.remote.NetworkResult
+import com.lushaiedupls.data.remote.needsAdminApproval
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.ParentRepository
 import com.lushaiedupls.data.repository.StudentRepository
@@ -54,9 +55,28 @@ class ParentHomeViewModel(
         _uiState.update { it.copy(selectedStudentId = studentId) }
     }
 
-    fun refresh() {
+    fun refresh(asPullRefresh: Boolean = false) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val current = _uiState.value
+            val keepStatusPanel = current.needsApproval ||
+                (current.errorMessage != null && current.children.isEmpty())
+            when {
+                asPullRefresh && !keepStatusPanel ->
+                    _uiState.update { it.copy(isRefreshing = true, errorMessage = null) }
+                keepStatusPanel ->
+                    _uiState.update { it.copy(isLoading = true, isRefreshing = false) }
+                current.children.isEmpty() ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = true,
+                            isRefreshing = false,
+                            errorMessage = null,
+                            needsApproval = false,
+                        )
+                    }
+                else ->
+                    _uiState.update { it.copy(errorMessage = null, isRefreshing = false) }
+            }
             val month = YearMonth.now().toString()
             when (val result = parentRepository.overview(month)) {
                 is NetworkResult.Success -> {
@@ -68,6 +88,7 @@ class ParentHomeViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            isRefreshing = false,
                             displayName = overview.parent.name.ifBlank {
                                 userSessionStore.getDisplayName()
                             },
@@ -82,14 +103,20 @@ class ParentHomeViewModel(
                             children = children,
                             selectedStudentId = selected,
                             errorMessage = null,
+                            needsApproval = false,
                         )
                     }
                 }
-                else -> _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = result.userMessage(),
-                    )
+                else -> {
+                    val pending = result.needsAdminApproval()
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isRefreshing = false,
+                            needsApproval = pending,
+                            errorMessage = if (pending) null else result.userMessage(),
+                        )
+                    }
                 }
             }
         }

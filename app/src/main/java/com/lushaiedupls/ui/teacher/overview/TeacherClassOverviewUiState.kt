@@ -19,5 +19,6 @@ data class TeacherClassOverviewUiState(
     val rollDrafts: Map<String, String> = emptyMap(),
     val pendingDeleteStudentIds: Set<String> = emptySet(),
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
 )

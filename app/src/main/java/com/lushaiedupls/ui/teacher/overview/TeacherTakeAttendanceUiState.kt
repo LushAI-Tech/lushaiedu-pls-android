@@ -6,9 +6,11 @@ import com.lushaiedupls.data.mock.TeacherAttendanceSession
 data class TeacherTakeAttendanceUiState(
     val session: TeacherAttendanceSession? = null,
     val marks: Map<String, TeacherAttendanceMark> = emptyMap(),
+    val notes: Map<String, String> = emptyMap(),
     val saved: Boolean = false,
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
+    val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
 ) {
     val selectedCount: Int

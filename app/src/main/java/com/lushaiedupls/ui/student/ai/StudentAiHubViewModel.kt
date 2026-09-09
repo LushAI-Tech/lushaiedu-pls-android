@@ -47,8 +47,13 @@ class StudentAiHubViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            if (_uiState.value.subjects.isEmpty()) {
-                _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val hasContent = _uiState.value.subjects.isNotEmpty()
+            _uiState.update {
+                if (hasContent) {
+                    it.copy(isRefreshing = true, errorMessage = null)
+                } else {
+                    it.copy(isLoading = true, errorMessage = null)
+                }
             }
             coroutineScope {
                 val statsDeferred = async { studentRepository.progressDashboard() }
@@ -78,6 +83,7 @@ class StudentAiHubViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            isRefreshing = false,
                             subjects = subjects.ifEmpty { it.subjects },
                             needsApproval = needsApproval,
                             errorMessage = if (needsApproval) null else error,
@@ -88,9 +94,8 @@ class StudentAiHubViewModel(
                         val chResult = studentRepository.chapters(firstSubjectId)
                         if (chResult is NetworkResult.Success) {
                             val activeChapterIds = chResult.data.filter { it.is_active }.map { it.id }
-                            if (activeChapterIds.isNotEmpty()) {
-                                studentRepository.prefetchAiChat(activeChapterIds)
-                            }
+                            studentRepository.preferredChatPrefetchChapterId(activeChapterIds)
+                                ?.let { studentRepository.prefetchAiChat(listOf(it)) }
                         }
                     }
                 }

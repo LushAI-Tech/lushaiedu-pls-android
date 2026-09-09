@@ -8,6 +8,7 @@ data class StudentAttendanceUiState(
     val visibleMonth: YearMonth = YearMonth.now(),
     val selectedDay: Int? = null,
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val needsApproval: Boolean = false,
     val errorMessage: String? = null,
 )

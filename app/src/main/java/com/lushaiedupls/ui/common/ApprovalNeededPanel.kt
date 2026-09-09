@@ -141,7 +141,10 @@ fun LoadErrorPanel(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
     isRetrying: Boolean = false,
+    retryLabel: String? = null,
+    showRetryButton: Boolean = true,
 ) {
+    val retryText = retryLabel ?: stringResource(R.string.load_error_retry)
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -199,30 +202,32 @@ fun LoadErrorPanel(
                 textAlign = TextAlign.Center,
                 fontFamily = FontFamily.SansSerif,
             )
-            Spacer(modifier = Modifier.height(18.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(BrandBlack)
-                    .clickable(enabled = !isRetrying, onClick = onRetry),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (isRetrying) {
-                    CircularProgressIndicator(
-                        color = Color.White,
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.size(20.dp),
-                    )
-                } else {
-                    Text(
-                        text = stringResource(R.string.load_error_retry),
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        fontFamily = FontFamily.SansSerif,
-                    )
+            if (showRetryButton) {
+                Spacer(modifier = Modifier.height(18.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(BrandBlack)
+                        .clickable(enabled = !isRetrying, onClick = onRetry),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (isRetrying) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    } else {
+                        Text(
+                            text = retryText,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            fontFamily = FontFamily.SansSerif,
+                        )
+                    }
                 }
             }
         }

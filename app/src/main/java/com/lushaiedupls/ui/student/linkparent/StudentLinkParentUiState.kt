@@ -9,5 +9,6 @@ data class StudentLinkParentUiState(
     val parents: List<ParentLinkOut> = emptyList(),
     val isIssuing: Boolean = false,
     val isLoadingParents: Boolean = false,
+    val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
 )

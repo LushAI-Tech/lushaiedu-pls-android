@@ -86,6 +86,7 @@ enum class TeacherAttendanceMark {
 data class TeacherAttendanceStudent(
     val student: TeacherStudent,
     val mark: TeacherAttendanceMark = TeacherAttendanceMark.None,
+    val note: String? = null,
 )
 
 data class TeacherAttendanceSession(
@@ -492,6 +493,12 @@ data class TeacherDayPeriod(
 data class TeacherTimetableCell(
     val subject: String,
     val detail: String,
+    val subjectId: String? = null,
+    val teachingUnitId: String? = null,
+    val slotId: String? = null,
+    val teacherName: String? = null,
+    /** False when another teacher owns this slot (set-timetable: show locked). */
+    val isOwned: Boolean = true,
 )
 
 data class TeacherTeachingTimetable(

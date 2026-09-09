@@ -4,22 +4,27 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.lushaiedupls.data.remote.NetworkResult
+import com.lushaiedupls.data.remote.userMessage
+import com.lushaiedupls.data.remote.dto.OnboardingState
 import com.lushaiedupls.data.repository.AdminRepository
 import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.data.repository.ParentRepository
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.data.session.UserSessionStore
-import com.lushaiedupls.ui.auth.google.GoogleSignInHelper
+import com.lushaiedupls.push.PushRouter
+import com.lushaiedupls.ui.auth.google.rememberGoogleSignInAction
 import com.lushaiedupls.ui.admin.AdminShell
+import com.lushaiedupls.ui.auth.invitecode.InviteCodeRoute
+import com.lushaiedupls.ui.auth.setupprofile.SetupProfileRoute
 import com.lushaiedupls.ui.auth.selectclass.SelectClassRoute
+import com.lushaiedupls.ui.auth.selectinstitution.SelectInstitutionRoute
 import com.lushaiedupls.ui.auth.selectrole.SelectRoleRoute
 import com.lushaiedupls.ui.auth.selectrole.SelectRoleViewModel
 import com.lushaiedupls.ui.auth.selectrole.UserRole
@@ -50,12 +55,12 @@ fun AppNavGraph(
     teacherRepository: TeacherRepository,
     parentRepository: ParentRepository,
     adminRepository: AdminRepository,
+    pushRouter: PushRouter,
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController(),
     startDestination: String = authRepository.routeForStoredSession(),
 ) {
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
 
     fun navigateAfterAuth(route: String) {
         navController.navigate(route) {
@@ -63,9 +68,40 @@ fun AppNavGraph(
         }
     }
 
+    fun navigateToSignInWithMessage(message: String?) {
+        val text = message?.takeIf { it.isNotBlank() } ?: return
+        if (text.contains("cancelled", ignoreCase = true)) return
+        authRepository.setPendingSignInMessage(text)
+        navController.navigate(AppRoutes.SIGN_IN) {
+            launchSingleTop = true
+        }
+    }
+
+    val welcomeGoogleSignIn = rememberGoogleSignInAction(
+        onIdToken = { token ->
+            scope.launch {
+                when (val result = authRepository.google(token)) {
+                    is NetworkResult.Success -> {
+                        navigateAfterAuth(
+                            authRepository.resolvePostAuthRoute(
+                                result.data,
+                                fromGoogle = true,
+                            ),
+                        )
+                    }
+                    else -> navigateToSignInWithMessage(result.userMessage())
+                }
+            }
+        },
+        onError = { message -> navigateToSignInWithMessage(message) },
+    )
+
     fun logOutToWelcome() {
         scope.launch {
             studentRepository.clearAiCache()
+            teacherRepository.clearCaches()
+            parentRepository.clearCaches()
+            adminRepository.clearCaches()
             authRepository.logout()
             navController.navigate(AppRoutes.WELCOME) {
                 popUpTo(0) { inclusive = true }
@@ -73,17 +109,18 @@ fun AppNavGraph(
         }
     }
 
-    fun googleSignIn() {
-        scope.launch {
-            GoogleSignInHelper.requestIdToken(context)
-                .onSuccess { token ->
-                    when (val result = authRepository.google(token)) {
-                        is com.lushaiedupls.data.remote.NetworkResult.Success -> {
-                            navigateAfterAuth(authRepository.resolvePostAuthRoute(result.data))
-                        }
-                        else -> Unit
-                    }
+    LaunchedEffect(Unit) {
+        authRepository.sessionExpired.collect {
+            studentRepository.clearAiCache()
+            teacherRepository.clearCaches()
+            parentRepository.clearCaches()
+            adminRepository.clearCaches()
+            authRepository.clearLocalSession()
+            if (navController.currentDestination?.route != AppRoutes.WELCOME) {
+                navController.navigate(AppRoutes.WELCOME) {
+                    popUpTo(0) { inclusive = true }
                 }
+            }
         }
     }
 
@@ -100,12 +137,20 @@ fun AppNavGraph(
                 val dest = authRepository.routeForUser(result.data)
                 val current = navController.currentDestination?.route
                 val wizard = setOf(
+                    AppRoutes.SETUP_PROFILE,
                     AppRoutes.SELECT_ROLE,
+                    AppRoutes.SELECT_INVITE_CODE,
+                    AppRoutes.SELECT_INSTITUTION,
                     AppRoutes.SELECT_CLASS,
                     AppRoutes.SELECT_SUBJECT,
                 )
                 if (current == dest) return@LaunchedEffect
-                if (current in wizard && dest == AppRoutes.SELECT_ROLE) return@LaunchedEffect
+                // Don't pull users out of the onboarding wizard while still incomplete.
+                if (current in wizard &&
+                    result.data.onboarding_state != OnboardingState.COMPLETE
+                ) {
+                    return@LaunchedEffect
+                }
                 navController.navigate(dest) {
                     popUpTo(0) { inclusive = true }
                 }
@@ -127,7 +172,7 @@ fun AppNavGraph(
             WelcomeRoute(
                 onCreateAccount = { navController.navigate(AppRoutes.CREATE_ACCOUNT) },
                 onSignIn = { navController.navigate(AppRoutes.SIGN_IN) },
-                onGoogle = { googleSignIn() },
+                onGoogle = welcomeGoogleSignIn,
                 onParent = {
                     userSessionStore.setParentSignupFlow(true)
                     navController.navigate(AppRoutes.CREATE_ACCOUNT)
@@ -158,6 +203,23 @@ fun AppNavGraph(
                 },
             )
         }
+        composable(AppRoutes.SETUP_PROFILE) {
+            SetupProfileRoute(
+                authRepository = authRepository,
+                studentRepository = studentRepository,
+                userSessionStore = userSessionStore,
+                onBack = { navigateBackFromOnboarding() },
+                onContinue = { route ->
+                    if (route == AppRoutes.SELECT_ROLE) {
+                        navController.navigate(AppRoutes.SELECT_ROLE) {
+                            popUpTo(AppRoutes.SETUP_PROFILE) { inclusive = true }
+                        }
+                    } else {
+                        navigateAfterAuth(route)
+                    }
+                },
+            )
+        }
         composable(AppRoutes.SELECT_ROLE) {
             val roleViewModel: SelectRoleViewModel = viewModel(
                 factory = SelectRoleViewModel.provideFactory(userSessionStore, authRepository),
@@ -165,8 +227,26 @@ fun AppNavGraph(
             SelectRoleRoute(
                 viewModel = roleViewModel,
                 onBack = { navigateBackFromOnboarding() },
-                onContinueToClass = { navController.navigate(AppRoutes.SELECT_CLASS) },
+                onContinueToClass = { navController.navigate(AppRoutes.SELECT_INSTITUTION) },
+                onContinueToInvite = { navController.navigate(AppRoutes.SELECT_INVITE_CODE) },
                 onFinished = { route -> navigateAfterAuth(route) },
+            )
+        }
+        composable(AppRoutes.SELECT_INVITE_CODE) {
+            InviteCodeRoute(
+                userSessionStore = userSessionStore,
+                authRepository = authRepository,
+                onBack = { navigateBackFromOnboarding() },
+                onContinueToClass = { navController.navigate(AppRoutes.SELECT_INSTITUTION) },
+                onFinished = { route -> navigateAfterAuth(route) },
+            )
+        }
+        composable(AppRoutes.SELECT_INSTITUTION) {
+            SelectInstitutionRoute(
+                userSessionStore = userSessionStore,
+                studentRepository = studentRepository,
+                onBack = { navigateBackFromOnboarding() },
+                onContinue = { navController.navigate(AppRoutes.SELECT_CLASS) },
             )
         }
         composable(AppRoutes.SELECT_CLASS) {
@@ -215,6 +295,7 @@ fun AppNavGraph(
                 adminRepository = adminRepository,
                 studentRepository = studentRepository,
                 authRepository = authRepository,
+                pushRouter = pushRouter,
                 onLogOut = { logOutToWelcome() },
             )
         }
@@ -225,18 +306,19 @@ fun AppNavGraph(
                 studentRepository = studentRepository,
                 authRepository = authRepository,
                 onLogOut = { logOutToWelcome() },
-                onSwitchRole = { role ->
-                    userSessionStore.setRole(role)
-                    val dest = when (role) {
-                        UserRole.Student -> AppRoutes.STUDENT_SHELL
-                        UserRole.Teacher -> AppRoutes.TEACHER_SHELL
-                        UserRole.Parents -> AppRoutes.PARENT_SHELL
-                        UserRole.Admin -> AppRoutes.ADMIN_SHELL
-                    }
-                    navController.navigate(dest) {
-                        popUpTo(0) { inclusive = true }
-                    }
-                },
+                // Switch Roles — re-enable later.
+                // onSwitchRole = { role ->
+                //     userSessionStore.setRole(role)
+                //     val dest = when (role) {
+                //         UserRole.Student -> AppRoutes.STUDENT_SHELL
+                //         UserRole.Teacher -> AppRoutes.TEACHER_SHELL
+                //         UserRole.Parents -> AppRoutes.PARENT_SHELL
+                //         UserRole.Admin -> AppRoutes.ADMIN_SHELL
+                //     }
+                //     navController.navigate(dest) {
+                //         popUpTo(0) { inclusive = true }
+                //     }
+                // },
             )
         }
         composable(AppRoutes.COMING_SOON) {

@@ -2,11 +2,14 @@ package com.lushaiedupls.data.repository
 
 import android.content.Context
 import android.net.Uri
+import com.lushaiedupls.data.remote.AiQueryParams
+import com.lushaiedupls.data.remote.FeeMonth
 import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.api.AiApi
 import com.lushaiedupls.data.remote.api.AttendanceApi
 import com.lushaiedupls.data.remote.api.CalendarApi
 import com.lushaiedupls.data.remote.api.ClassesApi
+import com.lushaiedupls.data.remote.api.FeesApi
 import com.lushaiedupls.data.remote.api.MeApi
 import com.lushaiedupls.data.remote.api.NotificationsApi
 import com.lushaiedupls.data.remote.api.OverviewApi
@@ -27,9 +30,11 @@ import com.lushaiedupls.data.remote.dto.ChatHistoryResponse
 import com.lushaiedupls.data.remote.dto.ChatRequest
 import com.lushaiedupls.data.remote.dto.ChatResponse
 import com.lushaiedupls.data.remote.dto.ClassOut
+import com.lushaiedupls.data.remote.dto.InstitutionOut
 import com.lushaiedupls.data.remote.dto.ClearChatHistoryResponse
 import com.lushaiedupls.data.remote.dto.DeviceOut
 import com.lushaiedupls.data.remote.dto.ExamPrepPyqsResponse
+import com.lushaiedupls.data.remote.dto.FeeHistoryResponse
 import com.lushaiedupls.data.remote.dto.Gender
 import com.lushaiedupls.data.remote.dto.LinkTokenResponse
 import com.lushaiedupls.data.remote.dto.MessageResponse
@@ -47,7 +52,6 @@ import com.lushaiedupls.data.remote.dto.StudentAttendanceSummary
 import com.lushaiedupls.data.remote.dto.StudentOverview
 import com.lushaiedupls.data.remote.dto.SubjectOut
 import com.lushaiedupls.data.remote.dto.SubjectPracticeQuestionsResponse
-import com.lushaiedupls.data.mapper.StudentUiMappers
 import com.lushaiedupls.data.remote.dto.TeachingUnitOut
 import com.lushaiedupls.data.remote.dto.UnreadCountResponse
 import com.lushaiedupls.data.remote.dto.UserOut
@@ -58,9 +62,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -87,6 +88,7 @@ class StudentRepository(
     private val parentApi: ParentApi,
     private val teachingUnitsApi: TeachingUnitsApi,
     private val deviceIdProvider: DeviceIdProvider,
+    private val feesApi: FeesApi,
 ) {
     private val inFlightRequests = ConcurrentHashMap<String, Deferred<Any?>>()
     private val inFlightMutex = Mutex()
@@ -144,24 +146,49 @@ class StudentRepository(
     private val hasCachedResume = AtomicBoolean(false)
     private val quizHistoryCache = AtomicReference<List<QuizAttemptSummary>?>()
     private val isPrefetchingAiLearn = AtomicBoolean(false)
+    private val isPrefetchingAiChat = AtomicBoolean(false)
+    private val aiPrefetchSemaphore = Semaphore(permits = AI_PREFETCH_CONCURRENCY)
 
     fun getCachedOverview(month: String? = null): StudentOverview? = overviewCache[month.orEmpty()]
     fun getCachedAiSubjects(): List<AiSubjectOut>? = aiSubjectsCache.get()
     fun getCachedTeachingUnits(): List<TeachingUnitOut>? = teachingUnitsCache.get()
     fun getCachedProgressDashboard(): ProgressDashboardResponse? = progressDashboardCache.get()
+    fun getCachedProgressResume(): ResumeResponse? =
+        if (hasCachedResume.get()) progressResumeCache.get() else null
     fun getCachedChapters(subjectId: String): List<ChapterListItem>? = chaptersCache[subjectId]
     fun getCachedChapter(chapterId: String): ChapterOut? = chapterCache[chapterId]
     fun getCachedChatHistory(chapterId: String): ChatHistoryResponse? = chatHistoryCache[chapterId]
     fun getCachedChatIntro(chapterId: String, language: String): ChatResponse? = chatIntroCache["${chapterId}_$language"]
-    fun getCachedQuestionsList(subjectId: String): SubjectPracticeQuestionsResponse? = questionsListCache[subjectId]
-    fun getCachedAttachments(chapterId: String): List<ChapterAttachmentOut>? = chapterAttachmentsCache[chapterId]
+    fun getCachedQuestionsList(
+        subjectId: String,
+        chapterId: String? = null,
+        subtopicIds: String? = null,
+    ): SubjectPracticeQuestionsResponse? =
+        questionsListCache[questionsListCacheKey(subjectId, chapterId, subtopicIds)]
+
+    fun getCachedAttachments(
+        chapterId: String,
+        subtopicIds: String? = null,
+    ): List<ChapterAttachmentOut>? = chapterAttachmentsCache[attachmentsCacheKey(chapterId, subtopicIds)]
+
     fun getCachedExamPrepPyqs(
         chapterId: String,
         sectionId: String? = null,
         chapterScope: Boolean? = null,
         examCodes: String? = null,
-    ): ExamPrepPyqsResponse? = examPrepPyqsCache["${chapterId}_${sectionId}_${chapterScope}_${examCodes}"]
+        subtopicIds: String? = null,
+    ): ExamPrepPyqsResponse? = examPrepPyqsCache[
+        examPrepCacheKey(chapterId, sectionId, chapterScope, examCodes, subtopicIds),
+    ]
     fun getCachedQuizHistory(): List<QuizAttemptSummary>? = quizHistoryCache.get()
+
+    /** Picks the resume chapter when available, otherwise the first active chapter. */
+    fun preferredChatPrefetchChapterId(chapterIds: List<String>): String? {
+        val distinct = chapterIds.distinct().filter { it.isNotBlank() }
+        if (distinct.isEmpty()) return null
+        val resumeId = getCachedProgressResume()?.chapter_id
+        return resumeId?.takeIf { it in distinct } ?: distinct.first()
+    }
 
     private val _unreadNotificationCount = MutableStateFlow<Int?>(null)
     val unreadNotificationCount: StateFlow<Int?> = _unreadNotificationCount.asStateFlow()
@@ -252,7 +279,7 @@ class StudentRepository(
             timetableCache[key]?.let { return NetworkResult.Success(it) }
         }
         return singleFlight("timetable_$key") {
-            val res = safeApiCall { timetableApi.myTimetable(teachingUnitId) }
+            val res = safeApiCall { timetableApi.myTimetable(teachingUnitId = teachingUnitId) }
             if (res is NetworkResult.Success) {
                 timetableCache[key] = res.data
             }
@@ -341,19 +368,34 @@ class StudentRepository(
         return safeApiCall { meApi.avatarCommit(AvatarCommitRequest(object_key = presign.object_key)) }
     }
 
-    suspend fun classes(): NetworkResult<List<ClassOut>> = safeApiCall { classesApi.listClasses() }
+    suspend fun institutions(): NetworkResult<List<InstitutionOut>> =
+        safeApiCall { classesApi.listInstitutions() }
+
+    suspend fun classes(institutionId: String): NetworkResult<List<ClassOut>> =
+        safeApiCall { classesApi.listClasses(institutionId) }
 
     suspend fun questionsList(
         subjectId: String,
+        chapterId: String? = null,
+        subtopicIds: String? = null,
         forceRefresh: Boolean = false,
     ): NetworkResult<SubjectPracticeQuestionsResponse> {
+        val scopedChapterId = AiQueryParams.nonEmpty(chapterId)
+        val scopedSubtopicIds = AiQueryParams.nonEmpty(subtopicIds)
+        val cacheKey = questionsListCacheKey(subjectId, scopedChapterId, scopedSubtopicIds)
         if (!forceRefresh) {
-            questionsListCache[subjectId]?.let { return NetworkResult.Success(it) }
+            questionsListCache[cacheKey]?.let { return NetworkResult.Success(it) }
         }
-        return singleFlight("questions_$subjectId") {
-            val result = safeApiCall { aiApi.questionsList(subjectId) }
+        return singleFlight("questions_$cacheKey") {
+            val result = safeApiCall {
+                aiApi.questionsList(
+                    subjectId = subjectId,
+                    chapterId = scopedChapterId,
+                    subtopicIds = scopedSubtopicIds,
+                )
+            }
             if (result is NetworkResult.Success) {
-                questionsListCache[subjectId] = result.data
+                questionsListCache[cacheKey] = result.data
             }
             result
         }
@@ -361,15 +403,23 @@ class StudentRepository(
 
     suspend fun chapterAttachments(
         chapterId: String,
+        subtopicIds: String? = null,
         forceRefresh: Boolean = false,
     ): NetworkResult<List<ChapterAttachmentOut>> {
+        val scopedSubtopicIds = AiQueryParams.nonEmpty(subtopicIds)
+        val cacheKey = attachmentsCacheKey(chapterId, scopedSubtopicIds)
         if (!forceRefresh) {
-            chapterAttachmentsCache[chapterId]?.let { return NetworkResult.Success(it) }
+            chapterAttachmentsCache[cacheKey]?.let { return NetworkResult.Success(it) }
         }
-        return singleFlight("attachments_$chapterId") {
-            val result = safeApiCall { aiApi.chapterAttachments(chapterId) }
+        return singleFlight("attachments_$cacheKey") {
+            val result = safeApiCall {
+                aiApi.chapterAttachments(
+                    chapterId = chapterId,
+                    subtopicIds = scopedSubtopicIds,
+                )
+            }
             if (result is NetworkResult.Success) {
-                chapterAttachmentsCache[chapterId] = result.data
+                chapterAttachmentsCache[cacheKey] = result.data
             }
             result
         }
@@ -380,9 +430,23 @@ class StudentRepository(
         sectionId: String? = null,
         chapterScope: Boolean? = null,
         examCodes: String? = null,
+        subtopicIds: String? = null,
         forceRefresh: Boolean = false,
     ): NetworkResult<ExamPrepPyqsResponse> {
-        val cacheKey = "${chapterId}_${sectionId}_${chapterScope}_${examCodes}"
+        val scopedSectionId = AiQueryParams.nonEmpty(sectionId)
+        val scopedExamCodes = AiQueryParams.nonEmpty(examCodes)
+        val scopedSubtopicIds = if (chapterScope == true) {
+            null
+        } else {
+            AiQueryParams.nonEmpty(subtopicIds)
+        }
+        val cacheKey = examPrepCacheKey(
+            chapterId,
+            scopedSectionId,
+            chapterScope,
+            scopedExamCodes,
+            scopedSubtopicIds,
+        )
         if (!forceRefresh) {
             examPrepPyqsCache[cacheKey]?.let { return NetworkResult.Success(it) }
         }
@@ -390,9 +454,10 @@ class StudentRepository(
             val result = safeApiCall {
                 aiApi.examPrepPyqs(
                     chapterId = chapterId,
-                    sectionId = sectionId,
+                    sectionId = scopedSectionId,
                     chapterScope = chapterScope,
-                    examCodes = examCodes,
+                    examCodes = scopedExamCodes,
+                    subtopicIds = scopedSubtopicIds,
                 )
             }
             if (result is NetworkResult.Success) {
@@ -402,8 +467,13 @@ class StudentRepository(
         }
     }
 
-    suspend fun subjects(classId: String): NetworkResult<List<SubjectOut>> =
-        safeApiCall { classesApi.listSubjects(classId) }
+    suspend fun subjects(classId: String, institutionId: String): NetworkResult<List<SubjectOut>> =
+        safeApiCall { classesApi.listSubjects(classId, institutionId) }
+
+    suspend fun myFeeHistory(month: String? = FeeMonth.ALL): NetworkResult<FeeHistoryResponse> {
+        if (!FeeMonth.isListFilter(month)) return FeeMonth.invalidMonthError()
+        return safeApiCall { feesApi.myHistory(FeeMonth.listFilterOrNull(month)) }
+    }
 
     suspend fun aiSubjects(forceRefresh: Boolean = false): NetworkResult<List<AiSubjectOut>> {
         if (!forceRefresh) {
@@ -529,31 +599,39 @@ class StudentRepository(
     }
 
     suspend fun prefetchAiChat(chapterIds: List<String>, language: String = "en") {
+        if (!isPrefetchingAiChat.compareAndSet(false, true)) {
+            return
+        }
         try {
-            coroutineScope {
-                chapterIds.take(3).forEach { chapterId ->
-                    launch {
-                        chapter(chapterId)
-                        chapterAttachments(chapterId)
-                        examPrepPyqs(chapterId)
-                        val history = chatHistory(chapterId)
-                        if (history is NetworkResult.Success && history.data.messages.isEmpty()) {
-                            chatIntro(chapterId, language)
+            val targetId = chapterIds
+                .distinct()
+                .firstOrNull { it.isNotBlank() && chatHistoryCache[it] == null }
+                ?: return
+            aiPrefetchSemaphore.withPermit {
+                if (chapterCache[targetId] == null) {
+                    chapter(targetId)
+                }
+                when (val history = chatHistory(targetId)) {
+                    is NetworkResult.Success -> {
+                        if (history.data.messages.isEmpty() &&
+                            chatIntroCache["${targetId}_$language"] == null
+                        ) {
+                            chatIntro(targetId, language)
                         }
                     }
+                    else -> Unit
                 }
             }
         } catch (_: Exception) {
             // Best effort prefetch
+        } finally {
+            isPrefetchingAiChat.set(false)
         }
     }
 
     /**
-     * Highly optimized two-tier prefetching:
-     * - Tier 1 (Immediate / High-Priority): Warms top-level AI metadata and the first/resume chapter
-     *   so AI Hub and initial chats open instantly (< 200ms).
-     * - Tier 2 (Background / High-Concurrency): Preloads all remaining subjects, chapters, outline
-     *   sections, attachments, and exam prep PYQs using high parallel limits.
+     * Prefetches AI Learn hub metadata only (dashboard, subjects, teaching units, resume, quiz).
+     * Chapter lists load on demand when a subject is opened, to avoid a DB fan-out.
      */
     suspend fun prefetchAiLearn(language: String = "en") {
         if (!isPrefetchingAiLearn.compareAndSet(false, true)) {
@@ -561,100 +639,11 @@ class StudentRepository(
         }
         try {
             supervisorScope {
-                // Tier 1: Concurrently fetch top-level AI hub metadata
-                val dashDeferred = async { progressDashboard() }
-                val aiSubDeferred = async { aiSubjects() }
-                val unitsDeferred = async { teachingUnits() }
-                val resumeDeferred = async { progressResume() }
-                val quizHistDeferred = async { quizHistory() }
-
-                val aiSubRes = aiSubDeferred.await()
-                val unitsRes = unitsDeferred.await()
-                val resumeRes = resumeDeferred.await()
-                dashDeferred.await()
-                quizHistDeferred.await()
-
-                // Extract all distinct subjects
-                val aiSubjects = (aiSubRes as? NetworkResult.Success)?.data.orEmpty()
-                val units = (unitsRes as? NetworkResult.Success)?.data.orEmpty()
-                val fromAi = StudentUiMappers.aiSubjects(aiSubjects)
-                val fromUnits = StudentUiMappers.teachingUnitSubjects(units)
-                val allSubjects = (fromAi + fromUnits)
-                    .filter { it.name.isNotBlank() && it.id.isNotBlank() }
-                    .distinctBy { it.id }
-
-                val resumeChapterId = (resumeRes as? NetworkResult.Success)?.data?.chapter_id
-                val firstSubjectId = allSubjects.firstOrNull()?.id
-
-                // Priority: Warm first subject's active chapters and resume chapter first
-                if (!firstSubjectId.isNullOrBlank()) {
-                    launch {
-                        val chResult = chapters(firstSubjectId)
-                        if (chResult is NetworkResult.Success) {
-                            val active = chResult.data.filter { it.is_active || it.id == resumeChapterId }.take(2)
-                            active.forEach { ch ->
-                                launch { chapter(ch.id) }
-                                launch { chapterAttachments(ch.id) }
-                                launch { examPrepPyqs(ch.id) }
-                                launch {
-                                    val h = chatHistory(ch.id)
-                                    if (h is NetworkResult.Success && h.data.messages.isEmpty()) {
-                                        chatIntro(ch.id, language)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                val semaphore = Semaphore(permits = 16)
-
-                // Tier 2: Preload remaining subjects, chapters, questions, attachments, and PYQs in parallel
-                allSubjects.forEach { subject ->
-                    launch {
-                        semaphore.withPermit {
-                            questionsList(subject.id)
-                        }
-                    }
-                    launch {
-                        val chResult = semaphore.withPermit {
-                            chapters(subject.id)
-                        }
-                        if (chResult is NetworkResult.Success) {
-                            val chapters = chResult.data
-                            val activeChapters = chapters.filter { it.is_active || it.id == resumeChapterId }
-
-                            activeChapters.forEach { chapterItem ->
-                                launch {
-                                    val cResult = semaphore.withPermit { chapter(chapterItem.id) }
-                                    if (cResult is NetworkResult.Success) {
-                                        val flatSections = StudentUiMappers.flattenSections(cResult.data.sections)
-                                        flatSections.forEach { sec ->
-                                            if (sec.content_blocks.isEmpty()) {
-                                                launch {
-                                                    semaphore.withPermit { section(sec.id) }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                launch {
-                                    semaphore.withPermit { chapterAttachments(chapterItem.id) }
-                                }
-                                launch {
-                                    semaphore.withPermit { examPrepPyqs(chapterId = chapterItem.id) }
-                                    semaphore.withPermit { examPrepPyqs(chapterId = chapterItem.id, chapterScope = true) }
-                                }
-                                launch {
-                                    val histResult = semaphore.withPermit { chatHistory(chapterItem.id) }
-                                    if (histResult is NetworkResult.Success && histResult.data.messages.isEmpty()) {
-                                        semaphore.withPermit { chatIntro(chapterItem.id, language) }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                aiPrefetchSemaphore.withPermit { aiSubjects() }
+                aiPrefetchSemaphore.withPermit { teachingUnits() }
+                aiPrefetchSemaphore.withPermit { progressDashboard() }
+                aiPrefetchSemaphore.withPermit { progressResume() }
+                aiPrefetchSemaphore.withPermit { quizHistory() }
             }
         } catch (_: Exception) {
             // Best effort background prefetch
@@ -730,4 +719,32 @@ class StudentRepository(
 
     suspend fun revokeParentLink(linkId: String): NetworkResult<MessageResponse> =
         safeApiCall { parentApi.revokeLink(linkId) }
+
+    companion object {
+        /** Keeps concurrent AI prefetch calls low to respect backend DB pool limits. */
+        private const val AI_PREFETCH_CONCURRENCY = 3
+
+        private fun questionsListCacheKey(
+            subjectId: String,
+            chapterId: String?,
+            subtopicIds: String?,
+        ): String = "${subjectId}_${chapterId.orEmpty()}_${subtopicIds.orEmpty()}"
+
+        private fun attachmentsCacheKey(chapterId: String, subtopicIds: String?): String =
+            "${chapterId}_${subtopicIds.orEmpty()}"
+
+        private fun examPrepCacheKey(
+            chapterId: String,
+            sectionId: String?,
+            chapterScope: Boolean?,
+            examCodes: String?,
+            subtopicIds: String?,
+        ): String = listOf(
+            chapterId,
+            sectionId.orEmpty(),
+            chapterScope?.toString().orEmpty(),
+            examCodes.orEmpty(),
+            subtopicIds.orEmpty(),
+        ).joinToString("_")
+    }
 }

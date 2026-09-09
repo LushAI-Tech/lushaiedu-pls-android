@@ -2,32 +2,37 @@ package com.lushaiedupls.data.remote.api
 
 import com.lushaiedupls.data.remote.dto.AdminFeedbackUpdateRequest
 import com.lushaiedupls.data.remote.dto.AdminFeeSummaryOut
+import com.lushaiedupls.data.remote.dto.AdminParentLinkCreateRequest
 import com.lushaiedupls.data.remote.dto.AdminUserCreateRequest
 import com.lushaiedupls.data.remote.dto.AdminUserCreateResponse
 import com.lushaiedupls.data.remote.dto.AdminUserEditRequest
 import com.lushaiedupls.data.remote.dto.ClassCreate
-import com.lushaiedupls.data.remote.dto.ClassMonthlyFeeOut
-import com.lushaiedupls.data.remote.dto.ClassMonthlyFeeUpsertRequest
 import com.lushaiedupls.data.remote.dto.ClassOut
 import com.lushaiedupls.data.remote.dto.ClassReassignRequest
 import com.lushaiedupls.data.remote.dto.ClassUpdate
 import com.lushaiedupls.data.remote.dto.DeletedResponse
+import com.lushaiedupls.data.remote.dto.FeeLedgerBulkDeleteRequest
+import com.lushaiedupls.data.remote.dto.FeeLedgerBulkDeleteResponse
 import com.lushaiedupls.data.remote.dto.FeeLedgerOut
 import com.lushaiedupls.data.remote.dto.FeeLedgerUpdateRequest
+import com.lushaiedupls.data.remote.dto.InstitutionCreate
+import com.lushaiedupls.data.remote.dto.InstitutionOut
+import com.lushaiedupls.data.remote.dto.InstitutionUpdate
 import com.lushaiedupls.data.remote.dto.InviteCodeCreate
 import com.lushaiedupls.data.remote.dto.InviteCodeOut
 import com.lushaiedupls.data.remote.dto.LedgerGenerationRequest
 import com.lushaiedupls.data.remote.dto.MessageResponse
 import com.lushaiedupls.data.remote.dto.PaginatedUsersResponse
 import com.lushaiedupls.data.remote.dto.ParentFeedbackOut
-import com.lushaiedupls.data.remote.dto.PeriodCreate
-import com.lushaiedupls.data.remote.dto.PeriodOut
-import com.lushaiedupls.data.remote.dto.PeriodUpdate
+import com.lushaiedupls.data.remote.dto.ParentLinkOut
 import com.lushaiedupls.data.remote.dto.StemBindingRequest
 import com.lushaiedupls.data.remote.dto.StemNode
 import com.lushaiedupls.data.remote.dto.SubjectCreate
+import com.lushaiedupls.data.remote.dto.SubjectMonthlyFeeOut
+import com.lushaiedupls.data.remote.dto.SubjectMonthlyFeeUpsertRequest
 import com.lushaiedupls.data.remote.dto.SubjectOut
 import com.lushaiedupls.data.remote.dto.SubjectUpdate
+import com.lushaiedupls.data.remote.dto.TeacherInstitutionAssignmentRequest
 import com.lushaiedupls.data.remote.dto.UserOut
 import com.lushaiedupls.data.remote.dto.UserStatusUpdate
 import retrofit2.http.Body
@@ -40,8 +45,28 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface AdminApi {
+    @GET("api/v1/admin/institutions")
+    suspend fun listInstitutions(
+        @Query("include_inactive") includeInactive: Boolean = false,
+    ): List<InstitutionOut>
+
+    @POST("api/v1/admin/institutions")
+    suspend fun createInstitution(@Body body: InstitutionCreate): InstitutionOut
+
+    @PATCH("api/v1/admin/institutions/{institution_id}")
+    suspend fun updateInstitution(
+        @Path("institution_id") institutionId: String,
+        @Body body: InstitutionUpdate,
+    ): InstitutionOut
+
+    @DELETE("api/v1/admin/institutions/{institution_id}")
+    suspend fun deleteInstitution(
+        @Path("institution_id") institutionId: String,
+    ): DeletedResponse
+
     @GET("api/v1/admin/classes")
     suspend fun listClasses(
+        @Query("institution_id") institutionId: String,
         @Query("include_inactive") includeInactive: Boolean = false,
     ): List<ClassOut>
 
@@ -51,6 +76,7 @@ interface AdminApi {
     @PATCH("api/v1/admin/classes/{class_id}")
     suspend fun updateClass(
         @Path("class_id") classId: String,
+        @Query("institution_id") institutionId: String,
         @Body body: ClassUpdate,
     ): ClassOut
 
@@ -60,6 +86,7 @@ interface AdminApi {
     @GET("api/v1/admin/classes/{class_id}/subjects")
     suspend fun listSubjects(
         @Path("class_id") classId: String,
+        @Query("institution_id") institutionId: String,
         @Query("include_inactive") includeInactive: Boolean = true,
     ): List<SubjectOut>
 
@@ -69,6 +96,7 @@ interface AdminApi {
     @PATCH("api/v1/admin/subjects/{subject_id}")
     suspend fun updateSubject(
         @Path("subject_id") subjectId: String,
+        @Query("institution_id") institutionId: String,
         @Body body: SubjectUpdate,
     ): SubjectOut
 
@@ -111,6 +139,9 @@ interface AdminApi {
         @Query("limit") limit: Int = 50,
     ): PaginatedUsersResponse
 
+    @GET("api/v1/admin/users/{user_id}")
+    suspend fun getUser(@Path("user_id") userId: String): UserOut
+
     @POST("api/v1/admin/users")
     suspend fun createUser(@Body body: AdminUserCreateRequest): AdminUserCreateResponse
 
@@ -138,17 +169,14 @@ interface AdminApi {
         @Body body: ClassReassignRequest,
     ): UserOut
 
-    @POST("api/v1/admin/periods")
-    suspend fun createPeriod(@Body body: PeriodCreate): PeriodOut
+    @POST("api/v1/admin/teachers/{teacher_id}/institution-assignments")
+    suspend fun assignTeacherInstitution(
+        @Path("teacher_id") teacherId: String,
+        @Body body: TeacherInstitutionAssignmentRequest,
+    ): UserOut
 
-    @PATCH("api/v1/admin/periods/{period_id}")
-    suspend fun updatePeriod(
-        @Path("period_id") periodId: String,
-        @Body body: PeriodUpdate,
-    ): PeriodOut
-
-    @DELETE("api/v1/admin/periods/{period_id}")
-    suspend fun deletePeriod(@Path("period_id") periodId: String): DeletedResponse
+    @POST("api/v1/admin/parent-links")
+    suspend fun createParentLink(@Body body: AdminParentLinkCreateRequest): ParentLinkOut
 
     @GET("api/v1/admin/feedback")
     suspend fun listFeedback(
@@ -161,19 +189,42 @@ interface AdminApi {
         @Body body: AdminFeedbackUpdateRequest,
     ): ParentFeedbackOut
 
-    @POST("api/v1/admin/fees/class-monthly")
-    suspend fun upsertClassMonthlyFee(
-        @Body body: ClassMonthlyFeeUpsertRequest,
-    ): ClassMonthlyFeeOut
+    @POST("api/v1/admin/fees/subject-monthly")
+    suspend fun upsertSubjectMonthlyFee(
+        @Body body: SubjectMonthlyFeeUpsertRequest,
+    ): SubjectMonthlyFeeOut
+
+    @GET("api/v1/admin/fees/subject-monthly")
+    suspend fun listSubjectMonthlyFees(
+        @Query("month") month: String? = null,
+        @Query("class_id") classId: String? = null,
+        @Query("subject_id") subjectId: String? = null,
+    ): List<SubjectMonthlyFeeOut>
+
+    @GET("api/v1/admin/fees/subject-monthly/{fee_id}")
+    suspend fun getSubjectMonthlyFee(
+        @Path("fee_id") feeId: String,
+    ): SubjectMonthlyFeeOut
+
+    @DELETE("api/v1/admin/fees/subject-monthly/{fee_id}")
+    suspend fun deleteSubjectMonthlyFee(
+        @Path("fee_id") feeId: String,
+    ): MessageResponse
 
     @POST("api/v1/admin/fees/generate-ledgers")
     suspend fun generateLedgers(@Body body: LedgerGenerationRequest): MessageResponse
+
+    @POST("api/v1/admin/fees/ledgers/delete-bulk")
+    suspend fun deleteLedgersBulk(
+        @Body body: FeeLedgerBulkDeleteRequest,
+    ): FeeLedgerBulkDeleteResponse
 
     @GET("api/v1/admin/fees/ledgers")
     suspend fun listLedgers(
         @Query("month") month: String? = null,
         @Query("class_id") classId: String? = null,
         @Query("student_id") studentId: String? = null,
+        @Query("subject_id") subjectId: String? = null,
         @Query("payment_status") paymentStatus: String? = null,
     ): List<FeeLedgerOut>
 

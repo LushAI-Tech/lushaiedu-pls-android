@@ -43,14 +43,18 @@ import com.lushaiedupls.ui.common.AttendanceRingAbsent
 import com.lushaiedupls.ui.common.AttendanceRingLeave
 import com.lushaiedupls.ui.common.AttendanceRingPresent
 import com.lushaiedupls.ui.common.LoadErrorPanel
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.MetricCard
 import com.lushaiedupls.ui.common.SectionTitle
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
+import com.lushaiedupls.ui.teacher.components.InstitutionSelectorDropdown
+import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
 
 private val CardShape = RoundedCornerShape(18.dp)
+private val FilterPanelShape = RoundedCornerShape(16.dp)
 private val LegendGray = Color(0xFF8B93A7)
 
 @Composable
@@ -73,6 +77,7 @@ fun AdminHomeRoute(
         uiState = uiState,
         onNotificationsClick = onNotificationsClick,
         onProfileClick = onProfileClick,
+        onInstitutionSelected = viewModel::onInstitutionSelected,
         onRefresh = viewModel::refresh,
         modifier = modifier,
     )
@@ -84,64 +89,103 @@ fun AdminHomeScreen(
     onNotificationsClick: () -> Unit,
     onProfileClick: () -> Unit,
     onRefresh: () -> Unit,
+    onInstitutionSelected: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     when {
-        uiState.isLoading && uiState.errorMessage == null && uiState.totalStudents == 0 &&
-            uiState.totalTeachers == 0 ->
+        uiState.isLoading && uiState.errorMessage == null && uiState.institutions.isEmpty() &&
+            uiState.totalStudents == 0 && uiState.totalTeachers == 0 ->
             StudentPageSkeleton(kind = StudentSkeletonKind.Home, modifier = modifier)
-        uiState.errorMessage != null && uiState.totalStudents == 0 && uiState.totalTeachers == 0 ->
+        uiState.errorMessage != null && uiState.institutions.isEmpty() &&
+            uiState.totalStudents == 0 && uiState.totalTeachers == 0 ->
             LoadErrorPanel(
                 screenTitle = stringResource(R.string.section_overview),
                 message = uiState.errorMessage.orEmpty(),
                 onRetry = onRefresh,
-                isRetrying = uiState.isLoading,
+                isRetrying = uiState.isLoading || uiState.isRefreshing,
                 modifier = modifier,
             )
-        else -> Column(
-            modifier = modifier
-                .fillMaxSize()
-                .background(BgWhite)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(top = 16.dp, bottom = 24.dp),
+        else -> LushPullToRefreshBox(
+            isRefreshing = uiState.isRefreshing,
+            onRefresh = onRefresh,
+            modifier = modifier.fillMaxSize(),
         ) {
-            AppTopBar(
-                displayName = uiState.displayName,
-                notificationCount = uiState.notificationCount,
-                onNotificationClick = onNotificationsClick,
-                onProfileClick = onProfileClick,
-            )
-            Spacer(modifier = Modifier.height(22.dp))
-            SectionTitle(text = stringResource(R.string.section_overview))
-            Spacer(modifier = Modifier.height(12.dp))
-            MetricRow(
-                leftLabel = stringResource(R.string.admin_stat_students),
-                leftValue = uiState.totalStudents.toString(),
-                leftIcon = OverviewIcon.Children,
-                leftEmphasized = true,
-                rightLabel = stringResource(R.string.admin_stat_teachers),
-                rightValue = uiState.totalTeachers.toString(),
-                rightIcon = OverviewIcon.Staff,
-                rightEmphasized = true,
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            MetricRow(
-                leftLabel = stringResource(R.string.admin_stat_parents),
-                leftValue = uiState.totalParents.toString(),
-                leftIcon = OverviewIcon.Children,
-                rightLabel = stringResource(R.string.admin_stat_classes),
-                rightValue = uiState.totalClasses.toString(),
-                rightIcon = OverviewIcon.Classes,
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-            SectionTitle(text = stringResource(R.string.section_attendance))
-            Spacer(modifier = Modifier.height(12.dp))
-            AttendanceCard(
-                attendance = uiState.attendance,
-                percent = uiState.presentPct,
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(BgWhite)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 16.dp, bottom = 24.dp),
+            ) {
+                AppTopBar(
+                    displayName = uiState.displayName,
+                    notificationCount = uiState.notificationCount,
+                    onNotificationClick = onNotificationsClick,
+                    onProfileClick = onProfileClick,
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                AdminHomeFilterSection(
+                    institutions = uiState.institutions,
+                    selectedInstitutionIndex = uiState.institutionIds
+                        .indexOf(uiState.selectedInstitutionId)
+                        .coerceAtLeast(0),
+                    onInstitutionSelected = onInstitutionSelected,
+                )
+                Spacer(modifier = Modifier.height(20.dp))
+                SectionTitle(text = stringResource(R.string.section_overview))
+                Spacer(modifier = Modifier.height(12.dp))
+                MetricRow(
+                    leftLabel = stringResource(R.string.admin_stat_students),
+                    leftValue = uiState.totalStudents.toString(),
+                    leftIcon = OverviewIcon.Children,
+                    leftEmphasized = true,
+                    rightLabel = stringResource(R.string.admin_stat_teachers),
+                    rightValue = uiState.totalTeachers.toString(),
+                    rightIcon = OverviewIcon.Staff,
+                    rightEmphasized = true,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                MetricRow(
+                    leftLabel = stringResource(R.string.admin_stat_parents),
+                    leftValue = uiState.totalParents.toString(),
+                    leftIcon = OverviewIcon.Children,
+                    rightLabel = stringResource(R.string.admin_stat_classes),
+                    rightValue = uiState.totalClasses.toString(),
+                    rightIcon = OverviewIcon.Classes,
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                SectionTitle(text = stringResource(R.string.section_attendance))
+                Spacer(modifier = Modifier.height(12.dp))
+                AttendanceCard(
+                    attendance = uiState.attendance,
+                    percent = uiState.presentPct,
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun AdminHomeFilterSection(
+    institutions: List<String>,
+    selectedInstitutionIndex: Int,
+    onInstitutionSelected: (Int) -> Unit,
+) {
+    if (institutions.isEmpty()) return
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(FilterPanelShape)
+            .background(BgLight)
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+    ) {
+        InstitutionSelectorDropdown(
+            label = stringResource(R.string.timetable_institution),
+            institutions = institutions,
+            selectedIndex = selectedInstitutionIndex,
+            onSelect = onInstitutionSelected,
+        )
     }
 }
 

@@ -3,7 +3,6 @@ package com.lushaiedupls.ui.teacher.overview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,11 +24,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,12 +52,16 @@ import com.lushaiedupls.data.mock.TeacherMockRepository
 import com.lushaiedupls.data.mock.TeacherOverviewDashboard
 import com.lushaiedupls.data.mock.TeacherVolumeRow
 import com.lushaiedupls.data.repository.TeacherRepository
+import com.lushaiedupls.data.session.UserSessionStore
+import com.lushaiedupls.ui.common.AnimatedFilterChipRow
 import com.lushaiedupls.ui.common.AppBackNav
+import com.lushaiedupls.ui.teacher.components.InstitutionSelectorDropdown
 import com.lushaiedupls.ui.common.AttendanceDonut
 import com.lushaiedupls.ui.common.AttendanceRingAbsent
 import com.lushaiedupls.ui.common.AttendanceRingLeave
 import com.lushaiedupls.ui.common.AttendanceRingPresent
 import com.lushaiedupls.ui.common.LoadErrorPanel
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.teacher.overlays.TakeAttendanceSetupOverlay
 import com.lushaiedupls.ui.teacher.overlays.TeacherScrimDialog
 import com.lushaiedupls.ui.theme.BgLight
@@ -79,17 +80,16 @@ import java.util.Locale
 private val CardShape = RoundedCornerShape(16.dp)
 private val SegmentShape = RoundedCornerShape(14.dp)
 private val MetricShape = RoundedCornerShape(16.dp)
-private val ClassChipShape = RoundedCornerShape(12.dp)
 private val CalendarShape = RoundedCornerShape(22.dp)
 private val DaySelectedShape = RoundedCornerShape(10.dp)
 private val LegendGray = Color(0xFF8B93A7)
 private val DowGray = Color(0xFF9CA3AF)
 private val SelectedDayBg = Color(0xFFFFE0B8)
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TeacherOverviewRoute(
     teacherRepository: TeacherRepository,
+    userSessionStore: UserSessionStore? = null,
     onTakeAttendance: (
         unitId: String,
         dateLabel: String,
@@ -100,7 +100,7 @@ fun TeacherOverviewRoute(
     onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     viewModel: TeacherOverviewViewModel = viewModel(
-        factory = TeacherOverviewViewModel.provideFactory(teacherRepository),
+        factory = TeacherOverviewViewModel.provideFactory(teacherRepository, userSessionStore),
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -124,7 +124,9 @@ fun TeacherOverviewRoute(
                 uiState = uiState,
                 onBack = onBack,
                 onSectionSelected = viewModel::onSectionSelected,
+                onInstitutionSelected = viewModel::onInstitutionSelected,
                 onAttendanceClassSelected = viewModel::onAttendanceClassSelected,
+                onAttendanceSubjectSelected = viewModel::onAttendanceSubjectSelected,
                 onPreviousAttendanceMonth = viewModel::previousAttendanceMonth,
                 onNextAttendanceMonth = viewModel::nextAttendanceMonth,
                 onSelectAttendanceMonth = viewModel::selectAttendanceMonth,
@@ -159,12 +161,13 @@ fun TeacherOverviewRoute(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TeacherOverviewScreen(
     uiState: TeacherOverviewUiState,
     onSectionSelected: (TeacherOverviewSection) -> Unit,
+    onInstitutionSelected: (Int) -> Unit = {},
     onAttendanceClassSelected: (String) -> Unit = {},
+    onAttendanceSubjectSelected: (String) -> Unit = {},
     onPreviousAttendanceMonth: () -> Unit = {},
     onNextAttendanceMonth: () -> Unit = {},
     onSelectAttendanceMonth: (YearMonth) -> Unit = {},
@@ -174,8 +177,11 @@ fun TeacherOverviewScreen(
     modifier: Modifier = Modifier,
 ) {
     var showMonthPicker by remember { mutableStateOf(false) }
+    val selectedInstitutionIndex = uiState.institutionIds
+        .indexOf(uiState.selectedInstitutionId)
+        .coerceAtLeast(0)
 
-    PullToRefreshBox(
+    LushPullToRefreshBox(
         isRefreshing = uiState.isRefreshing,
         onRefresh = onPullRefresh,
         modifier = modifier
@@ -210,6 +216,15 @@ fun TeacherOverviewScreen(
                 fontFamily = FontFamily.SansSerif,
             )
             Spacer(modifier = Modifier.height(16.dp))
+            if (uiState.institutions.isNotEmpty()) {
+                InstitutionSelectorDropdown(
+                    label = stringResource(R.string.timetable_institution),
+                    institutions = uiState.institutions,
+                    selectedIndex = selectedInstitutionIndex,
+                    onSelect = onInstitutionSelected,
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+            }
             OverviewSegmentedControl(
                 selected = uiState.section,
                 onSelected = onSectionSelected,
@@ -234,10 +249,14 @@ fun TeacherOverviewScreen(
                 TeacherOverviewSection.Attendance -> AttendanceWorkspace(
                     classes = uiState.attendanceClasses,
                     selectedClass = uiState.selectedAttendanceClass,
+                    subjects = uiState.attendanceSubjects,
+                    selectedSubject = uiState.selectedAttendanceSubject,
+                    pickerError = uiState.attendancePickerError,
                     month = uiState.attendanceMonth,
                     selectedDay = uiState.selectedAttendanceDay,
                     isLoading = uiState.isLoading,
                     onClassSelected = onAttendanceClassSelected,
+                    onSubjectSelected = onAttendanceSubjectSelected,
                     onPreviousMonth = onPreviousAttendanceMonth,
                     onNextMonth = onNextAttendanceMonth,
                     onOpenMonthPicker = { showMonthPicker = true },
@@ -369,13 +388,32 @@ private fun SegmentTab(
 }
 
 @Composable
+private fun AttendancePickerChipRow(
+    labels: List<String>,
+    selectedLabel: String,
+    isLoading: Boolean,
+    onSelected: (Int) -> Unit,
+) {
+    AnimatedFilterChipRow(
+        options = labels,
+        selectedIndex = labels.indexOf(selectedLabel).coerceAtLeast(0),
+        onSelect = onSelected,
+        enabled = !isLoading,
+    )
+}
+
+@Composable
 private fun AttendanceWorkspace(
     classes: List<String>,
     selectedClass: String,
+    subjects: List<String>,
+    selectedSubject: String,
+    pickerError: String?,
     month: YearMonth,
     selectedDay: Int?,
     isLoading: Boolean,
     onClassSelected: (String) -> Unit,
+    onSubjectSelected: (String) -> Unit,
     onPreviousMonth: () -> Unit,
     onNextMonth: () -> Unit,
     onOpenMonthPicker: () -> Unit,
@@ -389,50 +427,41 @@ private fun AttendanceWorkspace(
         fontFamily = FontFamily.SansSerif,
     )
     Spacer(modifier = Modifier.height(10.dp))
-    if (classes.isEmpty() && isLoading) {
+    if (classes.isNotEmpty()) {
+        AttendancePickerChipRow(
+            labels = classes,
+            selectedLabel = selectedClass,
+            isLoading = isLoading,
+            onSelected = { index -> classes.getOrNull(index)?.let(onClassSelected) },
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+    } else if (isLoading) {
         OverviewContentLoading()
         return
     }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(SegmentShape)
-            .background(BgLight)
-            .horizontalScroll(rememberScrollState())
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        classes.forEach { label ->
-            val selected = label == selectedClass
-            Box(
-                modifier = Modifier
-                    .height(40.dp)
-                    .clip(ClassChipShape)
-                    .then(
-                        if (selected) {
-                            Modifier
-                                .border(1.dp, BrandBlack, ClassChipShape)
-                                .background(BgWhite)
-                        } else {
-                            Modifier.background(Color.Transparent)
-                        },
-                    )
-                    .clickable(enabled = !isLoading) { onClassSelected(label) }
-                    .padding(horizontal = 14.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = label,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                    fontSize = 13.sp,
-                    color = if (selected) BrandBlack else TextSecondary,
-                    fontFamily = FontFamily.SansSerif,
-                    maxLines = 1,
-                )
-            }
-        }
+    Text(
+        text = stringResource(R.string.teacher_attendance_subject),
+        fontWeight = FontWeight.Bold,
+        fontSize = 16.sp,
+        color = BrandBlack,
+        fontFamily = FontFamily.SansSerif,
+    )
+    Spacer(modifier = Modifier.height(10.dp))
+    AttendancePickerChipRow(
+        labels = subjects,
+        selectedLabel = selectedSubject,
+        isLoading = isLoading,
+        onSelected = { index -> subjects.getOrNull(index)?.let(onSubjectSelected) },
+    )
+    pickerError?.let { error ->
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = error,
+            color = BrandOrange,
+            fontSize = 13.sp,
+            fontFamily = FontFamily.SansSerif,
+        )
     }
-
     Spacer(modifier = Modifier.height(22.dp))
     Text(
         text = stringResource(R.string.teacher_calendar_month_view),
@@ -980,6 +1009,8 @@ private fun TeacherOverviewPreview() {
                 dashboard = repo.overviewDashboard(),
                 attendanceClasses = repo.attendanceClasses(),
                 selectedAttendanceClass = "Class XII",
+                attendanceSubjects = listOf("Chemistry", "Physics"),
+                selectedAttendanceSubject = "Chemistry",
                 attendanceMonth = YearMonth.of(2026, 7),
                 selectedAttendanceDay = 25,
             ),

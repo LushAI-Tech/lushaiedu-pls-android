@@ -27,9 +27,11 @@ import com.lushaiedupls.data.mock.SessionSummary
 import com.lushaiedupls.data.mock.SubjectAttendanceRow
 import com.lushaiedupls.data.mock.SubjectChapterStats
 import com.lushaiedupls.data.mock.WeeklyTimetable
+import com.lushaiedupls.data.remote.ResourcePlayback
 import com.lushaiedupls.data.remote.dto.AiSubjectOut
 import com.lushaiedupls.data.remote.dto.AttendanceCalendar
 import com.lushaiedupls.data.remote.dto.AttendanceStatus
+import com.lushaiedupls.data.remote.dto.DayStatus
 import com.lushaiedupls.data.remote.dto.CalendarEventOut
 import com.lushaiedupls.data.remote.dto.CalendarEventType
 import com.lushaiedupls.data.remote.dto.ChapterListItem
@@ -107,7 +109,7 @@ object StudentUiMappers {
         OverviewMetric(
             label = "Subject",
             value = overview.subject_count.toString(),
-            emphasized = false,
+            emphasized = true,
             iconKind = OverviewIcon.Subject,
         ),
         OverviewMetric(
@@ -155,6 +157,7 @@ object StudentUiMappers {
                 className = row.class_name,
                 subject = row.subject_name,
                 time = "",
+                note = row.note?.trim()?.takeIf { it.isNotEmpty() },
             )
         }
 
@@ -162,6 +165,7 @@ object StudentUiMappers {
         events.mapNotNull { event ->
             val start = parseDate(event.start_date) ?: return@mapNotNull null
             CalendarEvent(
+                id = event.id,
                 title = event.title,
                 dateLabel = start.format(monthDayFmt),
                 timeLabel = if (event.start_date == event.end_date) "All day" else "${event.start_date} – ${event.end_date}",
@@ -190,6 +194,7 @@ object StudentUiMappers {
             val slot = timetable?.let { week ->
                 sessionSlot(week, day.teaching_unit_id, day.subject_name, date.dayOfWeek)
             }
+            val (periodLabel, isExtraClass) = calendarSessionPeriodLabel(day, slot)
             AttendanceSession(
                 dayOfMonth = date.dayOfMonth,
                 dateLabel = date.format(sessionDateFmt),
@@ -197,19 +202,21 @@ object StudentUiMappers {
                     classByUnit[day.teaching_unit_id] ?: slot?.class_name,
                 ),
                 subject = day.subject_name,
-                time = slot?.let { formatPeriodRange(it.start_time, it.end_time) }.orEmpty(),
+                periodLabel = periodLabel,
+                isExtraClass = isExtraClass,
                 status = day.status.toUi(),
+                note = day.note?.trim()?.takeIf { it.isNotEmpty() },
             )
-        }.sortedWith(compareByDescending<AttendanceSession> { it.dayOfMonth }.thenBy { it.time })
+        }.sortedWith(compareByDescending<AttendanceSession> { it.dayOfMonth }.thenBy { it.periodLabel })
         return AttendanceDashboard(
             primaryStats = listOf(
                 AttendanceStat(o.present.toString(), "Present", true),
-                AttendanceStat(o.absent.toString(), "Absent", false),
-                AttendanceStat(o.leave.toString(), "Leave", false),
+                AttendanceStat(o.absent.toString(), "Absent", true),
+                AttendanceStat(o.leave.toString(), "Leave", true),
             ),
             secondaryStats = listOf(
                 AttendanceStat(o.sessions.toString(), "Sessions", false),
-                AttendanceStat(pct(o.present_pct_all), "Present % (All)", true),
+                AttendanceStat(pct(o.present_pct_all), "Present % (All)", false),
                 AttendanceStat(pct(o.present_pct_excl_leave), "Present % (excl. leave)", false),
             ),
             bySubject = summary.by_subject.map {
@@ -398,6 +405,20 @@ object StudentUiMappers {
         return if (trimmed.startsWith("Class", ignoreCase = true)) trimmed else "Class $trimmed"
     }
 
+    private fun calendarSessionPeriodLabel(
+        day: DayStatus,
+        timetableSlot: WeekSlot?,
+    ): Pair<String, Boolean> {
+        if (day.is_extra_class) return "" to true
+        val start = day.start_time?.trim().orEmpty()
+        val end = day.end_time?.trim().orEmpty()
+        if (start.isNotEmpty() && end.isNotEmpty()) {
+            return formatPeriodRange(start, end) to false
+        }
+        val fallback = timetableSlot?.let { formatPeriodRange(it.start_time, it.end_time) }.orEmpty()
+        return fallback to false
+    }
+
     /** Formats API times like "09:30:00" / "09:30" → "9:30 AM - 10:30 AM". */
     private fun formatPeriodRange(start: String, end: String): String {
         val startLabel = formatClock(start)
@@ -526,29 +547,46 @@ object StudentUiMappers {
         sections: List<SectionOut>,
         fallbackTitle: String = "Question",
     ): List<AiMenuContentItem> =
-        contentItems(sections, fallbackTitle) { block -> isQuestionBlock(block) && !isResourceBlock(block) }
+        contentItems(
+            sections = sections,
+            fallbackTitle = fallbackTitle,
+            predicate = { block -> isQuestionBlock(block) && !isResourceBlock(block) },
+            footerFor = { _, _ -> null },
+            useFullQuestionText = true,
+        )
 
     fun textbookQuestionsFromPracticeSets(
         sets: List<com.lushaiedupls.data.remote.dto.PracticeSetOut>,
         chapterId: String? = null,
+        subtopicIds: Collection<String>? = null,
     ): List<AiMenuContentItem> {
-        val filteredSets = if (chapterId.isNullOrBlank()) {
-            sets
-        } else {
-            sets.filter { it.chapter_id == chapterId || it.chapter_id == null }
+        val selectedSubtopics = subtopicIds.orEmpty().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        val filteredSets = sets.filter { set ->
+            val matchesChapter = chapterId.isNullOrBlank() ||
+                set.chapter_id == chapterId ||
+                set.chapter_id == null
+            val matchesSubtopic = selectedSubtopics.isEmpty() ||
+                set.section_id.isNullOrBlank() ||
+                set.section_id in selectedSubtopics
+            matchesChapter && matchesSubtopic
         }
         return filteredSets.flatMap { set ->
             set.items.map { item ->
-                val metaParts = listOfNotNull(
-                    item.display_label ?: item.group_label ?: set.label.takeIf { it.isNotBlank() },
-                    item.calendar_year?.let { "Year $it" },
-                    item.question_type?.takeIf { it.isNotBlank() },
-                )
+                val footer = metadataText(
+                    item.content_metadata,
+                    "solution_textbook",
+                    "textbook_name",
+                    "source_textbook",
+                    "textbook",
+                ) ?: set.label.takeIf { it.isNotBlank() }
                 AiMenuContentItem(
                     id = item.id,
-                    title = item.question_text.trim(),
-                    subtitle = metaParts.joinToString(" · "),
+                    title = cleanQuestionText(item.question_text, item.display_label),
+                    subtitle = footer,
                     sectionId = set.section_id.orEmpty(),
+                    imageUrl = item.question_image_url?.takeIf { it.isNotBlank() }
+                        ?: item.ai_image_url?.takeIf { it.isNotBlank() }
+                        ?: item.original_image_url?.takeIf { it.isNotBlank() },
                 )
             }
         }
@@ -556,16 +594,16 @@ object StudentUiMappers {
 
     fun examPrepPyqs(hits: List<com.lushaiedupls.data.remote.dto.ExamPrepPyqHitOut>): List<AiMenuContentItem> =
         hits.map { hit ->
-            val metaParts = listOfNotNull(
-                hit.exam_name?.takeIf { it.isNotBlank() } ?: hit.exam_code.takeIf { it.isNotBlank() },
-                hit.calendar_year.toString(),
-                hit.repeat_badge ?: (if (hit.repeat_count > 1) "Repeated ${hit.repeat_count}x" else null),
-                hit.trend_reason?.takeIf { it.isNotBlank() },
-            )
+            val boardLabel = listOfNotNull(
+                hit.exam_name?.takeIf { it.isNotBlank() },
+                hit.exam_code.takeIf { it.isNotBlank() },
+                hit.paper_title.takeIf { it.isNotBlank() && it != hit.exam_name },
+                hit.calendar_year.takeIf { it > 0 }?.toString(),
+            ).distinct().joinToString(" · ")
             AiMenuContentItem(
                 id = hit.content_block_id,
-                title = hit.question_preview.trim(),
-                subtitle = metaParts.joinToString(" · "),
+                title = cleanQuestionText(hit.question_preview, null),
+                subtitle = boardLabel.ifBlank { null },
                 sectionId = "",
             )
         }
@@ -582,7 +620,18 @@ object StudentUiMappers {
                 title = att.title.trim(),
                 subtitle = metaParts.joinToString(" · ").ifBlank { null },
                 sectionId = att.section_id.orEmpty(),
-                imageUrl = att.thumbnail_url ?: att.file_url,
+                imageUrl = ResourcePlayback.thumbnailUrl(
+                    thumbnailUrl = att.thumbnail_url,
+                    youtubeUrl = att.youtube_url,
+                    fileUrl = att.file_url,
+                    externalUrl = att.external_url,
+                ),
+                videoUrl = ResourcePlayback.playbackUrl(
+                    youtubeUrl = att.youtube_url,
+                    fileUrl = att.file_url,
+                    externalUrl = att.external_url,
+                    resourceType = att.resource_type,
+                ),
             )
         }
 
@@ -591,6 +640,20 @@ object StudentUiMappers {
         fallbackTitle: String = "Figure",
     ): List<AiMenuContentItem> =
         contentItems(sections, fallbackTitle, ::isResourceBlock)
+
+    fun cleanQuestionText(text: String, displayLabel: String? = null): String {
+        var result = text.trim()
+        displayLabel?.trim()?.takeIf { it.isNotBlank() }?.let { label ->
+            val prefixed = Regex("^\\s*${Regex.escape(label)}\\s*[:.)-]?\\s*", RegexOption.IGNORE_CASE)
+            result = result.replaceFirst(prefixed, "")
+        }
+        result = result.replaceFirst(
+            Regex("""^(?:Q(?:uestion)?|Exercise|Ex\.?)\s*[#.]?\s*\d+[a-z]?[.:)\]]\s*""", RegexOption.IGNORE_CASE),
+            "",
+        )
+        result = result.replaceFirst(Regex("""^\d+[.:)\]]\s*"""), "")
+        return result.trim()
+    }
 
     fun quizHistory(attempts: List<QuizAttemptSummary>): List<AiQuizHistoryItem> =
         attempts.sortedByDescending { it.completed_at ?: it.started_at }.map { attempt ->
@@ -613,24 +676,49 @@ object StudentUiMappers {
         sections: List<SectionOut>,
         fallbackTitle: String,
         predicate: (ContentBlockOut) -> Boolean,
+        footerFor: (SectionOut, ContentBlockOut) -> String? = { section, _ ->
+            listOfNotNull(section.section_number, section.title)
+                .joinToString(" ")
+                .ifBlank { null }
+        },
+        useFullQuestionText: Boolean = false,
     ): List<AiMenuContentItem> {
         val out = mutableListOf<AiMenuContentItem>()
         flattenSections(sections).forEach { section ->
-            val sectionLabel = listOfNotNull(section.section_number, section.title)
-                .joinToString(" ")
-                .ifBlank { null }
             section.content_blocks.sortedBy { it.sort_order }.filter(predicate).forEach { block ->
+                val title = if (useFullQuestionText) {
+                    questionBlockText(block, fallbackTitle)
+                } else {
+                    blockTitle(block, fallbackTitle)
+                }
                 out += AiMenuContentItem(
                     id = block.id,
                     sectionId = block.section_id.ifBlank { section.id },
-                    title = blockTitle(block, fallbackTitle),
-                    subtitle = sectionLabel,
+                    title = title,
+                    subtitle = footerFor(section, block),
                     imageUrl = block.ai_image_url?.takeIf { it.isNotBlank() }
                         ?: block.original_image_url?.takeIf { it.isNotBlank() },
                 )
             }
         }
         return out
+    }
+
+    private fun questionBlockText(block: ContentBlockOut, fallback: String): String {
+        val raw = block.content_text?.trim()?.takeIf { it.isNotBlank() }
+            ?: block.title?.trim()?.takeIf { it.isNotBlank() }
+            ?: block.figure_ref?.trim()?.takeIf { it.isNotBlank() }
+            ?: fallback
+        return cleanQuestionText(raw, block.title)
+    }
+
+    private fun metadataText(metadata: JsonElement?, vararg keys: String): String? {
+        val obj = metadata as? JsonObject ?: return null
+        keys.forEach { key ->
+            val value = (obj[key] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+            if (value != null) return value
+        }
+        return null
     }
 
     private fun isResourceBlock(block: ContentBlockOut): Boolean {
@@ -752,4 +840,26 @@ object StudentUiMappers {
         }
         else -> null
     }
+
+    fun enrollmentSummary(units: List<TeachingUnitOut>): StudentEnrollmentSummary {
+        val source = units.filter { it.status == TeachingUnitStatus.ACTIVE }.ifEmpty { units }
+        return StudentEnrollmentSummary(
+            institutionName = source.firstNotNullOfOrNull { unit ->
+                unit.institution_name?.trim()?.takeIf { it.isNotEmpty() }
+            },
+            className = source.firstNotNullOfOrNull { unit ->
+                unit.class_name.trim().takeIf { it.isNotEmpty() }
+            },
+            subjects = source.map { it.subject_name.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+                .sorted(),
+        )
+    }
 }
+
+data class StudentEnrollmentSummary(
+    val institutionName: String? = null,
+    val className: String? = null,
+    val subjects: List<String> = emptyList(),
+)

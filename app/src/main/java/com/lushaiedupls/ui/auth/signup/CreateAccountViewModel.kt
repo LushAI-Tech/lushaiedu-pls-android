@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lushaiedupls.data.remote.NetworkResult
+import com.lushaiedupls.data.remote.isAccountAlreadyExists
+import com.lushaiedupls.data.remote.isGooglePasswordLinkBlocked
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.data.repository.StudentRepository
@@ -26,20 +28,47 @@ class CreateAccountViewModel(
     private val _uiState = MutableStateFlow(CreateAccountUiState())
     val uiState: StateFlow<CreateAccountUiState> = _uiState.asStateFlow()
 
-    fun onFullNameChange(value: String) = update { copy(fullName = value, errorMessage = null) }
-    fun onEmailChange(value: String) = update { copy(email = value, errorMessage = null) }
-    fun onPhoneChange(value: String) = update { copy(phone = value, errorMessage = null) }
-    fun onPasswordChange(value: String) = update { copy(password = value, errorMessage = null) }
-    fun onAddressChange(value: String) = update { copy(address = value, errorMessage = null) }
-    fun onGenderSelected(value: GenderOption) = update { copy(gender = value, errorMessage = null) }
-    fun onAvatarSelected(uri: Uri) = update { copy(avatarUri = uri, errorMessage = null) }
+    fun onFullNameChange(value: String) = update {
+        copy(fullName = value, errorMessage = null, accountAlreadyExists = false, googleLinkBlocked = false)
+    }
+    fun onEmailChange(value: String) = update {
+        copy(email = value, errorMessage = null, accountAlreadyExists = false, googleLinkBlocked = false)
+    }
+    fun onPhoneChange(value: String) = update {
+        copy(phone = value, errorMessage = null, accountAlreadyExists = false, googleLinkBlocked = false)
+    }
+    fun onPasswordChange(value: String) = update {
+        copy(password = value, errorMessage = null, accountAlreadyExists = false, googleLinkBlocked = false)
+    }
+    fun onAddressChange(value: String) = update {
+        copy(address = value, errorMessage = null, accountAlreadyExists = false, googleLinkBlocked = false)
+    }
+    fun onGenderSelected(value: GenderOption) = update {
+        copy(gender = value, errorMessage = null, accountAlreadyExists = false, googleLinkBlocked = false)
+    }
+    fun onAvatarSelected(uri: Uri) = update {
+        copy(avatarUri = uri, errorMessage = null, accountAlreadyExists = false, googleLinkBlocked = false)
+    }
 
     fun clearNavigation() {
         _uiState.update { it.copy(successRoute = null) }
     }
 
     fun setError(message: String) {
-        _uiState.update { it.copy(isLoading = false, errorMessage = message) }
+        _uiState.update {
+            it.copy(
+                isLoading = false,
+                errorMessage = message,
+                accountAlreadyExists = false,
+                googleLinkBlocked = false,
+            )
+        }
+    }
+
+    fun clearError() {
+        _uiState.update {
+            it.copy(errorMessage = null, accountAlreadyExists = false, googleLinkBlocked = false)
+        }
     }
 
     fun register(context: Context) {
@@ -59,7 +88,14 @@ class CreateAccountViewModel(
             return
         }
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    errorMessage = null,
+                    accountAlreadyExists = false,
+                    googleLinkBlocked = false,
+                )
+            }
             when (
                 val result = authRepository.register(
                     name = state.fullName.trim(),
@@ -83,28 +119,84 @@ class CreateAccountViewModel(
                     state.avatarUri?.let { uri ->
                         studentRepository.uploadAvatar(uri, context)
                     }
-                    val route = authRepository.resolvePostAuthRoute(result.data)
+                    val route = authRepository.resolvePostAuthRoute(
+                        result.data,
+                    )
                     _uiState.update { it.copy(isLoading = false, successRoute = route) }
                 }
                 else -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = result.userMessage())
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = result.userMessage(),
+                        accountAlreadyExists = result.isAccountAlreadyExists(),
+                        googleLinkBlocked = false,
+                    )
                 }
             }
         }
     }
 
-    fun signInWithGoogle(idToken: String) {
+    fun signInWithGoogle(idToken: String, context: Context) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    errorMessage = null,
+                    accountAlreadyExists = false,
+                    googleLinkBlocked = false,
+                )
+            }
+            persistPendingProfileFromForm()
             when (val result = authRepository.google(idToken)) {
                 is NetworkResult.Success -> {
-                    val route = authRepository.resolvePostAuthRoute(result.data)
+                    val state = _uiState.value
+                    state.avatarUri?.let { uri ->
+                        studentRepository.uploadAvatar(uri, context)
+                    }
+                    val route = authRepository.resolvePostAuthRoute(
+                        result.data,
+                        fromGoogle = true,
+                    )
                     _uiState.update { it.copy(isLoading = false, successRoute = route) }
                 }
-                else -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = result.userMessage())
+                else -> {
+                    val blocked = result.isGooglePasswordLinkBlocked()
+                    val message = result.userMessage()
+                    if (blocked) {
+                        authRepository.setPendingSignInMessage(message)
+                    }
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = message,
+                            googleLinkBlocked = blocked,
+                            accountAlreadyExists = false,
+                        )
+                    }
                 }
             }
+        }
+    }
+
+    private fun persistPendingProfileFromForm() {
+        val state = _uiState.value
+        if (state.fullName.isNotBlank()) {
+            userSessionStore.setDisplayName(state.fullName.trim())
+        }
+        if (state.phone.isNotBlank()) {
+            userSessionStore.setPendingPhone(state.phone.trim())
+        }
+        if (state.address.isNotBlank()) {
+            userSessionStore.setPendingAddress(state.address.trim())
+        }
+        state.gender?.let { gender ->
+            userSessionStore.setPendingGender(
+                when (gender) {
+                    GenderOption.Male -> "MALE"
+                    GenderOption.Female -> "FEMALE"
+                    GenderOption.Others -> "OTHER"
+                },
+            )
         }
     }
 

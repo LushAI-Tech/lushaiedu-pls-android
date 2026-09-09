@@ -31,16 +31,28 @@ class StudentLinkParentViewModel(
 
     fun refreshParents() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoadingParents = true, errorMessage = null) }
+            val hasContent = _uiState.value.parents.isNotEmpty()
+            _uiState.update {
+                it.copy(
+                    isLoadingParents = !hasContent,
+                    isRefreshing = hasContent,
+                    errorMessage = null,
+                )
+            }
             when (val result = studentRepository.myParents()) {
                 is NetworkResult.Success -> _uiState.update {
                     it.copy(
                         isLoadingParents = false,
+                        isRefreshing = false,
                         parents = result.data.filter { link -> link.status == ParentLinkStatus.ACTIVE },
                     )
                 }
                 else -> _uiState.update {
-                    it.copy(isLoadingParents = false, errorMessage = result.userMessage())
+                    it.copy(
+                        isLoadingParents = false,
+                        isRefreshing = false,
+                        errorMessage = result.userMessage(),
+                    )
                 }
             }
         }

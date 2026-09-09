@@ -46,6 +46,7 @@ data class AdminUsersUiState(
     val total: Int = 0,
     val hasMore: Boolean = true,
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val isLoadingMore: Boolean = false,
     val isWorking: Boolean = false,
     val errorMessage: String? = null,
@@ -62,6 +63,7 @@ data class AdminUsersUiState(
     val createdPassword: String? = null,
     val createdName: String? = null,
     val enrollmentByUserId: Map<String, String> = emptyMap(),
+    val highlightedUserId: String? = null,
 )
 
 class AdminUsersViewModel(
@@ -86,6 +88,7 @@ class AdminUsersViewModel(
                 users = emptyList(),
                 hasMore = true,
                 errorMessage = null,
+                highlightedUserId = null,
             )
         }
         refresh()
@@ -111,6 +114,23 @@ class AdminUsersViewModel(
         load(reset = false)
     }
 
+    fun openPendingQueue(focusUserId: String?) {
+        searchJob?.cancel()
+        _uiState.update {
+            it.copy(
+                filter = AdminUserFilter.Pending,
+                query = "",
+                page = 1,
+                composing = false,
+                editingId = null,
+                createdPassword = null,
+                highlightedUserId = focusUserId?.takeIf { id -> id.isNotBlank() },
+                errorMessage = null,
+            )
+        }
+        load(reset = true)
+    }
+
     private fun load(reset: Boolean) {
         val current = _uiState.value
         if (current.composing || current.createdPassword != null) return
@@ -121,9 +141,11 @@ class AdminUsersViewModel(
         }
         listJob?.cancel()
         val nextPage = if (reset) 1 else current.page + 1
+        val pullRefresh = reset && current.users.isNotEmpty()
         _uiState.update {
             it.copy(
-                isLoading = reset,
+                isLoading = reset && !pullRefresh,
+                isRefreshing = pullRefresh,
                 isLoadingMore = !reset,
                 errorMessage = null,
                 hasMore = if (reset) true else it.hasMore,
@@ -150,7 +172,7 @@ class AdminUsersViewModel(
                 limit = PageSize,
             )
             val classesResult = if (reset) {
-                adminRepository.listClasses(includeInactive = false)
+                adminRepository.listClassesAcrossInstitutions(includeInactive = false)
             } else {
                 null
             }
@@ -158,14 +180,28 @@ class AdminUsersViewModel(
                 is NetworkResult.Success -> {
                     val page = usersResult.data
                     val classes = (classesResult as? NetworkResult.Success)?.data
-                    _uiState.update {
-                        val items = if (reset) {
-                            page.items
-                        } else {
-                            (it.users + page.items).distinctBy { user -> user.id }
+                    val focusId = _uiState.value.highlightedUserId
+                    var items = if (reset) {
+                        page.items
+                    } else {
+                        (_uiState.value.users + page.items).distinctBy { user -> user.id }
+                    }
+                    if (reset && !focusId.isNullOrBlank() && items.none { it.id == focusId }) {
+                        val focused = adminRepository.getUser(focusId)
+                        val user = (focused as? NetworkResult.Success)?.data
+                        if (user != null && user.status == UserStatus.PENDING_APPROVAL) {
+                            items = listOf(user) + items.filter { it.id != user.id }
                         }
+                    } else if (reset && !focusId.isNullOrBlank()) {
+                        val focused = items.find { it.id == focusId }
+                        if (focused != null) {
+                            items = listOf(focused) + items.filter { it.id != focusId }
+                        }
+                    }
+                    _uiState.update {
                         it.copy(
                             isLoading = false,
+                            isRefreshing = false,
                             isLoadingMore = false,
                             users = items,
                             page = page.page,
@@ -187,12 +223,20 @@ class AdminUsersViewModel(
                         _uiState.update { it.copy(enrollmentByUserId = enrollment) }
                     }
                 }
-                else -> _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        isLoadingMore = false,
-                        errorMessage = usersResult.userMessage(),
-                    )
+                else -> {
+                    val message = usersResult.userMessage()
+                    if (message.isBlank()) {
+                        // Cancelled / superseded load — keep waiting for the active refresh.
+                        return@launch
+                    }
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isRefreshing = false,
+                            isLoadingMore = false,
+                            errorMessage = message,
+                        )
+                    }
                 }
             }
         }
@@ -385,6 +429,7 @@ class AdminUsersViewModel(
     ): Map<String, String> {
         val missing = pending.filter { it.id !in existing }
         if (missing.isEmpty()) return existing
+        val classById = classes.associateBy { it.id }
         val classNameById = classes.associate { it.id to it.name }
         val classByUser = missing.associate { user ->
             user.id to classNameById[user.class_id]
@@ -433,12 +478,19 @@ class AdminUsersViewModel(
             val subjectsByClass = coroutineScope {
                 withoutSubjects.mapNotNull { it.class_id }.distinct().map { classId ->
                     async {
-                        classId to (
-                            (adminRepository.listSubjects(classId, includeInactive = false) as? NetworkResult.Success)
+                        val institutionId = classById[classId]?.institution_id
+                        classId to if (institutionId.isNullOrBlank()) {
+                            emptyList()
+                        } else {
+                            (adminRepository.listSubjects(
+                                classId = classId,
+                                institutionId = institutionId,
+                                includeInactive = false,
+                            ) as? NetworkResult.Success)
                                 ?.data
                                 ?.map { it.name }
                                 .orEmpty()
-                            )
+                        }
                     }
                 }.awaitAll().toMap()
             }

@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,7 +45,9 @@ import com.lushaiedupls.data.mock.TeacherGroup
 import com.lushaiedupls.data.mock.TeacherMockRepository
 import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.ui.auth.components.LushAiEduWordmark
+import com.lushaiedupls.ui.common.CenteredEmptyState
 import com.lushaiedupls.ui.common.LoadErrorPanel
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.theme.BgLight
@@ -79,6 +82,7 @@ fun TeacherMyGroupsRoute(
         else -> TeacherMyGroupsScreen(
             uiState = uiState,
             onGroupClick = onGroupClick,
+            onRefresh = viewModel::refresh,
             modifier = modifier,
         )
     }
@@ -88,15 +92,22 @@ fun TeacherMyGroupsRoute(
 fun TeacherMyGroupsScreen(
     uiState: TeacherMyGroupsUiState,
     onGroupClick: (TeacherGroup) -> Unit,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    Column(
+    LushPullToRefreshBox(
+        isRefreshing = uiState.isRefreshing,
+        onRefresh = onRefresh,
         modifier = modifier
             .fillMaxSize()
-            .background(BgWhite)
-            .padding(horizontal = 20.dp)
-            .padding(top = 16.dp),
+            .background(BgWhite),
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp)
+                .padding(top = 16.dp),
+        ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.Top,
@@ -125,12 +136,11 @@ fun TeacherMyGroupsScreen(
         Spacer(modifier = Modifier.height(22.dp))
 
         if (uiState.groups.isEmpty()) {
-            Text(
-                text = stringResource(R.string.teacher_my_classes_empty),
-                color = TextSecondary,
-                fontSize = 14.sp,
-                fontFamily = FontFamily.SansSerif,
-                modifier = Modifier.padding(top = 24.dp),
+            CenteredEmptyState(
+                message = stringResource(R.string.teacher_my_classes_empty),
+                icon = Icons.Outlined.Groups,
+                modifier = Modifier.weight(1f),
+                fillMaxSize = true,
             )
         } else {
             LazyColumn(
@@ -145,6 +155,7 @@ fun TeacherMyGroupsScreen(
                     )
                 }
             }
+        }
         }
     }
 }

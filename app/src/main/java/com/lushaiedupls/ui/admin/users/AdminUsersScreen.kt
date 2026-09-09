@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Replay
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
@@ -75,7 +76,9 @@ import com.lushaiedupls.ui.admin.AdminScreenHeader
 import com.lushaiedupls.ui.admin.label
 import com.lushaiedupls.ui.auth.components.OutlinedAuthField
 import com.lushaiedupls.ui.auth.components.PrimaryButton
+import com.lushaiedupls.ui.common.FilterRowListLoading
 import com.lushaiedupls.ui.common.LoadErrorPanel
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BrandBlack
 import com.lushaiedupls.ui.theme.BrandOrange
@@ -89,44 +92,83 @@ private val Genders = listOf(Gender.MALE, Gender.FEMALE, Gender.OTHER)
 fun AdminUsersRoute(
     adminRepository: AdminRepository,
     modifier: Modifier = Modifier,
+    focusUserId: String? = null,
+    focusEventId: Long = 0L,
 ) {
     val viewModel: AdminUsersViewModel = viewModel(
         factory = AdminUsersViewModel.provideFactory(adminRepository),
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    LaunchedEffect(focusEventId) {
+        if (focusEventId == 0L) return@LaunchedEffect
+        viewModel.openPendingQueue(focusUserId)
+    }
     LifecycleResumeEffect(Unit) {
-        if (!uiState.composing && uiState.createdPassword == null) viewModel.refresh()
+        val state = viewModel.uiState.value
+        // Avoid cancelling the ViewModel's initial load; refresh when idle or after return.
+        if (!state.composing && state.createdPassword == null && !state.isLoading) {
+            viewModel.refresh()
+        }
         onPauseOrDispose { }
     }
     if (uiState.composing || uiState.createdPassword != null) {
         BackHandler { viewModel.cancelCompose() }
     }
-    AdminUsersScreen(
-        uiState = uiState,
-        onFilter = viewModel::setFilter,
-        onQuery = viewModel::onQueryChange,
-        onLoadMore = viewModel::loadMore,
-        onApprove = viewModel::approve,
-        onReject = viewModel::reject,
-        onSuspend = viewModel::suspendUser,
-        onReactivate = viewModel::reactivate,
-        onStartCreate = viewModel::startCreate,
-        onStartEdit = viewModel::startEdit,
-        onCancel = viewModel::cancelCompose,
-        onName = viewModel::onName,
-        onPhone = viewModel::onPhone,
-        onEmail = viewModel::onEmail,
-        onAddress = viewModel::onAddress,
-        onDob = viewModel::onDob,
-        onRole = viewModel::onRole,
-        onGender = viewModel::onGender,
-        onClassId = viewModel::onClassId,
-        onSave = viewModel::saveForm,
-        onCopyPassword = { password -> copyPassword(context, password) },
-        onRetry = viewModel::refresh,
-        modifier = modifier,
-    )
+    var assignmentTeacherId by rememberSaveable { mutableStateOf<String?>(null) }
+    var parentLinkAnchorId by rememberSaveable { mutableStateOf<String?>(null) }
+    val assignmentTeacher = uiState.users.find { it.id == assignmentTeacherId }
+    val parentLinkAnchor = uiState.users.find { it.id == parentLinkAnchorId }
+    when {
+        assignmentTeacher != null -> AdminTeacherAssignmentRoute(
+            adminRepository = adminRepository,
+            teacherId = assignmentTeacher.id,
+            teacherName = assignmentTeacher.name,
+            onBack = { assignmentTeacherId = null },
+            onSaved = {
+                assignmentTeacherId = null
+                viewModel.refresh()
+            },
+            modifier = modifier,
+        )
+        parentLinkAnchor != null -> AdminParentLinkRoute(
+            adminRepository = adminRepository,
+            anchor = parentLinkAnchor,
+            onBack = { parentLinkAnchorId = null },
+            onSaved = {
+                parentLinkAnchorId = null
+                viewModel.refresh()
+            },
+            modifier = modifier,
+        )
+        else -> AdminUsersScreen(
+            uiState = uiState,
+            onFilter = viewModel::setFilter,
+            onQuery = viewModel::onQueryChange,
+            onLoadMore = viewModel::loadMore,
+            onApprove = viewModel::approve,
+            onReject = viewModel::reject,
+            onSuspend = viewModel::suspendUser,
+            onReactivate = viewModel::reactivate,
+            onStartCreate = viewModel::startCreate,
+            onStartEdit = viewModel::startEdit,
+            onCancel = viewModel::cancelCompose,
+            onName = viewModel::onName,
+            onPhone = viewModel::onPhone,
+            onEmail = viewModel::onEmail,
+            onAddress = viewModel::onAddress,
+            onDob = viewModel::onDob,
+            onRole = viewModel::onRole,
+            onGender = viewModel::onGender,
+            onClassId = viewModel::onClassId,
+            onSave = viewModel::saveForm,
+            onCopyPassword = { password -> copyPassword(context, password) },
+            onRetry = viewModel::refresh,
+            onAssignInstitution = { user -> assignmentTeacherId = user.id },
+            onParentLink = { user -> parentLinkAnchorId = user.id },
+            modifier = modifier,
+        )
+    }
 }
 
 private fun copyPassword(context: Context, password: String) {
@@ -159,19 +201,18 @@ fun AdminUsersScreen(
     onSave: () -> Unit,
     onCopyPassword: (String) -> Unit,
     onRetry: () -> Unit,
+    onAssignInstitution: (UserOut) -> Unit = {},
+    onParentLink: (UserOut) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val filters = AdminUserFilter.entries
     when {
-        uiState.isLoading && uiState.users.isEmpty() && uiState.errorMessage == null &&
-            !uiState.composing && uiState.createdPassword == null ->
-            AdminUsersLoadingScreen(modifier = modifier)
         uiState.errorMessage != null && uiState.users.isEmpty() &&
             !uiState.composing && uiState.createdPassword == null -> LoadErrorPanel(
             screenTitle = stringResource(R.string.admin_users_title),
             message = uiState.errorMessage.orEmpty(),
             onRetry = onRetry,
-            isRetrying = uiState.isLoading,
+            isRetrying = uiState.isLoading || uiState.isRefreshing,
             modifier = modifier,
         )
         else -> Box(
@@ -246,21 +287,31 @@ fun AdminUsersScreen(
                             onSave = onSave,
                         )
                     }
-                    else -> UserList(
-                        uiState = uiState,
-                        filters = filters,
-                        onFilter = onFilter,
-                        onQuery = onQuery,
-                        onLoadMore = onLoadMore,
-                        onApprove = onApprove,
-                        onReject = onReject,
-                        onSuspend = onSuspend,
-                        onReactivate = onReactivate,
-                        onStartEdit = onStartEdit,
-                        showFab = showFab,
-                        managing = managing,
-                        modifier = Modifier.weight(1f),
-                    )
+                    else -> LushPullToRefreshBox(
+                        isRefreshing = uiState.isRefreshing,
+                        onRefresh = onRetry,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    ) {
+                        UserList(
+                            uiState = uiState,
+                            filters = filters,
+                            onFilter = onFilter,
+                            onQuery = onQuery,
+                            onLoadMore = onLoadMore,
+                            onApprove = onApprove,
+                            onReject = onReject,
+                            onSuspend = onSuspend,
+                            onReactivate = onReactivate,
+                            onStartEdit = onStartEdit,
+                            onAssignInstitution = onAssignInstitution,
+                            onParentLink = onParentLink,
+                            showFab = showFab,
+                            managing = managing,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
             }
             if (showFab) {
@@ -284,22 +335,6 @@ fun AdminUsersScreen(
 }
 
 @Composable
-private fun AdminUsersLoadingScreen(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(BgWhite),
-        contentAlignment = Alignment.Center,
-    ) {
-        CircularProgressIndicator(
-            color = BrandBlack,
-            strokeWidth = 3.dp,
-            modifier = Modifier.size(40.dp),
-        )
-    }
-}
-
-@Composable
 private fun UserList(
     uiState: AdminUsersUiState,
     filters: List<AdminUserFilter>,
@@ -311,6 +346,8 @@ private fun UserList(
     onSuspend: (String) -> Unit,
     onReactivate: (String) -> Unit,
     onStartEdit: (UserOut) -> Unit,
+    onAssignInstitution: (UserOut) -> Unit,
+    onParentLink: (UserOut) -> Unit,
     showFab: Boolean,
     managing: Boolean,
     modifier: Modifier = Modifier,
@@ -340,6 +377,13 @@ private fun UserList(
     LaunchedEffect(uiState.filter) {
         listState.scrollToItem(0)
     }
+    LaunchedEffect(uiState.highlightedUserId, uiState.users) {
+        val focusId = uiState.highlightedUserId ?: return@LaunchedEffect
+        val index = uiState.users.indexOfFirst { it.id == focusId }
+        if (index >= 0) {
+            listState.animateScrollToItem(index)
+        }
+    }
     Column(modifier = modifier.fillMaxSize()) {
         OutlinedAuthField(
             label = "",
@@ -368,7 +412,16 @@ private fun UserList(
         ) {
             if (uiState.users.isEmpty()) {
                 item {
-                    AdminEmptyText(stringResource(R.string.admin_users_empty))
+                    if (uiState.isLoading) {
+                        FilterRowListLoading()
+                    } else {
+                        AdminEmptyText(
+                            text = stringResource(R.string.admin_users_empty),
+                            icon = Icons.Outlined.People,
+                            modifier = Modifier.fillParentMaxSize(),
+                            fillMaxSize = true,
+                        )
+                    }
                 }
             } else {
                 items(uiState.users, key = { it.id }) { user ->
@@ -379,12 +432,15 @@ private fun UserList(
                         } else {
                             user.email?.takeIf { it.isNotBlank() }
                         },
+                        highlighted = user.id == uiState.highlightedUserId,
                         managing = managing,
                         onApprove = onApprove,
                         onReject = onReject,
                         onSuspend = onSuspend,
                         onReactivate = onReactivate,
                         onEdit = onStartEdit,
+                        onAssignInstitution = onAssignInstitution,
+                        onParentLink = onParentLink,
                     )
                 }
             }
@@ -551,15 +607,18 @@ private fun CreatedPasswordCard(
 private fun UserCard(
     user: UserOut,
     subtitle: String?,
+    highlighted: Boolean,
     managing: Boolean,
     onApprove: (String) -> Unit,
     onReject: (String) -> Unit,
     onSuspend: (String) -> Unit,
     onReactivate: (String) -> Unit,
     onEdit: (UserOut) -> Unit,
+    onAssignInstitution: (UserOut) -> Unit,
+    onParentLink: (UserOut) -> Unit,
 ) {
     val avatarUrl = user.avatar_url?.takeIf { it.isNotBlank() }
-    AdminCard {
+    AdminCard(highlighted = highlighted) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -614,6 +673,31 @@ private fun UserCard(
                 ),
                 destructiveIndex = 1,
             )
+        } else if (user.status == UserStatus.ACTIVE) {
+            when (user.role) {
+                UserRole.TEACHER -> AdminActionRow(
+                    actions = listOf(
+                        stringResource(R.string.admin_teacher_assign_action) to {
+                            onAssignInstitution(user)
+                        },
+                    ),
+                )
+                UserRole.PARENT -> AdminActionRow(
+                    actions = listOf(
+                        stringResource(R.string.admin_parent_link_action_parent) to {
+                            onParentLink(user)
+                        },
+                    ),
+                )
+                UserRole.STUDENT -> AdminActionRow(
+                    actions = listOf(
+                        stringResource(R.string.admin_parent_link_action_student) to {
+                            onParentLink(user)
+                        },
+                    ),
+                )
+                UserRole.ADMIN -> Unit
+            }
         }
     }
 }

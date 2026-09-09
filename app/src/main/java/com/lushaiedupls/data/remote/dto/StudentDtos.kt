@@ -125,11 +125,21 @@ data class ChatResponse(
 )
 
 @Serializable
+data class InstitutionOut(
+    val id: String,
+    val name: String,
+    val sort_order: Int = 0,
+    val is_active: Boolean = true,
+)
+
+@Serializable
 data class ClassOut(
     val id: String,
     val name: String,
     val sort_order: Int,
     val is_active: Boolean,
+    val institution_id: String = "",
+    val institution_name: String? = null,
 )
 
 @Serializable
@@ -167,6 +177,11 @@ data class DayStatus(
     val is_extra_class: Boolean = false,
     val teaching_unit_id: String,
     val subject_name: String,
+    val period_id: String? = null,
+    val period_name: String? = null,
+    val start_time: String? = null,
+    val end_time: String? = null,
+    val note: String? = null,
 )
 
 @Serializable
@@ -256,6 +271,8 @@ data class PeriodOut(
     val end_time: String,
     val sort_order: Int,
     val is_active: Boolean,
+    val institution_id: String = "",
+    val institution_name: String? = null,
 )
 
 @Serializable
@@ -452,6 +469,7 @@ data class RecentAttendanceRow(
     val class_name: String,
     val subject_name: String,
     val status: AttendanceStatus,
+    val note: String? = null,
 )
 
 @Serializable
@@ -510,6 +528,8 @@ data class SubjectBreakdown(
     val class_name: String,
     val subject_name: String,
     val totals: AttendanceTotals,
+    val institution_id: String? = null,
+    val institution_name: String? = null,
 )
 
 @Serializable
@@ -518,10 +538,12 @@ data class SubjectOut(
     val class_id: String,
     val name: String,
     val code: String? = null,
-    val sort_order: Int,
-    val is_active: Boolean,
+    val sort_order: Int = 0,
+    val is_active: Boolean = true,
     val stem_subject_id: String? = null,
     val ai_enabled: Boolean = false,
+    val institution_id: String? = null,
+    val institution_name: String? = null,
 )
 
 @Serializable
@@ -535,6 +557,8 @@ data class TeachingUnitOut(
     val status: TeachingUnitStatus = TeachingUnitStatus.ACTIVE,
     val student_count: Int = 0,
     val ai_enabled: Boolean = false,
+    val institution_id: String? = null,
+    val institution_name: String? = null,
 )
 
 @Serializable
@@ -556,6 +580,7 @@ data class WeekSlot(
     val teaching_unit_id: String,
     val class_name: String,
     val subject_name: String,
+    val subject_id: String? = null,
     val teacher_name: String? = null,
     val period_id: String,
     val period_name: String,
@@ -563,6 +588,8 @@ data class WeekSlot(
     val end_time: String,
     val day_of_week: DayOfWeek,
     val room: String? = null,
+    val institution_id: String? = null,
+    val institution_name: String? = null,
 )
 
 @Serializable

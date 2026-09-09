@@ -34,7 +34,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lushaiedupls.R
 import com.lushaiedupls.ui.auth.components.LushAiEduBrandHeader
-import com.lushaiedupls.ui.auth.components.OutlinedAuthField
 import com.lushaiedupls.ui.auth.components.SelectionNavButtons
 import com.lushaiedupls.ui.auth.components.SelectionTile
 import com.lushaiedupls.ui.theme.BgWhite
@@ -46,6 +45,7 @@ import com.lushaiedupls.ui.theme.LushAIEdu_PLSTheme
 fun SelectRoleRoute(
     onBack: () -> Unit,
     onContinueToClass: () -> Unit,
+    onContinueToInvite: () -> Unit,
     onFinished: (String) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SelectRoleViewModel,
@@ -59,10 +59,12 @@ fun SelectRoleRoute(
     SelectRoleScreen(
         uiState = uiState,
         onRoleSelected = viewModel::onRoleSelected,
-        onInviteCodeChange = viewModel::onInviteCodeChange,
         onBack = onBack,
         onContinue = {
-            viewModel.submitRole(onContinueToClass = onContinueToClass)
+            viewModel.submitRole(
+                onContinueToClass = onContinueToClass,
+                onContinueToInvite = onContinueToInvite,
+            )
         },
         modifier = modifier,
     )
@@ -72,7 +74,6 @@ fun SelectRoleRoute(
 fun SelectRoleScreen(
     uiState: SelectRoleUiState,
     onRoleSelected: (UserRole) -> Unit,
-    onInviteCodeChange: (String) -> Unit,
     onBack: () -> Unit,
     onContinue: () -> Unit,
     modifier: Modifier = Modifier,
@@ -92,7 +93,7 @@ fun SelectRoleScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            LushAiEduBrandHeader(logoSize = 96.dp)
+            LushAiEduBrandHeader(logoSize = 104.dp)
             Spacer(modifier = Modifier.height(28.dp))
             Text(
                 text = stringResource(R.string.select_role),
@@ -132,16 +133,6 @@ fun SelectRoleScreen(
                         Spacer(modifier = Modifier.height(14.dp))
                     }
                 }
-            }
-
-            if (uiState.requiresInviteCode) {
-                Spacer(modifier = Modifier.height(6.dp))
-                OutlinedAuthField(
-                    label = stringResource(R.string.invite_code_label),
-                    value = uiState.inviteCode,
-                    onValueChange = onInviteCodeChange,
-                    placeholder = stringResource(R.string.invite_code_hint),
-                )
             }
 
             uiState.errorMessage?.let { error ->
@@ -188,7 +179,6 @@ private fun SelectRolePreview() {
                 ),
             ),
             onRoleSelected = {},
-            onInviteCodeChange = {},
             onBack = {},
             onContinue = {},
         )

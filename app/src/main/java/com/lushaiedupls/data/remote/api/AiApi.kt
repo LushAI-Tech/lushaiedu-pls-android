@@ -34,13 +34,20 @@ interface AiApi {
     suspend fun chapters(@Path("subject_id") subjectId: String): List<ChapterListItem>
 
     @GET("api/v1/ai/subjects/{subject_id}/questions-list")
-    suspend fun questionsList(@Path("subject_id") subjectId: String): SubjectPracticeQuestionsResponse
+    suspend fun questionsList(
+        @Path("subject_id") subjectId: String,
+        @Query("chapter_id") chapterId: String? = null,
+        @Query("subtopic_ids") subtopicIds: String? = null,
+    ): SubjectPracticeQuestionsResponse
 
     @GET("api/v1/ai/chapters/{chapter_id}")
     suspend fun chapter(@Path("chapter_id") chapterId: String): ChapterOut
 
     @GET("api/v1/ai/chapters/{chapter_id}/attach-files")
-    suspend fun chapterAttachments(@Path("chapter_id") chapterId: String): List<ChapterAttachmentOut>
+    suspend fun chapterAttachments(
+        @Path("chapter_id") chapterId: String,
+        @Query("subtopic_ids") subtopicIds: String? = null,
+    ): List<ChapterAttachmentOut>
 
     @GET("api/v1/ai/chapters/{chapter_id}/exam-prep-pyqs")
     suspend fun examPrepPyqs(
@@ -48,6 +55,7 @@ interface AiApi {
         @Query("section_id") sectionId: String? = null,
         @Query("chapter_scope") chapterScope: Boolean? = null,
         @Query("exam_codes") examCodes: String? = null,
+        @Query("subtopic_ids") subtopicIds: String? = null,
     ): ExamPrepPyqsResponse
 
     @GET("api/v1/ai/sections/{section_id}")

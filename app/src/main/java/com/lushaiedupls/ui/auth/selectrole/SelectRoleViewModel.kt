@@ -26,7 +26,6 @@ class SelectRoleViewModel(
     private val _uiState = MutableStateFlow(
         SelectRoleUiState(
             selectedRole = userSessionStore.getRole() ?: UserRole.Student,
-            inviteCode = userSessionStore.getPendingInviteCode().orEmpty(),
         ),
     )
     val uiState: StateFlow<SelectRoleUiState> = _uiState.asStateFlow()
@@ -41,7 +40,6 @@ class SelectRoleViewModel(
             when (val result = authRepository.listRoles()) {
                 is NetworkResult.Success -> {
                     val roles = result.data.map { it.toChoice() }
-                        .filter { it.role != UserRole.Parents }
                         .ifEmpty { fallbackRoles() }
                     _uiState.update { state ->
                         val selected = state.selectedRole
@@ -69,19 +67,18 @@ class SelectRoleViewModel(
         _uiState.update { it.copy(selectedRole = role, errorMessage = null) }
     }
 
-    fun onInviteCodeChange(value: String) {
-        _uiState.update { it.copy(inviteCode = value, errorMessage = null) }
-    }
-
     fun clearFinishedRoute() {
         _uiState.update { it.copy(finishedRoute = null) }
     }
 
     /**
-     * Student/Teacher pick class+subjects locally, then POST /auth/onboarding once.
-     * Admin/Parent have no academic step — complete onboarding immediately.
+     * Student continues to institution/class/subjects. Teacher and admin enter an invite code next.
+     * Parent has no academic step — complete onboarding immediately.
      */
-    fun submitRole(onContinueToClass: () -> Unit) {
+    fun submitRole(
+        onContinueToClass: () -> Unit,
+        onContinueToInvite: () -> Unit,
+    ) {
         val state = _uiState.value
         val role = state.selectedRole
         val choice = state.selectedChoice
@@ -89,19 +86,18 @@ class SelectRoleViewModel(
             _uiState.update { it.copy(errorMessage = "Please select a role.") }
             return
         }
-        if (choice.requiresInviteCode && state.inviteCode.isBlank()) {
-            _uiState.update { it.copy(errorMessage = "Invite code is required for this role.") }
-            return
-        }
 
         userSessionStore.setRole(role)
-        userSessionStore.setPendingInviteCode(
-            state.inviteCode.takeIf { it.isNotBlank() && choice.requiresInviteCode },
-        )
-
         when (role) {
-            UserRole.Student, UserRole.Teacher -> onContinueToClass()
-            UserRole.Admin, UserRole.Parents -> completeOnboardingForNonAcademic(role)
+            UserRole.Teacher, UserRole.Admin -> onContinueToInvite()
+            UserRole.Student -> {
+                userSessionStore.setPendingInviteCode(null)
+                onContinueToClass()
+            }
+            UserRole.Parents -> {
+                userSessionStore.setPendingInviteCode(null)
+                completeOnboardingForNonAcademic(role)
+            }
         }
     }
 
@@ -115,7 +111,7 @@ class SelectRoleViewModel(
                     CompleteOnboardingRequest(
                         role = apiRole,
                         name = name,
-                        invite_code = _uiState.value.inviteCode.takeIf { it.isNotBlank() },
+                        invite_code = null,
                         phone = userSessionStore.getPendingPhone(),
                         gender = pendingGender(),
                         address = userSessionStore.getPendingAddress(),
@@ -176,6 +172,7 @@ class SelectRoleViewModel(
             RoleChoice(UserRole.Teacher, "Teacher", requiresInviteCode = true),
             RoleChoice(UserRole.Student, "Student", requiresInviteCode = false),
             RoleChoice(UserRole.Admin, "Admin", requiresInviteCode = true),
+            RoleChoice(UserRole.Parents, "Parents", requiresInviteCode = false),
         )
     }
 }

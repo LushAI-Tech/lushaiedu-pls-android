@@ -22,6 +22,7 @@ data class AdminFeedbackUiState(
     val selected: ParentFeedbackOut? = null,
     val notes: String = "",
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
 )
@@ -54,13 +55,24 @@ class AdminFeedbackViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val hasContent = _uiState.value.items.isNotEmpty()
+            _uiState.update {
+                it.copy(
+                    isLoading = !hasContent,
+                    isRefreshing = hasContent,
+                    errorMessage = null,
+                )
+            }
             when (val result = adminRepository.listFeedback(_uiState.value.filter)) {
                 is NetworkResult.Success -> _uiState.update {
-                    it.copy(isLoading = false, items = result.data)
+                    it.copy(isLoading = false, isRefreshing = false, items = result.data)
                 }
                 else -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = result.userMessage())
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        errorMessage = result.userMessage(),
+                    )
                 }
             }
         }

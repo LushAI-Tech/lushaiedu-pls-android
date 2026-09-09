@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -45,6 +47,7 @@ import com.lushaiedupls.data.mock.TeacherStudent
 import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.ui.common.AppBackNav
 import com.lushaiedupls.ui.common.LoadErrorPanel
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.theme.BgWhite
@@ -113,7 +116,9 @@ fun TeacherTakeAttendanceRoute(
             uiState = uiState,
             onBack = onBack,
             onMark = viewModel::setMark,
+            onNoteChange = viewModel::setNote,
             onSave = viewModel::saveAttendance,
+            onRefresh = viewModel::refresh,
             modifier = modifier,
         )
     }
@@ -124,16 +129,24 @@ fun TeacherTakeAttendanceScreen(
     uiState: TeacherTakeAttendanceUiState,
     onBack: () -> Unit,
     onMark: (String, TeacherAttendanceMark) -> Unit,
+    onNoteChange: (String, String) -> Unit,
     onSave: () -> Unit,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val session = uiState.session ?: return
-    Column(
+    LushPullToRefreshBox(
+        isRefreshing = uiState.isRefreshing,
+        onRefresh = onRefresh,
         modifier = modifier
             .fillMaxSize()
-            .background(BgWhite)
-            .padding(horizontal = 20.dp),
+            .background(BgWhite),
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp),
+        ) {
         AppBackNav(
             onBack = onBack,
             modifier = Modifier.padding(top = 4.dp),
@@ -192,12 +205,14 @@ fun TeacherTakeAttendanceScreen(
                 AttendanceStudentCard(
                     student = row.student,
                     mark = mark,
+                    note = uiState.notes[row.student.id].orEmpty(),
                     onPresent = {
                         onMark(row.student.id, TeacherAttendanceMark.Present)
                     },
                     onAbsent = {
                         onMark(row.student.id, TeacherAttendanceMark.Absent)
                     },
+                    onNoteChange = { onNoteChange(row.student.id, it) },
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
@@ -221,6 +236,7 @@ fun TeacherTakeAttendanceScreen(
                 fontFamily = FontFamily.SansSerif,
             )
         }
+        }
     }
 }
 
@@ -228,8 +244,10 @@ fun TeacherTakeAttendanceScreen(
 private fun AttendanceStudentCard(
     student: TeacherStudent,
     mark: TeacherAttendanceMark,
+    note: String,
     onPresent: () -> Unit,
     onAbsent: () -> Unit,
+    onNoteChange: (String) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -300,6 +318,39 @@ private fun AttendanceStudentCard(
                 modifier = Modifier.weight(1f),
             )
         }
+        if (mark == TeacherAttendanceMark.Absent) {
+            Spacer(modifier = Modifier.height(10.dp))
+            BasicTextField(
+                value = note,
+                onValueChange = { onNoteChange(it.take(255)) },
+                singleLine = true,
+                textStyle = TextStyle(
+                    fontSize = 14.sp,
+                    color = BrandBlack,
+                    fontFamily = FontFamily.SansSerif,
+                ),
+                decorationBox = { inner ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .border(1.dp, BorderGray.copy(alpha = 0.8f), ButtonShape)
+                            .padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        if (note.isEmpty()) {
+                            Text(
+                                text = stringResource(R.string.teacher_attendance_note_hint),
+                                color = TextSecondary,
+                                fontSize = 14.sp,
+                                fontFamily = FontFamily.SansSerif,
+                            )
+                        }
+                        inner()
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -341,6 +392,7 @@ private fun TeacherTakeAttendancePreview() {
             ),
             onBack = {},
             onMark = { _, _ -> },
+            onNoteChange = { _, _ -> },
             onSave = {},
         )
     }

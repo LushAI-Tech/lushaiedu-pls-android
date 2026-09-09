@@ -6,12 +6,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -22,12 +24,17 @@ import com.lushaiedupls.data.repository.AdminRepository
 import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.session.UserSessionStore
+import com.lushaiedupls.push.PushAction
+import com.lushaiedupls.push.PushRouter
 import com.lushaiedupls.ui.admin.announcements.AdminAnnouncementsRoute
 import com.lushaiedupls.ui.admin.calendar.AdminCalendarRoute
 import com.lushaiedupls.ui.admin.classes.AdminClassesRoute
+import com.lushaiedupls.ui.admin.classes.AdminCreateClassRoute
+import com.lushaiedupls.ui.admin.classes.AdminCreateSubjectRoute
 import com.lushaiedupls.ui.admin.feedback.AdminFeedbackRoute
 import com.lushaiedupls.ui.admin.fees.AdminFeesRoute
 import com.lushaiedupls.ui.admin.home.AdminHomeRoute
+import com.lushaiedupls.ui.admin.institutions.AdminInstitutionsRoute
 import com.lushaiedupls.ui.admin.invites.AdminInvitesRoute
 import com.lushaiedupls.ui.admin.menu.AdminMenuOverlay
 import com.lushaiedupls.ui.admin.more.AdminMoreScreen
@@ -38,7 +45,7 @@ import com.lushaiedupls.ui.navigation.lushEnterTransition
 import com.lushaiedupls.ui.navigation.lushExitTransition
 import com.lushaiedupls.ui.navigation.lushPopEnterTransition
 import com.lushaiedupls.ui.navigation.lushPopExitTransition
-import com.lushaiedupls.ui.student.menu.LegalDocumentScreen
+import com.lushaiedupls.ui.common.LegalDocumentScreen
 import com.lushaiedupls.ui.student.menu.StudentAccountRoute
 import com.lushaiedupls.ui.theme.BgWhite
 
@@ -55,6 +62,7 @@ fun AdminShell(
     adminRepository: AdminRepository,
     studentRepository: StudentRepository,
     authRepository: AuthRepository,
+    pushRouter: PushRouter,
     onLogOut: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -62,12 +70,18 @@ fun AdminShell(
     val backStackEntry by tabNavController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     var showMenuOverlay by remember { mutableStateOf(false) }
+    var createClassInstitutionId by remember { mutableStateOf<String?>(null) }
+    var createSubjectClassId by remember { mutableStateOf<String?>(null) }
+    var createSubjectInstitutionId by remember { mutableStateOf<String?>(null) }
 
     val inMoreStack = currentRoute in setOf(
         AdminRoutes.MORE,
         AdminRoutes.FEES,
+        AdminRoutes.FEES_CREATE_CLASS,
+        AdminRoutes.FEES_CREATE_SUBJECT,
         AdminRoutes.FEEDBACK,
         AdminRoutes.INVITES,
+        AdminRoutes.INSTITUTIONS,
         AdminRoutes.PERIODS,
         AdminRoutes.CALENDAR,
         AdminRoutes.ANNOUNCEMENTS,
@@ -78,6 +92,9 @@ fun AdminShell(
         inMoreStack -> AdminTab.More
         else -> AdminTab.Home
     }
+    val pendingUserCount by adminRepository.pendingApprovalCount.collectAsStateWithLifecycle()
+    var pendingFocusUserId by remember { mutableStateOf<String?>(null) }
+    var pendingFocusEventId by remember { mutableStateOf(0L) }
 
     fun navigateTab(route: String) {
         tabNavController.navigate(route) {
@@ -86,6 +103,21 @@ fun AdminShell(
             }
             launchSingleTop = true
             restoreState = true
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        adminRepository.refreshPendingApprovalCount()
+    }
+
+    LaunchedEffect(pushRouter) {
+        pushRouter.action.collect { action ->
+            val pending = action as? PushAction.PendingApproval ?: return@collect
+            pendingFocusUserId = pending.userId
+            pendingFocusEventId = pending.eventId
+            navigateTab(AdminRoutes.USERS)
+            pushRouter.consume()
+            adminRepository.refreshPendingApprovalCount()
         }
     }
 
@@ -99,6 +131,7 @@ fun AdminShell(
             AdminBottomBar(
                 selectedTab = selectedTab,
                 onTabSelected = { tab -> navigateTab(tab.route) },
+                pendingUserCount = pendingUserCount,
             )
         },
     ) { innerPadding ->
@@ -124,6 +157,8 @@ fun AdminShell(
             composable(AdminRoutes.USERS) {
                 AdminUsersRoute(
                     adminRepository = adminRepository,
+                    focusUserId = pendingFocusUserId,
+                    focusEventId = pendingFocusEventId,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -138,6 +173,7 @@ fun AdminShell(
                     onFees = { tabNavController.navigate(AdminRoutes.FEES) },
                     onFeedback = { tabNavController.navigate(AdminRoutes.FEEDBACK) },
                     onInvites = { tabNavController.navigate(AdminRoutes.INVITES) },
+                    onInstitutions = { tabNavController.navigate(AdminRoutes.INSTITUTIONS) },
                     onPeriods = { tabNavController.navigate(AdminRoutes.PERIODS) },
                     onCalendar = { tabNavController.navigate(AdminRoutes.CALENDAR) },
                     onAnnouncements = { tabNavController.navigate(AdminRoutes.ANNOUNCEMENTS) },
@@ -148,6 +184,34 @@ fun AdminShell(
                 AdminFeesRoute(
                     adminRepository = adminRepository,
                     onBack = { tabNavController.popBackStack() },
+                    onCreateClass = { institutionId ->
+                        createClassInstitutionId = institutionId
+                        tabNavController.navigate(AdminRoutes.FEES_CREATE_CLASS)
+                    },
+                    onCreateSubject = { classId, institutionId ->
+                        createSubjectClassId = classId
+                        createSubjectInstitutionId = institutionId
+                        tabNavController.navigate(AdminRoutes.FEES_CREATE_SUBJECT)
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            composable(AdminRoutes.FEES_CREATE_CLASS) {
+                AdminCreateClassRoute(
+                    adminRepository = adminRepository,
+                    institutionId = createClassInstitutionId,
+                    onBack = { tabNavController.popBackStack() },
+                    onClassCreated = { tabNavController.popBackStack() },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            composable(AdminRoutes.FEES_CREATE_SUBJECT) {
+                AdminCreateSubjectRoute(
+                    adminRepository = adminRepository,
+                    classId = createSubjectClassId,
+                    institutionId = createSubjectInstitutionId,
+                    onBack = { tabNavController.popBackStack() },
+                    onSubjectCreated = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -160,6 +224,13 @@ fun AdminShell(
             }
             composable(AdminRoutes.INVITES) {
                 AdminInvitesRoute(
+                    adminRepository = adminRepository,
+                    onBack = { tabNavController.popBackStack() },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            composable(AdminRoutes.INSTITUTIONS) {
+                AdminInstitutionsRoute(
                     adminRepository = adminRepository,
                     onBack = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),
@@ -207,7 +278,7 @@ fun AdminShell(
             composable(AdminRoutes.PRIVACY) {
                 LegalDocumentScreen(
                     title = stringResource(R.string.privacy_title),
-                    body = stringResource(R.string.privacy_body),
+                    bodyResId = R.raw.privacy_policy,
                     onBack = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -215,7 +286,7 @@ fun AdminShell(
             composable(AdminRoutes.TERMS) {
                 LegalDocumentScreen(
                     title = stringResource(R.string.terms_title),
-                    body = stringResource(R.string.terms_body),
+                    bodyResId = R.raw.terms_conditions,
                     onBack = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),
                 )

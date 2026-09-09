@@ -46,14 +46,21 @@ class SelectSubjectViewModel(
         }
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            val classNames = when (val classes = studentRepository.classes()) {
+            val institutionId = userSessionStore.getInstitutionId()
+            if (institutionId.isNullOrBlank()) {
+                _uiState.update {
+                    it.copy(isLoading = false, errorMessage = "Please select an institution first.")
+                }
+                return@launch
+            }
+            val classNames = when (val classes = studentRepository.classes(institutionId)) {
                 is NetworkResult.Success -> classes.data.associate { it.id to it.name }
                 else -> emptyMap()
             }
             val loaded = coroutineScope {
                 classIds.map { classId ->
                     async {
-                        classId to studentRepository.subjects(classId)
+                        classId to studentRepository.subjects(classId, institutionId)
                     }
                 }.awaitAll()
             }
@@ -125,8 +132,17 @@ class SelectSubjectViewModel(
             else -> null
         }
         val invite = userSessionStore.getPendingInviteCode()
+        val institutionId = userSessionStore.getInstitutionId()
         if (apiRole == ApiUserRole.TEACHER && invite.isNullOrBlank()) {
             _uiState.update { it.copy(errorMessage = "Invite code is required for teachers.") }
+            return
+        }
+        if (apiRole == ApiUserRole.STUDENT && institutionId.isNullOrBlank()) {
+            _uiState.update { it.copy(errorMessage = "Please select an institution first.") }
+            return
+        }
+        if (apiRole == ApiUserRole.TEACHER && institutionId.isNullOrBlank()) {
+            _uiState.update { it.copy(errorMessage = "Please select an institution first.") }
             return
         }
 
@@ -139,6 +155,7 @@ class SelectSubjectViewModel(
                     phone = userSessionStore.getPendingPhone(),
                     gender = gender,
                     address = userSessionStore.getPendingAddress(),
+                    institution_id = institutionId,
                     class_id = classIds.first(),
                     subject_ids = selected.map { it.id },
                 )
@@ -149,6 +166,7 @@ class SelectSubjectViewModel(
                     phone = userSessionStore.getPendingPhone(),
                     gender = gender,
                     address = userSessionStore.getPendingAddress(),
+                    institution_id = institutionId,
                     assignments = selected.map {
                         TeacherAssignment(class_id = it.classId, subject_id = it.id)
                     },

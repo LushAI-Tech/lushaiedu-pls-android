@@ -49,6 +49,7 @@ import com.lushaiedupls.data.mock.AiSubjectItem
 import com.lushaiedupls.data.mock.StudentMockRepository
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.ui.common.InfoMessageCard
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.theme.BgWhite
@@ -75,6 +76,7 @@ fun StudentAiHubRoute(
     StudentAiHubScreen(
         uiState = uiState,
         onSubjectClick = onSubjectClick,
+        onRefresh = viewModel::refresh,
         modifier = modifier,
     )
 }
@@ -84,6 +86,7 @@ fun StudentAiHubScreen(
     uiState: StudentAiHubUiState,
     onSubjectClick: (AiSubjectItem) -> Unit,
     onClassSelected: (String) -> Unit = {},
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -122,46 +125,61 @@ fun StudentAiHubScreen(
                 )
             }
             uiState.subjects.isNotEmpty() -> {
-                Column(
+                LushPullToRefreshBox(
+                    isRefreshing = uiState.isRefreshing,
+                    onRefresh = onRefresh,
                     modifier = Modifier
                         .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 20.dp)
-                        .padding(top = 10.dp, bottom = 24.dp),
+                        .fillMaxWidth(),
                 ) {
-                    AiStatsRow(stats = uiState.stats)
-                    Spacer(modifier = Modifier.height(20.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        uiState.subjects.forEach { subject ->
-                            AiSubjectRow(
-                                subject = subject,
-                                onClick = { onSubjectClick(subject) },
-                            )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 20.dp)
+                            .padding(top = 10.dp, bottom = 24.dp),
+                    ) {
+                        AiStatsRow(stats = uiState.stats)
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            uiState.subjects.forEach { subject ->
+                                AiSubjectRow(
+                                    subject = subject,
+                                    onClick = { onSubjectClick(subject) },
+                                )
+                            }
                         }
                     }
                 }
             }
             else -> {
-                Box(
+                LushPullToRefreshBox(
+                    isRefreshing = uiState.isLoading || uiState.isRefreshing,
+                    onRefresh = onRefresh,
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp),
-                    contentAlignment = Alignment.Center,
+                        .fillMaxWidth(),
                 ) {
-                    InfoMessageCard(
-                        title = if (uiState.needsApproval) {
-                            stringResource(R.string.approval_needed_title)
-                        } else {
-                            stringResource(R.string.ai_learn_empty_title)
-                        },
-                        body = stringResource(R.string.ai_learn_empty),
-                        icon = if (uiState.needsApproval) {
-                            Icons.Outlined.VerifiedUser
-                        } else {
-                            Icons.AutoMirrored.Outlined.MenuBook
-                        },
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 20.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        InfoMessageCard(
+                            title = if (uiState.needsApproval) {
+                                stringResource(R.string.approval_needed_title)
+                            } else {
+                                stringResource(R.string.ai_learn_empty_title)
+                            },
+                            body = stringResource(R.string.ai_learn_empty),
+                            icon = if (uiState.needsApproval) {
+                                Icons.Outlined.VerifiedUser
+                            } else {
+                                Icons.AutoMirrored.Outlined.MenuBook
+                            },
+                        )
+                    }
                 }
             }
         }

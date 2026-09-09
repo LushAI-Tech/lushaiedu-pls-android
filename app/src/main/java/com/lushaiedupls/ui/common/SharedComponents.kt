@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material.icons.automirrored.outlined.FactCheck
+import androidx.compose.material.icons.automirrored.outlined.StickyNote2
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Class
@@ -57,6 +58,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.lushaiedupls.R
 import com.lushaiedupls.data.mock.AttendanceRecord
 import com.lushaiedupls.data.mock.AttendanceStatus
@@ -102,6 +104,33 @@ fun AppBackNav(
             color = TextSecondary,
             fontSize = 15.sp,
             fontFamily = FontFamily.SansSerif,
+        )
+    }
+}
+
+@Composable
+fun UserAvatar(
+    url: String?,
+    size: Dp,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+) {
+    val imageModifier = modifier
+        .size(size)
+        .clip(CircleShape)
+    val imageUrl = url?.takeIf { it.isNotBlank() }
+    if (imageUrl != null) {
+        AsyncImage(
+            model = imageUrl,
+            contentDescription = contentDescription,
+            modifier = imageModifier,
+            error = painterResource(R.drawable.ic_avatar_placeholder),
+        )
+    } else {
+        Image(
+            painter = painterResource(R.drawable.ic_avatar_placeholder),
+            contentDescription = contentDescription,
+            modifier = imageModifier,
         )
     }
 }
@@ -410,6 +439,30 @@ fun AttendanceRecordCard(
             label = stringResource(R.string.col_time),
             value = record.time,
         )
+        val note = record.note
+        if (!note.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                verticalAlignment = Alignment.Top,
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.StickyNote2,
+                    contentDescription = null,
+                    tint = BrandBlack,
+                    modifier = Modifier
+                        .padding(top = 2.dp)
+                        .size(14.dp),
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = stringResource(R.string.attendance_reason_with_note, note),
+                    color = BrandBlack,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.SansSerif,
+                )
+            }
+        }
     }
 }
 

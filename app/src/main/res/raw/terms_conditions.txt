@@ -1,0 +1,80 @@
+Terms & Conditions
+
+Last updated: September 1, 2026
+
+Please read these Terms and Conditions ("Terms") carefully before using LushAIEdu ("the App"), a Personalised Learning System provided by LushAITech ("we", "us", or "our").
+
+1. Acceptance of Terms
+
+By creating an account, signing in, or using the App, you agree to these Terms and our Privacy Policy. If you do not agree, do not use the App.
+
+2. The Service
+
+LushAIEdu provides digital tools for students, teachers, parents, and school administrators, including personalised learning content, AI-assisted tutoring, quizzes, attendance tracking, timetables, fee records, announcements, academic calendars, and parent-student linking. Features available to you depend on your role and your institution's configuration.
+
+3. Eligibility and Accounts
+
+You must provide accurate registration information. You are responsible for keeping your login credentials secure and for all activity under your account. Notify your institution or us immediately if you suspect unauthorised access. Teachers and administrators may require a valid invite code. Accounts may need approval by a school administrator before full access is granted.
+
+4. Roles and Responsibilities
+
+Students: Use the App for legitimate learning, complete assigned work honestly, and follow your school's code of conduct and academic integrity rules.
+
+Teachers: Use the App to support instruction, record attendance accurately, publish announcements appropriately, and communicate professionally with students and parents through approved features.
+
+Parents and guardians: May access information only for students you are authorised to link to your account. Do not share link tokens or QR codes with unauthorised persons.
+
+Administrators: Manage users, classes, institutions, and school data in accordance with school policies and applicable law.
+
+5. Acceptable Use
+
+You agree not to:
+- Use the App for any unlawful, harmful, or fraudulent purpose
+- Share account credentials or attempt to bypass access controls
+- Harass, bully, or impersonate others
+- Upload malicious code or attempt to disrupt the Service
+- Copy, scrape, or reverse-engineer the App except as permitted by law
+- Use AI features to cheat on assessments or violate academic integrity rules
+- Misuse another person's personal or academic data
+
+We and your institution may suspend or terminate access for violations.
+
+6. AI Tutoring and Educational Content
+
+AI-generated responses are provided for learning support only. They may contain errors and are not a substitute for qualified instruction from your teachers. You must follow your school's academic integrity policies. We do not guarantee specific academic outcomes.
+
+7. Fees and Payments
+
+Where fee information is displayed, it is provided by your institution for reference. Payment terms, amounts, and any disputes are between you and your school unless otherwise stated. LushAITech is not responsible for billing disputes between users and institutions.
+
+8. Intellectual Property
+
+The App, its design, software, and content provided by LushAITech are protected by intellectual property laws. Your institution and content licensors may retain rights in educational materials. You receive a limited, non-exclusive licence to use the App for personal or institutional educational purposes.
+
+9. Third-Party Services
+
+The App may integrate with third-party services (such as Google Sign-In and Firebase). Your use of those services is subject to their respective terms and privacy policies.
+
+10. Account Suspension and Termination
+
+We or your institution may suspend or terminate your access if you breach these Terms or school policies. You may delete your account through Account settings, subject to your institution's record-keeping requirements.
+
+11. Disclaimers
+
+THE APP AND ALL CONTENT ARE PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTIES OF ANY KIND, WHETHER EXPRESS OR IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. WE DO NOT WARRANT UNINTERRUPTED OR ERROR-FREE OPERATION.
+
+12. Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, LUSHAITECH AND ITS AFFILIATES SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF DATA, PROFITS, OR GOODWILL, ARISING FROM YOUR USE OF THE APP. OUR TOTAL LIABILITY SHALL NOT EXCEED THE AMOUNT YOU PAID US FOR THE SERVICE IN THE TWELVE MONTHS BEFORE THE CLAIM, OR INR 1,000, WHICHEVER IS GREATER, WHERE PERMITTED BY LAW.
+
+13. Changes to Terms
+
+We may modify these Terms at any time. Updated Terms will be posted in the app. Continued use after changes constitutes acceptance.
+
+14. Governing Law
+
+These Terms are governed by the laws of India. Disputes shall be subject to the exclusive jurisdiction of courts in India, unless otherwise required by mandatory consumer protection law.
+
+15. Contact
+
+For questions about these Terms, contact your institution administrator or LushAITech through the support channel provided by your school.

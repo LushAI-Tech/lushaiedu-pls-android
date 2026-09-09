@@ -22,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Quiz
@@ -44,6 +45,9 @@ import androidx.compose.ui.unit.sp
 import com.lushaiedupls.R
 import com.lushaiedupls.data.mock.ChapterItem
 import com.lushaiedupls.data.mock.SubjectChapterStats
+import com.lushaiedupls.data.remote.friendlyStemBindingMessage
+import com.lushaiedupls.ui.common.CenteredEmptyState
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
@@ -58,96 +62,154 @@ fun ChaptersScreen(
     onBack: () -> Unit,
     onChapterClick: (ChapterItem) -> Unit = {},
     title: String = "",
+    onRefresh: () -> Unit = {},
+    isRefreshing: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    LushPullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
+        modifier = modifier.fillMaxSize(),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(BgWhite)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+            ) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                        contentDescription = stringResource(R.string.cd_back),
+                        tint = BrandBlack,
+                        modifier = Modifier.size(28.dp),
+                    )
+                }
+                Text(
+                    text = title.ifBlank { stringResource(R.string.chapters_subject_title) },
+                    modifier = Modifier.align(Alignment.Center),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = BrandBlack,
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                ChapterStatCard(
+                    value = stats.mastery,
+                    label = stringResource(R.string.chapters_mastery),
+                    icon = Icons.Outlined.Timer,
+                    emphasized = true,
+                    modifier = Modifier.weight(1f),
+                )
+                ChapterStatCard(
+                    value = stats.reading,
+                    label = stringResource(R.string.chapters_reading),
+                    icon = Icons.AutoMirrored.Outlined.MenuBook,
+                    emphasized = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                ChapterStatCard(
+                    value = stats.quizCount,
+                    label = stringResource(R.string.chapters_quiz),
+                    icon = Icons.Outlined.Quiz,
+                    emphasized = false,
+                    modifier = Modifier.weight(1f),
+                )
+                ChapterStatCard(
+                    value = stats.quickCheckCount,
+                    label = stringResource(R.string.chapters_quick_check),
+                    icon = Icons.Outlined.CalendarMonth,
+                    emphasized = false,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            if (chapters.isEmpty()) {
+                CenteredEmptyState(
+                    message = stringResource(R.string.chapters_empty),
+                    icon = Icons.Outlined.AutoStories,
+                    compact = true,
+                )
+            } else {
+                chapters.forEach { chapter ->
+                    ChapterRow(chapter = chapter, onClick = { onChapterClick(chapter) })
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SubjectContentUnavailableScreen(
+    title: String,
+    message: String,
+    onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(BgWhite)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
-            .padding(bottom = 24.dp),
+            .background(BgWhite),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-        ) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier.align(Alignment.CenterStart),
+        if (onBack != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .padding(horizontal = 4.dp),
             ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
-                    contentDescription = stringResource(R.string.cd_back),
-                    tint = BrandBlack,
-                    modifier = Modifier.size(28.dp),
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                        contentDescription = stringResource(R.string.cd_back),
+                        tint = BrandBlack,
+                        modifier = Modifier.size(28.dp),
+                    )
+                }
+                Text(
+                    text = title.ifBlank { stringResource(R.string.chapters_subject_title) },
+                    modifier = Modifier.align(Alignment.Center),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = BrandBlack,
+                    fontFamily = FontFamily.SansSerif,
                 )
             }
-            Text(
-                text = title.ifBlank { stringResource(R.string.chapters_subject_title) },
-                modifier = Modifier.align(Alignment.Center),
-                fontWeight = FontWeight.Bold,
-                fontSize = 20.sp,
-                color = BrandBlack,
-            )
         }
-
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            ChapterStatCard(
-                value = stats.mastery,
-                label = stringResource(R.string.chapters_mastery),
-                icon = Icons.Outlined.Timer,
-                emphasized = true,
-                modifier = Modifier.weight(1f),
-            )
-            ChapterStatCard(
-                value = stats.reading,
-                label = stringResource(R.string.chapters_reading),
-                icon = Icons.AutoMirrored.Outlined.MenuBook,
-                emphasized = true,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            ChapterStatCard(
-                value = stats.quizCount,
-                label = stringResource(R.string.chapters_quiz),
-                icon = Icons.Outlined.Quiz,
-                emphasized = false,
-                modifier = Modifier.weight(1f),
-            )
-            ChapterStatCard(
-                value = stats.quickCheckCount,
-                label = stringResource(R.string.chapters_quick_check),
-                icon = Icons.Outlined.CalendarMonth,
-                emphasized = false,
-                modifier = Modifier.weight(1f),
-            )
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-        if (chapters.isEmpty()) {
-            Text(
-                text = stringResource(R.string.chapters_empty),
-                color = TextSecondary,
-                fontSize = 14.sp,
-                modifier = Modifier.padding(vertical = 24.dp),
-            )
-        } else {
-            chapters.forEach { chapter ->
-                ChapterRow(chapter = chapter, onClick = { onChapterClick(chapter) })
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-        }
+        CenteredEmptyState(
+            message = friendlyStemBindingMessage(message)
+                ?: message.ifBlank { stringResource(R.string.ai_subject_unavailable_body) },
+            icon = Icons.Outlined.AutoStories,
+            title = stringResource(R.string.ai_subject_unavailable_title),
+            modifier = Modifier.weight(1f),
+            fillMaxSize = true,
+        )
     }
 }
 

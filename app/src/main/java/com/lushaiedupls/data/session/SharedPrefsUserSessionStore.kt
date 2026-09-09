@@ -30,6 +30,18 @@ class SharedPrefsUserSessionStore(
         prefs.edit { putString(KEY_DISPLAY_NAME, name.trim().ifBlank { DEFAULT_DISPLAY_NAME }) }
     }
 
+    override fun getAvatarUrl(): String? =
+        prefs.getString(KEY_AVATAR_URL, null)?.takeIf { it.isNotBlank() }
+
+    override fun setAvatarUrl(url: String?) {
+        // commit=true so Setup Profile can read the Google photo immediately after OAuth.
+        prefs.edit(commit = true) {
+            val cleaned = url?.trim()?.replace("\\/", "/")?.takeIf { it.isNotBlank() }
+            if (cleaned == null) remove(KEY_AVATAR_URL)
+            else putString(KEY_AVATAR_URL, cleaned)
+        }
+    }
+
     override fun getSelectedClasses(): List<SchoolClass> {
         val raw = prefs.getString(KEY_SELECTED_CLASSES, null) ?: return emptyList()
         if (raw.isBlank()) return emptyList()
@@ -160,6 +172,17 @@ class SharedPrefsUserSessionStore(
         }
     }
 
+    override fun getInstitutionId(): String? =
+        prefs.getString(KEY_INSTITUTION_ID, null)?.takeIf { it.isNotBlank() }
+
+    override fun setInstitutionId(institutionId: String?) {
+        prefs.edit {
+            val cleaned = institutionId?.trim().orEmpty()
+            if (cleaned.isEmpty()) remove(KEY_INSTITUTION_ID)
+            else putString(KEY_INSTITUTION_ID, cleaned)
+        }
+    }
+
     override fun isParentSignupFlow(): Boolean = prefs.getBoolean(KEY_PARENT_SIGNUP, false)
 
     override fun setParentSignupFlow(enabled: Boolean) {
@@ -168,10 +191,19 @@ class SharedPrefsUserSessionStore(
         }
     }
 
+    override fun needsProfileSetup(): Boolean = prefs.getBoolean(KEY_NEEDS_PROFILE_SETUP, false)
+
+    override fun setNeedsProfileSetup(enabled: Boolean) {
+        prefs.edit {
+            if (enabled) putBoolean(KEY_NEEDS_PROFILE_SETUP, true) else remove(KEY_NEEDS_PROFILE_SETUP)
+        }
+    }
+
     override fun clear() {
         prefs.edit {
             remove(KEY_ROLE)
             remove(KEY_DISPLAY_NAME)
+            remove(KEY_AVATAR_URL)
             remove(KEY_SELECTED_CLASSES)
             remove(KEY_CLASS_SUBJECTS)
             remove(KEY_ONBOARDING_STATE)
@@ -183,7 +215,9 @@ class SharedPrefsUserSessionStore(
             remove(KEY_PENDING_GENDER)
             remove(KEY_PENDING_ADDRESS)
             remove(KEY_PENDING_INVITE)
+            remove(KEY_INSTITUTION_ID)
             remove(KEY_PARENT_SIGNUP)
+            remove(KEY_NEEDS_PROFILE_SETUP)
         }
     }
 
@@ -191,6 +225,7 @@ class SharedPrefsUserSessionStore(
         const val PREFS_NAME = "lushai_user_session"
         const val KEY_ROLE = "role"
         const val KEY_DISPLAY_NAME = "display_name"
+        const val KEY_AVATAR_URL = "avatar_url"
         const val KEY_SELECTED_CLASSES = "selected_classes"
         const val KEY_CLASS_SUBJECTS = "class_subjects"
         const val KEY_ONBOARDING_STATE = "onboarding_state"
@@ -202,7 +237,9 @@ class SharedPrefsUserSessionStore(
         const val KEY_PENDING_GENDER = "pending_gender"
         const val KEY_PENDING_ADDRESS = "pending_address"
         const val KEY_PENDING_INVITE = "pending_invite"
+        const val KEY_INSTITUTION_ID = "institution_id"
         const val KEY_PARENT_SIGNUP = "parent_signup_flow"
+        const val KEY_NEEDS_PROFILE_SETUP = "needs_profile_setup"
         const val LIST_SEP = ","
         const val PAIR_SEP = ":"
         const val SUBJECT_SEP = "|"

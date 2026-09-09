@@ -11,5 +11,6 @@ data class StudentCalendarUiState(
     val selectedDayEvents: List<CalendarEvent> = emptyList(),
     val allEvents: List<CalendarEvent> = emptyList(),
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
 )

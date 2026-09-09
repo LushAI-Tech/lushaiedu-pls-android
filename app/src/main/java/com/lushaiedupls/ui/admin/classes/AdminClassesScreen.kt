@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -29,8 +30,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,16 +54,20 @@ import com.lushaiedupls.data.remote.dto.ClassOut
 import com.lushaiedupls.data.remote.dto.SubjectOut
 import com.lushaiedupls.data.repository.AdminRepository
 import com.lushaiedupls.ui.admin.AdminCard
+import com.lushaiedupls.ui.admin.AdminDeleteConfirmDialog
 import com.lushaiedupls.ui.admin.AdminDeleteRed
 import com.lushaiedupls.ui.admin.AdminEmptyText
 import com.lushaiedupls.ui.admin.AdminFilterRow
 import com.lushaiedupls.ui.admin.AdminLeadingIcon
 import com.lushaiedupls.ui.admin.AdminMuted
+import com.lushaiedupls.ui.admin.AdminNoticeDialog
 import com.lushaiedupls.ui.admin.AdminScreenHeader
 import com.lushaiedupls.ui.admin.AdminSubjectLeadingIcon
 import com.lushaiedupls.ui.auth.components.OutlinedAuthField
 import com.lushaiedupls.ui.auth.components.PrimaryButton
+import com.lushaiedupls.ui.common.FilterRowListLoading
 import com.lushaiedupls.ui.common.LoadErrorPanel
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.theme.BgWhite
@@ -98,6 +105,8 @@ fun AdminClassesRoute(
     AdminClassesScreen(
         uiState = uiState,
         onSelectClass = viewModel::selectClass,
+        onSelectInstitution = viewModel::selectInstitution,
+        onFormInstitution = viewModel::onFormInstitution,
         onBackToClasses = viewModel::backToClasses,
         onStartCreateClass = viewModel::startCreateClass,
         onStartEditClass = viewModel::startEditClass,
@@ -116,14 +125,149 @@ fun AdminClassesRoute(
         onBindStem = viewModel::bindStem,
         onUnbindStem = viewModel::unbindStem,
         onRetry = viewModel::refresh,
+        onDismissError = viewModel::clearError,
         modifier = modifier,
     )
+}
+
+@Composable
+fun AdminCreateClassRoute(
+    adminRepository: AdminRepository,
+    institutionId: String?,
+    onBack: () -> Unit,
+    onClassCreated: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val viewModel: AdminClassesViewModel = viewModel(
+        factory = AdminClassesViewModel.provideFactory(adminRepository),
+    )
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var waitingForSave by remember { mutableStateOf(false) }
+    LaunchedEffect(institutionId) {
+        viewModel.openCreateClassForInstitution(institutionId)
+    }
+    LaunchedEffect(waitingForSave, uiState.isSaving, uiState.composingClass, uiState.errorMessage) {
+        if (waitingForSave && !uiState.isSaving && !uiState.composingClass) {
+            waitingForSave = false
+            if (uiState.errorMessage == null) onClassCreated()
+        }
+    }
+    when {
+        uiState.isLoading && uiState.institutions.isEmpty() && uiState.errorMessage == null ->
+            StudentPageSkeleton(kind = StudentSkeletonKind.List, modifier = modifier)
+        else -> {
+            Column(
+                modifier = modifier
+                    .fillMaxSize()
+                    .background(BgWhite)
+                    .imePadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 24.dp),
+            ) {
+                AdminScreenHeader(
+                    title = stringResource(R.string.admin_add_class),
+                    onBack = onBack,
+                )
+                uiState.errorMessage?.let { message ->
+                    Text(
+                        text = message,
+                        color = TextSecondary,
+                        fontSize = 13.sp,
+                        fontFamily = FontFamily.SansSerif,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                ClassForm(
+                    uiState = uiState,
+                    onName = viewModel::onNameChange,
+                    onSortOrder = viewModel::onSortOrderChange,
+                    onToggleActive = viewModel::toggleFormActive,
+                    onSaveClass = {
+                        waitingForSave = true
+                        viewModel.saveClass()
+                    },
+                    onFormInstitution = viewModel::onFormInstitution,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun AdminCreateSubjectRoute(
+    adminRepository: AdminRepository,
+    classId: String?,
+    institutionId: String?,
+    onBack: () -> Unit,
+    onSubjectCreated: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val viewModel: AdminClassesViewModel = viewModel(
+        factory = AdminClassesViewModel.provideFactory(adminRepository),
+    )
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var waitingForSave by remember { mutableStateOf(false) }
+    LaunchedEffect(classId, institutionId) {
+        viewModel.openCreateSubjectForClass(classId, institutionId)
+    }
+    LaunchedEffect(waitingForSave, uiState.isSaving, uiState.composingSubject, uiState.errorMessage) {
+        if (waitingForSave && !uiState.isSaving && !uiState.composingSubject) {
+            waitingForSave = false
+            if (uiState.errorMessage == null) onSubjectCreated()
+        }
+    }
+    when {
+        uiState.isLoading && uiState.institutions.isEmpty() && uiState.errorMessage == null ->
+            StudentPageSkeleton(kind = StudentSkeletonKind.List, modifier = modifier)
+        else -> {
+            Column(
+                modifier = modifier
+                    .fillMaxSize()
+                    .background(BgWhite)
+                    .imePadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 24.dp),
+            ) {
+                AdminScreenHeader(
+                    title = stringResource(R.string.admin_add_subject),
+                    onBack = onBack,
+                )
+                uiState.errorMessage?.let { message ->
+                    Text(
+                        text = message,
+                        color = TextSecondary,
+                        fontSize = 13.sp,
+                        fontFamily = FontFamily.SansSerif,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                SubjectForm(
+                    uiState = uiState,
+                    onName = viewModel::onNameChange,
+                    onSortOrder = viewModel::onSortOrderChange,
+                    onToggleActive = viewModel::toggleFormActive,
+                    onSaveSubject = {
+                        waitingForSave = true
+                        viewModel.saveSubject()
+                    },
+                    onSelectBoard = viewModel::selectBoard,
+                    onSelectGrade = viewModel::selectGrade,
+                    onBindStem = viewModel::bindStem,
+                    onUnbindStem = viewModel::unbindStem,
+                )
+            }
+        }
+    }
 }
 
 @Composable
 fun AdminClassesScreen(
     uiState: AdminClassesUiState,
     onSelectClass: (ClassOut) -> Unit,
+    onSelectInstitution: (String) -> Unit,
+    onFormInstitution: (String) -> Unit,
     onBackToClasses: () -> Unit,
     onStartCreateClass: () -> Unit,
     onStartEditClass: (ClassOut) -> Unit,
@@ -142,17 +286,20 @@ fun AdminClassesScreen(
     onBindStem: (String) -> Unit,
     onUnbindStem: () -> Unit,
     onRetry: () -> Unit,
+    onDismissError: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     when {
-        uiState.isLoading && uiState.classes.isEmpty() && uiState.errorMessage == null ->
+        uiState.isLoading && uiState.classes.isEmpty() && uiState.institutions.isEmpty() &&
+            uiState.errorMessage == null ->
             StudentPageSkeleton(kind = StudentSkeletonKind.List, modifier = modifier)
-        uiState.errorMessage != null && uiState.classes.isEmpty() && uiState.selectedClass == null ->
+        uiState.errorMessage != null && uiState.classes.isEmpty() && uiState.selectedClass == null &&
+            uiState.institutions.isEmpty() ->
             LoadErrorPanel(
                 screenTitle = stringResource(R.string.admin_classes_title),
                 message = uiState.errorMessage.orEmpty(),
                 onRetry = onRetry,
-                isRetrying = uiState.isLoading,
+                isRetrying = uiState.isLoading || uiState.isRefreshing,
                 modifier = modifier,
             )
         else -> {
@@ -160,9 +307,16 @@ fun AdminClassesScreen(
             val composing = uiState.composingClass || uiState.composingSubject
             var managingClasses by rememberSaveable { mutableStateOf(false) }
             var managingSubjects by rememberSaveable { mutableStateOf(false) }
+            var pendingDeleteClass by remember { mutableStateOf<ClassOut?>(null) }
+            var pendingDeleteSubject by remember { mutableStateOf<SubjectOut?>(null) }
             val managing = if (selectedClass != null) managingSubjects else managingClasses
+            LushPullToRefreshBox(
+                isRefreshing = uiState.isRefreshing,
+                onRefresh = onRetry,
+                modifier = modifier.fillMaxSize(),
+            ) {
             Box(
-                modifier = modifier
+                modifier = Modifier
                     .fillMaxSize()
                     .background(BgWhite)
                     .imePadding(),
@@ -221,14 +375,17 @@ fun AdminClassesScreen(
                             null
                         },
                     )
-                    uiState.errorMessage?.let { message ->
-                        Text(
-                            text = message,
-                            color = TextSecondary,
-                            fontSize = 13.sp,
-                            fontFamily = FontFamily.SansSerif,
+                    if (!composing && selectedClass == null && uiState.institutions.isNotEmpty()) {
+                        AdminFilterRow(
+                            labels = uiState.institutions.map { it.name },
+                            selectedIndex = uiState.institutions
+                                .indexOfFirst { it.id == uiState.selectedInstitutionId }
+                                .coerceAtLeast(0),
+                            onSelect = { index ->
+                                onSelectInstitution(uiState.institutions[index].id)
+                            },
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
                     }
                     when {
                         uiState.composingClass -> ClassForm(
@@ -237,6 +394,7 @@ fun AdminClassesScreen(
                             onSortOrder = onSortOrder,
                             onToggleActive = onToggleActive,
                             onSaveClass = onSaveClass,
+                            onFormInstitution = onFormInstitution,
                         )
                         uiState.composingSubject -> SubjectForm(
                             uiState = uiState,
@@ -253,14 +411,14 @@ fun AdminClassesScreen(
                             uiState = uiState,
                             managing = managing,
                             onStartEditSubject = onStartEditSubject,
-                            onDeleteSubject = onDeleteSubject,
+                            onDeleteSubject = { pendingDeleteSubject = it },
                         )
                         else -> ClassList(
                             uiState = uiState,
                             managing = managing,
                             onSelectClass = onSelectClass,
                             onStartEditClass = onStartEditClass,
-                            onDeleteClass = onDeleteClass,
+                            onDeleteClass = { pendingDeleteClass = it },
                         )
                     }
                 }
@@ -286,6 +444,50 @@ fun AdminClassesScreen(
                         )
                     }
                 }
+                uiState.errorMessage?.takeIf {
+                    uiState.classes.isNotEmpty() ||
+                        uiState.selectedClass != null ||
+                        uiState.institutions.isNotEmpty() ||
+                        composing
+                }?.let { message ->
+                    AdminNoticeDialog(
+                        message = message,
+                        onDismiss = onDismissError,
+                    )
+                }
+                pendingDeleteClass?.let { item ->
+                    AdminDeleteConfirmDialog(
+                        title = stringResource(R.string.admin_delete_confirm_title),
+                        message = stringResource(
+                            R.string.admin_delete_confirm_named,
+                            item.name,
+                        ) + "\n\n" + stringResource(R.string.admin_delete_confirm_class),
+                        onConfirm = {
+                            val target = item
+                            pendingDeleteClass = null
+                            onDeleteClass(target)
+                        },
+                        onDismiss = { pendingDeleteClass = null },
+                        isWorking = uiState.isSaving,
+                    )
+                }
+                pendingDeleteSubject?.let { item ->
+                    AdminDeleteConfirmDialog(
+                        title = stringResource(R.string.admin_delete_confirm_title),
+                        message = stringResource(
+                            R.string.admin_delete_confirm_named,
+                            item.name,
+                        ) + "\n\n" + stringResource(R.string.admin_delete_confirm_subject),
+                        onConfirm = {
+                            val target = item
+                            pendingDeleteSubject = null
+                            onDeleteSubject(target)
+                        },
+                        onDismiss = { pendingDeleteSubject = null },
+                        isWorking = uiState.isSaving,
+                    )
+                }
+            }
             }
         }
     }
@@ -300,7 +502,14 @@ private fun ClassList(
     onDeleteClass: (ClassOut) -> Unit,
 ) {
     if (uiState.classes.isEmpty()) {
-        AdminEmptyText(stringResource(R.string.admin_classes_empty))
+        if (uiState.isLoading) {
+            FilterRowListLoading()
+        } else {
+            AdminEmptyText(
+                text = stringResource(R.string.admin_classes_empty),
+                icon = Icons.Outlined.School,
+            )
+        }
     } else {
         uiState.classes.forEach { item ->
             AdminCard(onClick = { onSelectClass(item) }) {
@@ -314,16 +523,22 @@ private fun ClassList(
                         tint = Color.White,
                     )
                     Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = item.name,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = BrandBlack,
-                        fontFamily = FontFamily.SansSerif,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = item.name,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = BrandBlack,
+                            fontFamily = FontFamily.SansSerif,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        val institutionName = item.institution_name
+                            ?: uiState.institutions.firstOrNull { it.id == item.institution_id }?.name
+                        if (!institutionName.isNullOrBlank() && uiState.selectedInstitutionId == null) {
+                            AdminMuted(institutionName)
+                        }
+                    }
                     if (managing) {
                         EditDeleteIcons(
                             editDescription = stringResource(R.string.admin_edit_class),
@@ -355,7 +570,11 @@ private fun SubjectList(
     )
     Spacer(modifier = Modifier.height(8.dp))
     if (uiState.subjects.isEmpty() && !uiState.isLoadingSubjects) {
-        AdminEmptyText(stringResource(R.string.admin_subjects_empty))
+        AdminEmptyText(
+            text = stringResource(R.string.admin_subjects_empty),
+            icon = Icons.Outlined.AutoStories,
+            compact = true,
+        )
     }
     uiState.subjects.forEach { item ->
         AdminCard {
@@ -430,7 +649,10 @@ private fun StemBindingPanel(
     } else {
         AdminFilterRow(
             labels = uiState.stemBoards.map { it.name },
-            selectedIndex = uiState.stemBoards.indexOfFirst { it.id == uiState.selectedBoardId },
+            selectedIndex = uiState.stemBoards
+                .indexOfFirst { it.id == uiState.selectedBoardId }
+                .takeIf { it >= 0 }
+                ?: 0,
             onSelect = { onSelectBoard(uiState.stemBoards[it].id) },
         )
     }
@@ -445,7 +667,10 @@ private fun StemBindingPanel(
         Spacer(modifier = Modifier.height(6.dp))
         AdminFilterRow(
             labels = uiState.stemGrades.map { it.name },
-            selectedIndex = uiState.stemGrades.indexOfFirst { it.id == uiState.selectedGradeId },
+            selectedIndex = uiState.stemGrades
+                .indexOfFirst { it.id == uiState.selectedGradeId }
+                .takeIf { it >= 0 }
+                ?: 0,
             onSelect = { onSelectGrade(uiState.stemGrades[it].id) },
         )
     }
@@ -460,7 +685,10 @@ private fun StemBindingPanel(
         Spacer(modifier = Modifier.height(6.dp))
         AdminFilterRow(
             labels = uiState.stemSubjects.map { it.name },
-            selectedIndex = uiState.stemSubjects.indexOfFirst { it.id == selectedStemId },
+            selectedIndex = uiState.stemSubjects
+                .indexOfFirst { it.id == selectedStemId }
+                .takeIf { it >= 0 }
+                ?: 0,
             onSelect = { onBindStem(uiState.stemSubjects[it].id) },
         )
     }
@@ -473,7 +701,17 @@ private fun ClassForm(
     onSortOrder: (String) -> Unit,
     onToggleActive: () -> Unit,
     onSaveClass: () -> Unit,
+    onFormInstitution: (String) -> Unit,
 ) {
+    if (uiState.editingClassId == null && uiState.institutions.isNotEmpty()) {
+        AdminFilterRow(
+            labels = uiState.institutions.map { it.name },
+            selectedIndex = uiState.institutions.indexOfFirst { it.id == uiState.formInstitutionId }
+                .coerceAtLeast(0),
+            onSelect = { index -> onFormInstitution(uiState.institutions[index].id) },
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+    }
     OutlinedAuthField(
         label = stringResource(R.string.admin_class_name),
         value = uiState.name,
@@ -496,7 +734,9 @@ private fun ClassForm(
     PrimaryButton(
         text = stringResource(R.string.admin_save_class),
         onClick = onSaveClass,
-        enabled = uiState.name.isNotBlank() && !uiState.isSaving,
+        enabled = uiState.name.isNotBlank() &&
+            !uiState.isSaving &&
+            (uiState.editingClassId != null || !uiState.formInstitutionId.isNullOrBlank()),
         fullyRounded = true,
         modifier = Modifier.fillMaxWidth(),
     )

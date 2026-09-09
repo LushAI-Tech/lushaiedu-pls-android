@@ -27,16 +27,28 @@ class TeacherMyGroupsViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val hasContent = _uiState.value.groups.isNotEmpty()
+            _uiState.update {
+                if (hasContent) {
+                    it.copy(isRefreshing = true, isLoading = false, errorMessage = null)
+                } else {
+                    it.copy(isLoading = true, isRefreshing = false, errorMessage = null)
+                }
+            }
             when (val result = teacherRepository.teachingUnits()) {
                 is NetworkResult.Success -> _uiState.update {
                     it.copy(
                         isLoading = false,
+                        isRefreshing = false,
                         groups = TeacherUiMappers.groups(result.data),
                     )
                 }
                 else -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = result.userMessage())
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        errorMessage = result.userMessage(),
+                    )
                 }
             }
         }

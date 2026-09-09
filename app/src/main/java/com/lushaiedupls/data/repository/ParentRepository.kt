@@ -1,6 +1,10 @@
 package com.lushaiedupls.data.repository
 
+import com.lushaiedupls.data.remote.FeeMonth
 import com.lushaiedupls.data.remote.NetworkResult
+import com.lushaiedupls.data.remote.RequestCoalescer
+import com.lushaiedupls.data.remote.TtlCache
+import com.lushaiedupls.data.remote.cachedCall
 import com.lushaiedupls.data.remote.api.AttendanceApi
 import com.lushaiedupls.data.remote.api.FeesApi
 import com.lushaiedupls.data.remote.api.OverviewApi
@@ -33,6 +37,8 @@ class ParentRepository(
 ) {
     private val _unreadNotificationCount = MutableStateFlow<Int?>(null)
     val unreadNotificationCount: StateFlow<Int?> = _unreadNotificationCount.asStateFlow()
+    private val coalescer = RequestCoalescer()
+    private val catalogCache = TtlCache(OVERVIEW_TTL_MS)
 
     fun setUnreadNotificationCount(count: Int) {
         _unreadNotificationCount.value = count.coerceAtLeast(0)
@@ -43,31 +49,61 @@ class ParentRepository(
         setUnreadNotificationCount(current - 1)
     }
 
-    suspend fun overview(month: String? = null): NetworkResult<ParentOverview> {
-        val res = safeApiCall { overviewApi.parentOverview(month) }
-        if (res is NetworkResult.Success) {
-            _unreadNotificationCount.value = res.data.unread_notifications
-        }
-        return res
+    fun clearCaches() {
+        catalogCache.clear()
     }
 
-    suspend fun linkedStudents(): NetworkResult<List<LinkedStudentOut>> =
-        safeApiCall { parentApi.linkedStudents() }
+    suspend fun overview(
+        month: String? = null,
+        forceRefresh: Boolean = false,
+    ): NetworkResult<ParentOverview> {
+        val result = cachedCall(
+            catalogCache,
+            coalescer,
+            "overview_${month.orEmpty()}",
+            forceRefresh,
+            OVERVIEW_TTL_MS,
+        ) {
+            safeApiCall { overviewApi.parentOverview(month) }
+        }
+        if (result is NetworkResult.Success) {
+            _unreadNotificationCount.value = result.data.unread_notifications
+        }
+        return result
+    }
+
+    suspend fun linkedStudents(forceRefresh: Boolean = false): NetworkResult<List<LinkedStudentOut>> =
+        cachedCall(catalogCache, coalescer, "linked", forceRefresh, OVERVIEW_TTL_MS) {
+            safeApiCall { parentApi.linkedStudents() }
+        }
 
     suspend fun redeemLink(
         token: String,
         relationship: ParentRelationship = ParentRelationship.GUARDIAN,
-    ): NetworkResult<ParentLinkOut> = safeApiCall {
-        parentApi.redeemLink(
-            RedeemLinkRequest(
-                token = token.trim(),
-                relationship = relationship,
-            ),
-        )
+    ): NetworkResult<ParentLinkOut> {
+        val result = safeApiCall {
+            parentApi.redeemLink(
+                RedeemLinkRequest(
+                    token = token.trim(),
+                    relationship = relationship,
+                ),
+            )
+        }
+        if (result is NetworkResult.Success) {
+            catalogCache.remove("linked")
+            catalogCache.removePrefix("overview_")
+        }
+        return result
     }
 
-    suspend fun revokeLink(linkId: String): NetworkResult<MessageResponse> =
-        safeApiCall { parentApi.revokeLink(linkId) }
+    suspend fun revokeLink(linkId: String): NetworkResult<MessageResponse> {
+        val result = safeApiCall { parentApi.revokeLink(linkId) }
+        if (result is NetworkResult.Success) {
+            catalogCache.remove("linked")
+            catalogCache.removePrefix("overview_")
+        }
+        return result
+    }
 
     suspend fun studentSummary(
         studentId: String,
@@ -81,14 +117,27 @@ class ParentRepository(
     ): NetworkResult<AttendanceCalendar> =
         safeApiCall { attendanceApi.studentCalendar(studentId, month) }
 
-    suspend fun linkedTimetable(teachingUnitId: String? = null): NetworkResult<WeekView> =
-        safeApiCall { timetableApi.myTimetable(teachingUnitId) }
+    suspend fun linkedTimetable(
+        teachingUnitId: String? = null,
+        studentId: String? = null,
+    ): NetworkResult<WeekView> =
+        safeApiCall {
+            timetableApi.myTimetable(
+                teachingUnitId = teachingUnitId,
+                studentId = studentId?.takeIf { it.isNotBlank() },
+            )
+        }
 
     suspend fun studentFeeHistory(
         studentId: String,
-        month: String? = "all",
-    ): NetworkResult<FeeHistoryResponse> =
-        safeApiCall { feesApi.studentHistory(studentId, month) }
+        month: String? = FeeMonth.ALL,
+    ): NetworkResult<FeeHistoryResponse> {
+        if (studentId.isBlank()) {
+            return NetworkResult.Error(400, "Parent must select a child.")
+        }
+        if (!FeeMonth.isListFilter(month)) return FeeMonth.invalidMonthError()
+        return safeApiCall { feesApi.studentHistory(studentId, FeeMonth.listFilterOrNull(month)) }
+    }
 
     suspend fun feedback(): NetworkResult<List<ParentFeedbackOut>> =
         safeApiCall { parentApi.feedback() }
@@ -125,4 +174,8 @@ class ParentRepository(
 
     suspend fun deleteFeedback(feedbackId: String): NetworkResult<MessageResponse> =
         safeApiCall { parentApi.deleteFeedback(feedbackId) }
+
+    companion object {
+        private const val OVERVIEW_TTL_MS = 30_000L
+    }
 }

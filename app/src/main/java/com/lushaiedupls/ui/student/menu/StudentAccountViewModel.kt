@@ -5,13 +5,19 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.lushaiedupls.data.mapper.StudentEnrollmentSummary
 import com.lushaiedupls.data.mapper.StudentUiMappers
+import com.lushaiedupls.data.mapper.TeacherUiMappers
 import com.lushaiedupls.data.mock.RegisteredDevice
 import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.dto.Gender
+import com.lushaiedupls.data.remote.dto.LinkedStudentOut
+import com.lushaiedupls.data.remote.dto.UserRole
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.AuthRepository
+import com.lushaiedupls.data.repository.ParentRepository
 import com.lushaiedupls.data.repository.StudentRepository
+import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.data.session.UserSessionStore
 import com.lushaiedupls.ui.common.viewModelFactory
 import kotlinx.coroutines.async
@@ -34,10 +40,17 @@ data class StudentAccountUiState(
     val phone: String = "",
     val address: String = "",
     val gender: Gender? = null,
+    val role: UserRole? = null,
+    val emailVerified: Boolean = false,
+    val institutionName: String? = null,
+    val className: String? = null,
+    val subjects: List<String> = emptyList(),
+    val linkedChildren: List<LinkedStudentOut> = emptyList(),
     val hasPassword: Boolean = true,
     val avatarUrl: String? = null,
     val devices: List<RegisteredDevice> = emptyList(),
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
     val showEditProfile: Boolean = false,
     val showPassword: Boolean = false,
@@ -61,6 +74,11 @@ class StudentAccountViewModel(
     private val userSessionStore: UserSessionStore,
     private val studentRepository: StudentRepository,
     private val authRepository: AuthRepository,
+    private val parentRepository: ParentRepository? = null,
+    private val teacherRepository: TeacherRepository? = null,
+    private val loadStudentEnrollment: Boolean = false,
+    private val loadTeacherEnrollment: Boolean = false,
+    private val loadParentProfile: Boolean = false,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -77,14 +95,53 @@ class StudentAccountViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val hasContent = _uiState.value.email.isNotBlank() || _uiState.value.devices.isNotEmpty()
+            _uiState.update {
+                it.copy(
+                    isLoading = !hasContent,
+                    isRefreshing = hasContent,
+                    errorMessage = null,
+                )
+            }
             coroutineScope {
                 val profileDeferred = async { studentRepository.profile() }
                 val devicesDeferred = async { studentRepository.devices() }
                 val profile = profileDeferred.await()
                 val devices = devicesDeferred.await()
+                var enrollment = StudentEnrollmentSummary()
+                var linkedChildren = emptyList<LinkedStudentOut>()
+                if (loadStudentEnrollment && profile is NetworkResult.Success &&
+                    profile.data.role == UserRole.STUDENT
+                ) {
+                    enrollment = when (val units = studentRepository.teachingUnits()) {
+                        is NetworkResult.Success ->
+                            StudentUiMappers.enrollmentSummary(units.data)
+                        else -> StudentEnrollmentSummary()
+                    }
+                }
+                if (loadTeacherEnrollment && teacherRepository != null &&
+                    profile is NetworkResult.Success && profile.data.role == UserRole.TEACHER
+                ) {
+                    enrollment = when (val units = teacherRepository.teachingUnits()) {
+                        is NetworkResult.Success ->
+                            TeacherUiMappers.profileSummary(units.data)
+                        else -> StudentEnrollmentSummary()
+                    }
+                }
+                if (loadParentProfile && parentRepository != null &&
+                    profile is NetworkResult.Success && profile.data.role == UserRole.PARENT
+                ) {
+                    linkedChildren = when (val children = parentRepository.linkedStudents()) {
+                        is NetworkResult.Success -> children.data
+                        else -> emptyList()
+                    }
+                }
                 if (profile is NetworkResult.Success) {
                     val user = profile.data
+                    val isStudent = user.role == UserRole.STUDENT
+                    val isTeacher = user.role == UserRole.TEACHER
+                    val showEnrollment = (isStudent && loadStudentEnrollment) ||
+                        (isTeacher && loadTeacherEnrollment)
                     authRepository.persistProfile(user)
                     _uiState.update {
                         it.copy(
@@ -93,6 +150,27 @@ class StudentAccountViewModel(
                             phone = user.phone.orEmpty(),
                             address = user.address.orEmpty(),
                             gender = user.gender,
+                            role = user.role,
+                            emailVerified = user.email_verified,
+                            institutionName = if (showEnrollment) {
+                                user.institution_name?.takeIf { it.isNotBlank() }
+                                    ?: enrollment.institutionName
+                            } else {
+                                null
+                            },
+                            className = if (showEnrollment) {
+                                user.class_name?.takeIf { it.isNotBlank() }
+                                    ?: enrollment.className
+                            } else {
+                                null
+                            },
+                            subjects = if (showEnrollment) {
+                                user.subjects.takeIf { it.isNotEmpty() }
+                                    ?: enrollment.subjects
+                            } else {
+                                emptyList()
+                            },
+                            linkedChildren = linkedChildren,
                             hasPassword = user.has_password,
                             avatarUrl = user.avatar_url,
                         )
@@ -108,7 +186,9 @@ class StudentAccountViewModel(
                     devices !is NetworkResult.Success -> devices.userMessage()
                     else -> null
                 }
-                _uiState.update { it.copy(isLoading = false, errorMessage = err) }
+                _uiState.update {
+                    it.copy(isLoading = false, isRefreshing = false, errorMessage = err)
+                }
             }
         }
     }
@@ -174,6 +254,8 @@ class StudentAccountViewModel(
                             phone = user.phone.orEmpty(),
                             address = user.address.orEmpty(),
                             gender = user.gender,
+                            role = user.role,
+                            emailVerified = user.email_verified,
                             hasPassword = user.has_password,
                             avatarUrl = newAvatarUrl ?: user.avatar_url ?: it.avatarUrl,
                             notice = AccountNotice.ProfileUpdated,
@@ -335,8 +417,22 @@ class StudentAccountViewModel(
             userSessionStore: UserSessionStore,
             studentRepository: StudentRepository,
             authRepository: AuthRepository,
+            parentRepository: ParentRepository? = null,
+            teacherRepository: TeacherRepository? = null,
+            loadStudentEnrollment: Boolean = false,
+            loadTeacherEnrollment: Boolean = false,
+            loadParentProfile: Boolean = false,
         ): ViewModelProvider.Factory = viewModelFactory {
-            StudentAccountViewModel(userSessionStore, studentRepository, authRepository)
+            StudentAccountViewModel(
+                userSessionStore,
+                studentRepository,
+                authRepository,
+                parentRepository,
+                teacherRepository,
+                loadStudentEnrollment,
+                loadTeacherEnrollment,
+                loadParentProfile,
+            )
         }
     }
 }

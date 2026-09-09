@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,6 +62,7 @@ import com.lushaiedupls.ui.admin.label
 import com.lushaiedupls.ui.auth.components.OutlinedAuthField
 import com.lushaiedupls.ui.auth.components.PrimaryButton
 import com.lushaiedupls.ui.common.LoadErrorPanel
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.common.viewModelFactory
@@ -78,6 +80,7 @@ data class AdminInvitesUiState(
     val role: UserRole = UserRole.TEACHER,
     val note: String = "",
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
 )
@@ -92,13 +95,24 @@ class AdminInvitesViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val hasContent = _uiState.value.items.isNotEmpty()
+            _uiState.update {
+                it.copy(
+                    isLoading = !hasContent,
+                    isRefreshing = hasContent,
+                    errorMessage = null,
+                )
+            }
             when (val result = adminRepository.listInvites()) {
                 is NetworkResult.Success -> _uiState.update {
-                    it.copy(isLoading = false, items = result.data)
+                    it.copy(isLoading = false, isRefreshing = false, items = result.data)
                 }
                 else -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = result.userMessage())
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        errorMessage = result.userMessage(),
+                    )
                 }
             }
         }
@@ -201,15 +215,20 @@ fun AdminInvitesScreen(
             screenTitle = stringResource(R.string.admin_invites_title),
             message = uiState.errorMessage.orEmpty(),
             onRetry = onRetry,
-            isRetrying = uiState.isLoading,
+            isRetrying = uiState.isLoading || uiState.isRefreshing,
             modifier = modifier,
         )
-        else -> Box(
-            modifier = modifier
-                .fillMaxSize()
-                .background(BgWhite)
-                .imePadding(),
+        else -> LushPullToRefreshBox(
+            isRefreshing = uiState.isRefreshing,
+            onRefresh = onRetry,
+            modifier = modifier.fillMaxSize(),
         ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(BgWhite)
+                    .imePadding(),
+            ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -247,7 +266,10 @@ fun AdminInvitesScreen(
                     )
                 } else {
                     if (uiState.items.isEmpty()) {
-                        AdminEmptyText(stringResource(R.string.admin_invites_empty))
+                        AdminEmptyText(
+                            text = stringResource(R.string.admin_invites_empty),
+                            icon = Icons.Outlined.VpnKey,
+                        )
                     }
                     uiState.items.forEach { item ->
                         val status = when {
@@ -290,7 +312,7 @@ fun AdminInvitesScreen(
                                         modifier = Modifier.size(22.dp),
                                     )
                                 }
-                                if (item.is_redeemable) {
+                                if (item.revoked_at == null) {
                                     IconButton(
                                         onClick = { onRevoke(item.id) },
                                         modifier = Modifier.size(40.dp),
@@ -327,6 +349,7 @@ fun AdminInvitesScreen(
                     )
                 }
             }
+        }
         }
     }
 }

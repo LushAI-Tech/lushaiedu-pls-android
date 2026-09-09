@@ -22,5 +22,8 @@ interface OverviewApi {
     ): TeacherOverview
 
     @GET("api/v1/overview/admin")
-    suspend fun adminOverview(@Query("month") month: String? = null): AdminOverview
+    suspend fun adminOverview(
+        @Query("month") month: String? = null,
+        @Query("institution_id") institutionId: String? = null,
+    ): AdminOverview
 }

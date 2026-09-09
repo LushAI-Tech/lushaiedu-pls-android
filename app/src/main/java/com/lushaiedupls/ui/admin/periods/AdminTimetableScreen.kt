@@ -12,13 +12,15 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lushaiedupls.R
 import com.lushaiedupls.data.mapper.TeacherUiMappers
+import com.lushaiedupls.data.mapper.TimetableSubjectParser
 import com.lushaiedupls.data.mock.TeacherTeachingTimetable
-import com.lushaiedupls.data.mock.TeacherTimetableCell
 import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.dto.ClassOut
 import com.lushaiedupls.data.remote.dto.DayOfWeek
+import com.lushaiedupls.data.remote.dto.InstitutionOut
 import com.lushaiedupls.data.remote.dto.PeriodOut
 import com.lushaiedupls.data.remote.dto.SlotInput
+import com.lushaiedupls.data.remote.dto.toSlotInput
 import com.lushaiedupls.data.remote.dto.TeachingUnitOut
 import com.lushaiedupls.data.remote.dto.TeachingUnitStatus
 import com.lushaiedupls.data.remote.dto.WeekSlot
@@ -29,6 +31,7 @@ import com.lushaiedupls.ui.common.LoadErrorPanel
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.common.viewModelFactory
+import com.lushaiedupls.ui.teacher.overlays.SessionSubjectOption
 import com.lushaiedupls.ui.teacher.secondary.TeacherTimetableScreen
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -41,29 +44,36 @@ import kotlinx.coroutines.launch
 data class AdminTimetableClass(
     val id: String,
     val name: String,
+    val institutionId: String = "",
 )
 
 data class AdminTimetableUiState(
+    val institutions: List<InstitutionOut> = emptyList(),
+    val selectedInstitutionId: String? = null,
     val classes: List<AdminTimetableClass> = emptyList(),
     val selectedClassId: String? = null,
-    val subjects: List<String> = emptyList(),
+    val sessionSubjects: List<SessionSubjectOption> = emptyList(),
+    val isLoadingSubjects: Boolean = false,
     val timetable: TeacherTeachingTimetable? = null,
     val teachingUnits: List<TeachingUnitOut> = emptyList(),
     val rawWeekView: WeekView? = null,
     val rawPeriods: List<PeriodOut> = emptyList(),
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
 )
 
 class AdminTimetableViewModel(
     private val adminRepository: AdminRepository,
+    private val initialInstitutionId: String? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AdminTimetableUiState(isLoading = true))
     val uiState: StateFlow<AdminTimetableUiState> = _uiState.asStateFlow()
 
     private val dayOrder = listOf(
-        DayOfWeek.MON, DayOfWeek.TUE, DayOfWeek.WED, DayOfWeek.THU, DayOfWeek.FRI, DayOfWeek.SAT,
+        DayOfWeek.MON, DayOfWeek.TUE, DayOfWeek.WED, DayOfWeek.THU,
+        DayOfWeek.FRI, DayOfWeek.SAT, DayOfWeek.SUN,
     )
 
     init {
@@ -72,30 +82,112 @@ class AdminTimetableViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            val snapshot = loadSnapshot()
-            if (snapshot == null) return@launch
-            val selectedId = _uiState.value.selectedClassId
-                ?.takeIf { id -> snapshot.classes.any { it.id == id } }
-                ?: snapshot.classes.firstOrNull()?.id
+            val hasContent = _uiState.value.institutions.isNotEmpty() ||
+                _uiState.value.timetable != null
             _uiState.update {
                 it.copy(
-                    isLoading = false,
-                    classes = snapshot.classes,
-                    selectedClassId = selectedId,
-                    teachingUnits = snapshot.units,
-                    rawWeekView = snapshot.week,
-                    rawPeriods = snapshot.periods,
-                    subjects = subjectsFor(snapshot.units, selectedId),
-                    timetable = mapTimetable(
-                        week = snapshot.week,
-                        periods = snapshot.periods,
-                        classes = snapshot.classes,
-                        units = snapshot.units,
-                        selectedClassId = selectedId,
-                    ),
+                    isLoading = !hasContent,
+                    isRefreshing = hasContent,
+                    errorMessage = null,
                 )
             }
+            val institutions = when (val result = adminRepository.timetableInstitutions()) {
+                is NetworkResult.Success -> result.data
+                    .filter { it.is_active }
+                    .sortedWith(compareBy({ it.sort_order }, { it.name }))
+                else -> {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isRefreshing = false,
+                            errorMessage = result.userMessage(),
+                        )
+                    }
+                    return@launch
+                }
+            }
+            val selectedInstitutionId = _uiState.value.selectedInstitutionId
+                ?.takeIf { id -> institutions.any { it.id == id } }
+                ?: initialInstitutionId?.takeIf { id -> institutions.any { it.id == id } }
+                ?: institutions.firstOrNull()?.id
+            _uiState.update {
+                it.copy(institutions = institutions, selectedInstitutionId = selectedInstitutionId)
+            }
+            if (selectedInstitutionId == null) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        classes = emptyList(),
+                        selectedClassId = null,
+                        timetable = TeacherTeachingTimetable(
+                            classes = emptyList(),
+                            days = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"),
+                            timeSlots = listOf("—"),
+                            cells = emptyMap(),
+                        ),
+                        errorMessage = "Please select an institution.",
+                    )
+                }
+                return@launch
+            }
+            loadForInstitution(selectedInstitutionId)
+        }
+    }
+
+    fun selectInstitution(index: Int) {
+        val selected = _uiState.value.institutions.getOrNull(index) ?: return
+        if (selected.id == _uiState.value.selectedInstitutionId) return
+        _uiState.update {
+            it.copy(
+                selectedInstitutionId = selected.id,
+                selectedClassId = null,
+                classes = emptyList(),
+                sessionSubjects = emptyList(),
+                rawWeekView = null,
+                rawPeriods = emptyList(),
+                timetable = null,
+                isLoading = true,
+                errorMessage = null,
+            )
+        }
+        viewModelScope.launch { loadForInstitution(selected.id) }
+    }
+
+    private suspend fun loadForInstitution(institutionId: String) {
+        val snapshot = loadSnapshot(institutionId)
+        if (snapshot == null) return
+        val selectedId = _uiState.value.selectedClassId
+            ?.takeIf { id -> snapshot.classes.any { it.id == id } }
+            ?: snapshot.classes.firstOrNull()?.id
+        val week = if (selectedId != null) {
+            when (val result = adminRepository.weekTimetable(institutionId, selectedId)) {
+                is NetworkResult.Success -> result.data
+                else -> snapshot.week
+            }
+        } else {
+            snapshot.week
+        }
+        val subjects = loadClassSubjects(selectedId, snapshot.units, institutionId)
+        _uiState.update {
+            it.copy(
+                isLoading = false,
+                isRefreshing = false,
+                classes = snapshot.classes,
+                selectedClassId = selectedId,
+                teachingUnits = snapshot.units,
+                rawWeekView = week,
+                rawPeriods = snapshot.periods,
+                sessionSubjects = subjects,
+                isLoadingSubjects = false,
+                timetable = mapTimetable(
+                    week = week,
+                    periods = snapshot.periods,
+                    classes = snapshot.classes,
+                    units = snapshot.units,
+                    selectedClassId = selectedId,
+                ),
+            )
         }
     }
 
@@ -103,38 +195,95 @@ class AdminTimetableViewModel(
         val classes = _uiState.value.classes
         val selected = classes.getOrNull(index) ?: return
         if (selected.id == _uiState.value.selectedClassId) return
-        val state = _uiState.value
+        val institutionId = _uiState.value.selectedInstitutionId
         _uiState.update {
             it.copy(
                 selectedClassId = selected.id,
-                subjects = subjectsFor(state.teachingUnits, selected.id),
-                timetable = mapTimetable(
-                    week = state.rawWeekView,
-                    periods = state.rawPeriods,
-                    classes = classes,
-                    units = state.teachingUnits,
-                    selectedClassId = selected.id,
-                ),
+                sessionSubjects = emptyList(),
+                isLoadingSubjects = true,
+                errorMessage = null,
             )
+        }
+        viewModelScope.launch {
+            val week = if (!institutionId.isNullOrBlank()) {
+                when (val result = adminRepository.weekTimetable(institutionId, selected.id)) {
+                    is NetworkResult.Success -> result.data
+                    else -> _uiState.value.rawWeekView
+                }
+            } else {
+                _uiState.value.rawWeekView
+            }
+            val subjects = loadClassSubjects(
+                selected.id,
+                _uiState.value.teachingUnits,
+                institutionId,
+            )
+            _uiState.update {
+                it.copy(
+                    rawWeekView = week ?: it.rawWeekView,
+                    sessionSubjects = subjects,
+                    isLoadingSubjects = false,
+                    timetable = mapTimetable(
+                        week = week ?: it.rawWeekView,
+                        periods = it.rawPeriods,
+                        classes = classes,
+                        units = it.teachingUnits,
+                        selectedClassId = selected.id,
+                    ),
+                )
+            }
+        }
+    }
+
+    fun prepareSessionSubjects() {
+        viewModelScope.launch {
+            val classId = _uiState.value.selectedClassId
+                ?: _uiState.value.classes.firstOrNull()?.id
+            _uiState.update { it.copy(isLoadingSubjects = true) }
+            val subjects = loadClassSubjects(
+                classId,
+                _uiState.value.teachingUnits,
+                _uiState.value.selectedInstitutionId,
+            )
+            _uiState.update {
+                it.copy(
+                    selectedClassId = classId ?: it.selectedClassId,
+                    sessionSubjects = subjects,
+                    isLoadingSubjects = false,
+                )
+            }
         }
     }
 
     fun saveSlot(
         timeIndex: Int,
         dayIndex: Int,
+        subjectId: String,
         subjectName: String,
         room: String,
         onDone: (Boolean) -> Unit = {},
     ) {
-        val period = _uiState.value.rawPeriods.getOrNull(timeIndex)
+        val period = displayPeriods().getOrNull(timeIndex)
         val dayOfWeek = dayOrder.getOrNull(dayIndex)
         val classId = _uiState.value.selectedClassId
-        val unit = _uiState.value.teachingUnits.firstOrNull { candidate ->
-            candidate.class_id == classId &&
-                candidate.status == TeachingUnitStatus.ACTIVE &&
-                candidate.subject_name.equals(subjectName, ignoreCase = true)
+        val institutionId = _uiState.value.selectedInstitutionId
+        val active = _uiState.value.teachingUnits.filter { it.status == TeachingUnitStatus.ACTIVE }
+        val units = active.filter { classId == null || it.class_id == classId }.ifEmpty { active }
+        val unit = units.firstOrNull { it.subject_id == subjectId }
+            ?: units.firstOrNull { it.id == subjectId }
+            ?: units.firstOrNull { it.subject_name.equals(subjectName, ignoreCase = true) }
+        if (period == null || dayOfWeek == null || classId == null || institutionId == null || unit == null) {
+            onDone(false)
+            return
         }
-        if (period == null || dayOfWeek == null || classId == null || unit == null) {
+        val classInstitution = _uiState.value.classes.firstOrNull { it.id == classId }?.institutionId
+        if (!sameInstitution(period.institution_id, institutionId) ||
+            !sameInstitution(unit.institution_id, institutionId) ||
+            !sameInstitution(classInstitution, institutionId)
+        ) {
+            _uiState.update {
+                it.copy(errorMessage = "Period and class must belong to the selected institution.")
+            }
             onDone(false)
             return
         }
@@ -165,10 +314,11 @@ class AdminTimetableViewModel(
             }
             val updated = slotsOf(week, unit.id).filterNot {
                 it.period_id == period.id && it.day_of_week == dayOfWeek
-            } + SlotInput(
-                period_id = period.id,
-                day_of_week = dayOfWeek,
-                room = room.trim().ifBlank { null },
+            } + SlotInput.of(
+                subjectId = subjectId.ifBlank { unit.subject_id },
+                periodId = period.id,
+                dayOfWeek = dayOfWeek,
+                room = room,
             )
             when (val result = adminRepository.setSlots(unit.id, updated)) {
                 is NetworkResult.Success -> {
@@ -190,7 +340,7 @@ class AdminTimetableViewModel(
         dayIndex: Int,
         onDone: (Boolean) -> Unit = {},
     ) {
-        val period = _uiState.value.rawPeriods.getOrNull(timeIndex)
+        val period = displayPeriods().getOrNull(timeIndex)
         val dayOfWeek = dayOrder.getOrNull(dayIndex)
         val classId = _uiState.value.selectedClassId
         if (period == null || dayOfWeek == null || classId == null) {
@@ -230,11 +380,13 @@ class AdminTimetableViewModel(
         }
     }
 
-    private suspend fun loadSnapshot(): Snapshot? = coroutineScope {
-        val classesDeferred = async { adminRepository.listClasses(includeInactive = false) }
+    private suspend fun loadSnapshot(institutionId: String): Snapshot? = coroutineScope {
+        val classesDeferred = async { adminRepository.timetableClasses(institutionId) }
         val unitsDeferred = async { adminRepository.teachingUnits() }
-        val weekDeferred = async { adminRepository.timetable() }
-        val periodsDeferred = async { adminRepository.periods(includeInactive = false) }
+        val weekDeferred = async { adminRepository.weekTimetable(institutionId) }
+        val periodsDeferred = async {
+            adminRepository.periods(includeInactive = false, institutionId = institutionId)
+        }
         val classesResult = classesDeferred.await()
         val unitsResult = unitsDeferred.await()
         val weekResult = weekDeferred.await()
@@ -242,10 +394,11 @@ class AdminTimetableViewModel(
 
         val units = (unitsResult as? NetworkResult.Success)?.data.orEmpty()
             .filter { it.status == TeachingUnitStatus.ACTIVE }
+            .filter { sameInstitution(it.institution_id, institutionId) }
         val listedClasses = (classesResult as? NetworkResult.Success)?.data.orEmpty()
             .filter { it.is_active }
             .sortedBy { it.sort_order }
-        val classes = mergeClasses(listedClasses, units)
+        val classes = mergeClasses(listedClasses, units, institutionId)
         val listedPeriods = (periodsResult as? NetworkResult.Success)?.data.orEmpty()
             .filter { it.is_active }
             .sortedBy { it.sort_order }
@@ -264,16 +417,29 @@ class AdminTimetableViewModel(
                 .firstOrNull { it !is NetworkResult.Success }
                 ?.userMessage()
                 .orEmpty()
-            _uiState.update { it.copy(isLoading = false, errorMessage = message) }
+            _uiState.update {
+                it.copy(isLoading = false, isRefreshing = false, errorMessage = message)
+            }
             return@coroutineScope null
         }
         Snapshot(classes = classes, units = units, week = week, periods = periods)
     }
 
     private suspend fun currentWeek(): WeekView {
-        return when (val result = adminRepository.timetable()) {
+        val institutionId = _uiState.value.selectedInstitutionId
+        if (institutionId.isNullOrBlank()) {
+            return _uiState.value.rawWeekView
+                ?: WeekView(periods = _uiState.value.rawPeriods, days = emptyMap())
+        }
+        return when (
+            val result = adminRepository.weekTimetable(
+                institutionId = institutionId,
+                classId = _uiState.value.selectedClassId,
+            )
+        ) {
             is NetworkResult.Success -> result.data
-            else -> _uiState.value.rawWeekView ?: WeekView(periods = _uiState.value.rawPeriods, days = emptyMap())
+            else -> _uiState.value.rawWeekView
+                ?: WeekView(periods = _uiState.value.rawPeriods, days = emptyMap())
         }
     }
 
@@ -283,34 +449,59 @@ class AdminTimetableViewModel(
             .map { it.id }
             .toSet()
 
+    private fun unitById(unitId: String): TeachingUnitOut? =
+        _uiState.value.teachingUnits.firstOrNull { it.id == unitId }
+
     private fun flattenSlots(week: WeekView): List<WeekSlot> =
         week.days.values.flatten()
 
-    private fun slotsOf(week: WeekView, unitId: String): List<SlotInput> =
-        flattenSlots(week)
+    private fun slotsOf(week: WeekView, unitId: String): List<SlotInput> {
+        val fallbackSubjectId = unitById(unitId)?.subject_id
+        return flattenSlots(week)
             .filter { it.teaching_unit_id == unitId }
             .distinctBy { it.slot_id }
-            .map { slot ->
-                SlotInput(
-                    period_id = slot.period_id,
-                    day_of_week = slot.day_of_week,
-                    room = slot.room,
-                )
-            }
+            .map { it.toSlotInput(fallbackSubjectId = fallbackSubjectId) }
+    }
 
-    private fun subjectsFor(units: List<TeachingUnitOut>, classId: String?): List<String> =
-        units.filter { it.class_id == classId }
-            .map { it.subject_name }
-            .distinct()
-            .sorted()
+    private suspend fun loadClassSubjects(
+        classId: String?,
+        units: List<TeachingUnitOut>,
+        institutionId: String?,
+    ): List<SessionSubjectOption> {
+        val className = classId?.let { id -> _uiState.value.classes.firstOrNull { it.id == id }?.name }
+        val apiSubjects = if (classId != null && !institutionId.isNullOrBlank()) {
+            when (val result = adminRepository.timetableClassSubjects(classId, institutionId)) {
+                is NetworkResult.Success -> result.data
+                else -> emptyList()
+            }
+        } else {
+            emptyList()
+        }
+        return TimetableSubjectParser.sessionOptions(
+            apiSubjects = apiSubjects,
+            units = units,
+            classId = classId,
+            className = className,
+        )
+    }
 
     private fun mergeClasses(
         listed: List<ClassOut>,
         units: List<TeachingUnitOut>,
+        institutionId: String,
     ): List<AdminTimetableClass> {
-        val fromClasses = listed.map { AdminTimetableClass(id = it.id, name = it.name) }
+        val fromClasses = listed.map {
+            AdminTimetableClass(id = it.id, name = it.name, institutionId = it.institution_id)
+        }
         val extras = units
-            .map { AdminTimetableClass(id = it.class_id, name = it.class_name) }
+            .filter { sameInstitution(it.institution_id, institutionId) }
+            .map {
+                AdminTimetableClass(
+                    id = it.class_id,
+                    name = it.class_name,
+                    institutionId = it.institution_id.orEmpty().ifBlank { institutionId },
+                )
+            }
             .distinctBy { it.id }
             .filter { extra -> fromClasses.none { it.id == extra.id } }
         return fromClasses + extras
@@ -323,32 +514,32 @@ class AdminTimetableViewModel(
         units: List<TeachingUnitOut>,
         selectedClassId: String?,
     ): TeacherTeachingTimetable {
-        val days = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
-        val timeSlots = periods.map { TeacherUiMappers.periodTimeLabel(it.start_time, it.end_time) }
-        val unitIds = units.filter { it.class_id == selectedClassId }.map { it.id }.toSet()
-        val cells = mutableMapOf<Pair<Int, Int>, TeacherTimetableCell>()
-        val slots = week?.let { flattenSlots(it) }.orEmpty()
-        periods.forEachIndexed { timeIndex, period ->
-            dayOrder.forEachIndexed { dayIndex, day ->
-                val slot = slots.firstOrNull { candidate ->
-                    candidate.period_id == period.id &&
-                        candidate.day_of_week == day &&
-                        candidate.teaching_unit_id in unitIds
-                } ?: return@forEachIndexed
-                cells[timeIndex to dayIndex] = TeacherTimetableCell(
-                    subject = slot.subject_name,
-                    detail = slot.room.orEmpty().ifBlank {
-                        slot.teacher_name.orEmpty()
-                    },
-                )
-            }
-        }
-        return TeacherTeachingTimetable(
-            classes = classes.map { it.name }.ifEmpty { listOf("All classes") },
-            days = days,
-            timeSlots = timeSlots.ifEmpty { listOf("—") },
-            cells = cells,
+        val scopedPeriods = TeacherUiMappers.periodsForInstitution(
+            periods,
+            classes.firstOrNull { it.id == selectedClassId }?.institutionId,
         )
+        // Admin catalog includes all units — treat them as owned so slots stay editable.
+        val myUnitIds = units.map { it.id }.toSet()
+        return TeacherUiMappers.classSetTimetable(
+            week = week,
+            periods = scopedPeriods,
+            classLabels = classes.map { it.name },
+            myUnitIds = myUnitIds,
+        )
+    }
+
+    private fun displayPeriods(): List<PeriodOut> {
+        val state = _uiState.value
+        return TeacherUiMappers.periodsForInstitution(
+            state.rawPeriods,
+            state.selectedInstitutionId
+                ?: state.classes.firstOrNull { it.id == state.selectedClassId }?.institutionId,
+        )
+    }
+
+    private fun sameInstitution(value: String?, expected: String): Boolean {
+        val id = value?.takeIf { it.isNotBlank() } ?: return true
+        return id == expected
     }
 
     private data class Snapshot(
@@ -359,8 +550,12 @@ class AdminTimetableViewModel(
     )
 
     companion object {
-        fun provideFactory(adminRepository: AdminRepository): ViewModelProvider.Factory =
-            viewModelFactory { AdminTimetableViewModel(adminRepository) }
+        fun provideFactory(
+            adminRepository: AdminRepository,
+            initialInstitutionId: String? = null,
+        ): ViewModelProvider.Factory = viewModelFactory {
+            AdminTimetableViewModel(adminRepository, initialInstitutionId)
+        }
     }
 }
 
@@ -368,10 +563,11 @@ class AdminTimetableViewModel(
 fun AdminTimetableRoute(
     adminRepository: AdminRepository,
     onBack: () -> Unit,
+    initialInstitutionId: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: AdminTimetableViewModel = viewModel(
-        factory = AdminTimetableViewModel.provideFactory(adminRepository),
+        factory = AdminTimetableViewModel.provideFactory(adminRepository, initialInstitutionId),
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     LifecycleResumeEffect(Unit) {
@@ -380,15 +576,17 @@ fun AdminTimetableRoute(
     }
     val title = stringResource(R.string.teacher_set_timetable_title)
     when {
-        uiState.isLoading && uiState.timetable == null && uiState.errorMessage == null ->
+        uiState.isLoading && uiState.timetable == null && uiState.institutions.isEmpty() &&
+            uiState.errorMessage == null ->
             StudentPageSkeleton(kind = StudentSkeletonKind.Timetable, title = title, modifier = modifier)
-        uiState.errorMessage != null && uiState.timetable == null -> LoadErrorPanel(
-            screenTitle = title,
-            message = uiState.errorMessage.orEmpty(),
-            onRetry = viewModel::refresh,
-            isRetrying = uiState.isLoading,
-            modifier = modifier,
-        )
+        uiState.errorMessage != null && uiState.timetable == null && uiState.institutions.isEmpty() ->
+            LoadErrorPanel(
+                screenTitle = title,
+                message = uiState.errorMessage.orEmpty(),
+                onRetry = viewModel::refresh,
+                isRetrying = uiState.isLoading || uiState.isRefreshing,
+                modifier = modifier,
+            )
         else -> TeacherTimetableScreen(
             timetable = uiState.timetable ?: TeacherTeachingTimetable(
                 classes = emptyList(),
@@ -396,12 +594,24 @@ fun AdminTimetableRoute(
                 timeSlots = emptyList(),
                 cells = emptyMap(),
             ),
-            subjects = uiState.subjects,
+            institutions = uiState.institutions.map { it.name },
+            selectedInstitutionIndex = uiState.institutions
+                .indexOfFirst { it.id == uiState.selectedInstitutionId }
+                .coerceAtLeast(0),
+            onSelectInstitution = viewModel::selectInstitution,
+            subjects = uiState.sessionSubjects,
+            isLoadingSubjects = uiState.isLoadingSubjects,
             editable = true,
+            selectedClassIndex = uiState.classes
+                .indexOfFirst { it.id == uiState.selectedClassId }
+                .coerceAtLeast(0),
             onSelectClass = viewModel::selectClass,
+            onLoadSessionSubjects = viewModel::prepareSessionSubjects,
             onSaveSlot = viewModel::saveSlot,
             onClearSlot = viewModel::clearSlot,
             onBack = onBack,
+            isRefreshing = uiState.isRefreshing,
+            onRefresh = viewModel::refresh,
             modifier = modifier,
         )
     }

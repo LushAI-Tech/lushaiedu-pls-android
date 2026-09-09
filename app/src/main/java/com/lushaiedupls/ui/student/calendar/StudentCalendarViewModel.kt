@@ -58,10 +58,22 @@ class StudentCalendarViewModel(
         _uiState.update { it.copy(selectedDay = null, selectedDayEvents = emptyList()) }
     }
 
+    fun refresh() {
+        loadMonth(_uiState.value.visibleMonth)
+    }
+
     private fun loadMonth(month: YearMonth, selectedDay: Int? = _uiState.value.selectedDay) {
         viewModelScope.launch {
+            val hasContent = _uiState.value.allEvents.isNotEmpty() ||
+                _uiState.value.dayMarks.isNotEmpty()
             _uiState.update {
-                it.copy(isLoading = true, errorMessage = null, visibleMonth = month, selectedDay = selectedDay)
+                it.copy(
+                    isLoading = !hasContent,
+                    isRefreshing = hasContent,
+                    errorMessage = null,
+                    visibleMonth = month,
+                    selectedDay = selectedDay,
+                )
             }
             val from = month.atDay(1).toString()
             val to = month.atEndOfMonth().toString()
@@ -73,6 +85,7 @@ class StudentCalendarViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            isRefreshing = false,
                             allEvents = events,
                             dayMarks = marks,
                             selectedDayEvents = if (day != null) {
@@ -84,7 +97,11 @@ class StudentCalendarViewModel(
                     }
                 }
                 else -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = result.userMessage())
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        errorMessage = result.userMessage(),
+                    )
                 }
             }
         }

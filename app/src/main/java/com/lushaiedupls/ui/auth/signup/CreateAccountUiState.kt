@@ -16,5 +16,7 @@ data class CreateAccountUiState(
     val avatarUri: android.net.Uri? = null,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    val accountAlreadyExists: Boolean = false,
+    val googleLinkBlocked: Boolean = false,
     val successRoute: String? = null,
 )

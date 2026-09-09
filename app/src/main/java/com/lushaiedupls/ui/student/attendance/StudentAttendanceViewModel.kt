@@ -44,7 +44,9 @@ class StudentAttendanceViewModel(
     }
 
     fun selectDay(day: Int) {
-        _uiState.update { it.copy(selectedDay = day) }
+        _uiState.update { state ->
+            state.copy(selectedDay = if (state.selectedDay == day) null else day)
+        }
     }
 
     fun refresh() {
@@ -53,9 +55,11 @@ class StudentAttendanceViewModel(
 
     private fun load(month: YearMonth, selectedDay: Int? = _uiState.value.selectedDay) {
         viewModelScope.launch {
+            val hasContent = _uiState.value.dashboard != null
             _uiState.update {
                 it.copy(
-                    isLoading = true,
+                    isLoading = !hasContent,
+                    isRefreshing = hasContent,
                     errorMessage = null,
                     visibleMonth = month,
                     selectedDay = selectedDay,
@@ -70,14 +74,13 @@ class StudentAttendanceViewModel(
                 val calendar = calendarDeferred.await()
                 val timetable = timetableDeferred.await()
                 if (summary is NetworkResult.Success && calendar is NetworkResult.Success) {
-                    val resolvedDay = selectedDay ?: month.takeIf { it == YearMonth.now() }
-                        ?.let { java.time.LocalDate.now().dayOfMonth }
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            isRefreshing = false,
                             needsApproval = false,
                             errorMessage = null,
-                            selectedDay = resolvedDay,
+                            selectedDay = selectedDay,
                             dashboard = StudentUiMappers.attendanceDashboard(
                                 summary.data,
                                 calendar.data,
@@ -94,6 +97,7 @@ class StudentAttendanceViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            isRefreshing = false,
                             needsApproval = failed.any { result -> result.needsAdminApproval() },
                             errorMessage = err,
                             dashboard = null,

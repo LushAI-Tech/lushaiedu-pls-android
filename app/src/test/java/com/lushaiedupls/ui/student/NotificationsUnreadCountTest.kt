@@ -4,6 +4,7 @@ import com.lushaiedupls.data.remote.api.AiApi
 import com.lushaiedupls.data.remote.api.AttendanceApi
 import com.lushaiedupls.data.remote.api.CalendarApi
 import com.lushaiedupls.data.remote.api.ClassesApi
+import com.lushaiedupls.data.remote.api.FeesApi
 import com.lushaiedupls.data.remote.api.MeApi
 import com.lushaiedupls.data.remote.api.NotificationsApi
 import com.lushaiedupls.data.remote.api.OverviewApi
@@ -44,6 +45,7 @@ class NotificationsUnreadCountTest {
         parentApi = createDummyProxy<ParentApi>(),
         teachingUnitsApi = createDummyProxy<TeachingUnitsApi>(),
         deviceIdProvider = createDummyDeviceIdProvider(),
+        feesApi = createDummyProxy<FeesApi>(),
     )
 
     @Test

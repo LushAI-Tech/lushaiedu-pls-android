@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 data class NotificationsUiState(
     val notifications: List<AppNotification> = emptyList(),
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
 )
 
@@ -34,20 +35,32 @@ class NotificationsViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val hasContent = _uiState.value.notifications.isNotEmpty()
+            _uiState.update {
+                it.copy(
+                    isLoading = !hasContent,
+                    isRefreshing = hasContent,
+                    errorMessage = null,
+                )
+            }
             when (val result = studentRepository.notifications()) {
                 is NetworkResult.Success -> {
                     val list = StudentUiMappers.notifications(result.data)
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            isRefreshing = false,
                             notifications = list,
                         )
                     }
                     studentRepository.setUnreadNotificationCount(list.count { it.unread })
                 }
                 else -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = result.userMessage())
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        errorMessage = result.userMessage(),
+                    )
                 }
             }
         }

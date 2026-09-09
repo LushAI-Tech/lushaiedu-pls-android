@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "502520884584",
+    "project_id": "lushaiedupls-694e1",
+    "storage_bucket": "lushaiedupls-694e1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:502520884584:android:67a756825457922bc2fadd",
+        "android_client_info": {
+          "package_name": "com.lushaiedupls"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "502520884584-lkc42f31u07oa3iits26vkk89vsrplap.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.lushaiedupls",
+            "certificate_hash": "e0a21710f60b886791d3c5cc70b5b833644b0598"
+          }
+        },
+        {
+          "client_id": "502520884584-8fjhsif2pq1qakn76k4eb1j628p6n4mp.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAu2eQL7Bzy4nykoxOaEwAWnqHvW92t8N0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "502520884584-8fjhsif2pq1qakn76k4eb1j628p6n4mp.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

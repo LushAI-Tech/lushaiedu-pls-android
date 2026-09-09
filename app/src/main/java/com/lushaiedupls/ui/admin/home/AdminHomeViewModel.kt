@@ -23,6 +23,9 @@ data class AdminHomeUiState(
     val displayName: String = "",
     val monthLabel: String = "",
     val notificationCount: Int = 0,
+    val institutions: List<String> = emptyList(),
+    val institutionIds: List<String> = emptyList(),
+    val selectedInstitutionId: String? = null,
     val totalStudents: Int = 0,
     val totalTeachers: Int = 0,
     val totalParents: Int = 0,
@@ -30,6 +33,7 @@ data class AdminHomeUiState(
     val attendance: AttendanceTotals = AttendanceTotals(),
     val presentPct: Int = 0,
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
 )
 
@@ -55,22 +59,70 @@ class AdminHomeViewModel(
         refresh()
     }
 
+    private fun prefetchClasses(institutionId: String?) {
+        viewModelScope.launch {
+            adminRepository.prefetchClassesPage(institutionId)
+        }
+    }
+
+    fun onInstitutionSelected(index: Int) {
+        val institutionId = _uiState.value.institutionIds.getOrNull(index) ?: return
+        if (institutionId == _uiState.value.selectedInstitutionId) return
+        userSessionStore.setInstitutionId(institutionId)
+        _uiState.update { it.copy(selectedInstitutionId = institutionId) }
+        refresh()
+    }
+
     fun refresh() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val showSkeleton = _uiState.value.institutions.isEmpty() &&
+                _uiState.value.totalStudents == 0 &&
+                _uiState.value.totalTeachers == 0
+            if (showSkeleton) {
+                _uiState.update {
+                    it.copy(isLoading = true, isRefreshing = false, errorMessage = null)
+                }
+            } else {
+                _uiState.update {
+                    it.copy(isRefreshing = true, isLoading = false, errorMessage = null)
+                }
+            }
             val month = YearMonth.now().toString()
             coroutineScope {
-                val overviewDeferred = async { adminRepository.overview(month) }
+                val institutionsDeferred = async {
+                    adminRepository.listInstitutions(includeInactive = false)
+                }
                 val unreadDeferred = async { adminRepository.unreadCount() }
-                when (val result = overviewDeferred.await()) {
+                val loadedInstitutions = when (val result = institutionsDeferred.await()) {
+                    is NetworkResult.Success -> result.data
+                        .filter { it.is_active }
+                        .sortedWith(compareBy({ it.sort_order }, { it.name }))
+                    else -> emptyList()
+                }
+                val institutionNames = loadedInstitutions.map { it.name }
+                    .ifEmpty { _uiState.value.institutions }
+                val institutionIds = loadedInstitutions.map { it.id }
+                    .ifEmpty { _uiState.value.institutionIds }
+                val selectedInstitutionId = _uiState.value.selectedInstitutionId
+                    ?.takeIf { id -> institutionIds.contains(id) }
+                    ?: userSessionStore.getInstitutionId()?.takeIf { id -> institutionIds.contains(id) }
+                    ?: institutionIds.firstOrNull()
+                if (selectedInstitutionId != null) {
+                    userSessionStore.setInstitutionId(selectedInstitutionId)
+                }
+                when (val result = adminRepository.overview(month, selectedInstitutionId)) {
                     is NetworkResult.Success -> {
                         val overview = result.data
                         unreadDeferred.await()
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
+                                isRefreshing = false,
                                 displayName = userSessionStore.getDisplayName(),
                                 monthLabel = overview.month,
+                                institutions = institutionNames,
+                                institutionIds = institutionIds,
+                                selectedInstitutionId = selectedInstitutionId,
                                 totalStudents = overview.total_students,
                                 totalTeachers = overview.total_teachers,
                                 totalParents = overview.total_parents,
@@ -80,9 +132,17 @@ class AdminHomeViewModel(
                                 errorMessage = null,
                             )
                         }
+                        prefetchClasses(selectedInstitutionId)
                     }
                     else -> _uiState.update {
-                        it.copy(isLoading = false, errorMessage = result.userMessage())
+                        it.copy(
+                            isLoading = false,
+                            isRefreshing = false,
+                            institutions = institutionNames,
+                            institutionIds = institutionIds,
+                            selectedInstitutionId = selectedInstitutionId,
+                            errorMessage = result.userMessage(),
+                        )
                     }
                 }
             }

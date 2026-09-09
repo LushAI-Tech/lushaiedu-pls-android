@@ -36,6 +36,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -51,11 +52,15 @@ import com.lushaiedupls.data.mock.TeacherPerformance
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.data.session.UserSessionStore
+import com.lushaiedupls.ui.common.AnimatedFilterChipRow
 import com.lushaiedupls.ui.common.AppTopBar
+import com.lushaiedupls.ui.teacher.components.InstitutionSelectorDropdown
 import com.lushaiedupls.ui.common.LoadErrorPanel
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.SectionTitle
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
+import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
@@ -63,7 +68,7 @@ import com.lushaiedupls.ui.theme.LushAIEdu_PLSTheme
 import com.lushaiedupls.ui.theme.TextSecondary
 
 private val CardShape = RoundedCornerShape(16.dp)
-private val ChipShape = RoundedCornerShape(50)
+private val FilterPanelShape = RoundedCornerShape(16.dp)
 private val OutcomeCardBg = Color(0xFFF3F4F6)
 private val ExtraCardBg = Color(0xFFE8E8EA)
 
@@ -85,20 +90,24 @@ fun TeacherHomeRoute(
         onPauseOrDispose { }
     }
     when {
-        uiState.isLoading && uiState.classes.isEmpty() && uiState.errorMessage == null ->
+        uiState.isLoading && uiState.classes.isEmpty() && uiState.institutions.isEmpty() &&
+            uiState.errorMessage == null ->
             StudentPageSkeleton(kind = StudentSkeletonKind.Home, modifier = modifier)
-        uiState.errorMessage != null && uiState.classes.isEmpty() -> LoadErrorPanel(
+        uiState.errorMessage != null && uiState.classes.isEmpty() && uiState.institutions.isEmpty() ->
+            LoadErrorPanel(
             screenTitle = stringResource(R.string.section_overview),
             message = uiState.errorMessage.orEmpty(),
-            onRetry = { viewModel.refresh() },
+            onRetry = { viewModel.refresh(forceNetwork = true) },
             isRetrying = uiState.isLoading,
             modifier = modifier,
         )
         else -> TeacherHomeScreen(
             uiState = uiState,
+            onInstitutionSelected = viewModel::onInstitutionSelected,
             onClassSelected = viewModel::onClassSelected,
             onNotificationsClick = onNotificationsClick,
             onProfileClick = onProfileClick,
+            onRefresh = { viewModel.refresh(forceNetwork = true) },
             modifier = modifier,
         )
     }
@@ -108,32 +117,46 @@ fun TeacherHomeRoute(
 fun TeacherHomeScreen(
     uiState: TeacherHomeUiState,
     onClassSelected: (String) -> Unit,
+    onInstitutionSelected: (Int) -> Unit = {},
     onNotificationsClick: () -> Unit,
     onProfileClick: (() -> Unit)? = null,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    Column(
+    LushPullToRefreshBox(
+        isRefreshing = uiState.isRefreshing,
+        onRefresh = onRefresh,
         modifier = modifier
             .fillMaxSize()
-            .background(BgWhite)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-            .padding(top = 16.dp, bottom = 24.dp),
+            .background(BgWhite),
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(top = 16.dp, bottom = 24.dp),
+        ) {
         AppTopBar(
             displayName = uiState.displayName,
             notificationCount = uiState.notificationCount,
             onNotificationClick = onNotificationsClick,
             onProfileClick = onProfileClick,
         )
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        ClassChipsRow(
+        TeacherHomeFilterSection(
+            institutions = uiState.institutions,
+            selectedInstitutionIndex = uiState.institutionIds
+                .indexOf(uiState.selectedInstitutionId)
+                .coerceAtLeast(0),
+            onInstitutionSelected = onInstitutionSelected,
             classes = uiState.classes,
             selectedClass = uiState.selectedClass,
             onClassSelected = onClassSelected,
         )
-        Spacer(modifier = Modifier.height(22.dp))
+
+        Spacer(modifier = Modifier.height(20.dp))
 
         SectionTitle(text = stringResource(R.string.teacher_section_group_outcomes))
         Spacer(modifier = Modifier.height(12.dp))
@@ -178,44 +201,54 @@ fun TeacherHomeScreen(
         SectionTitle(text = stringResource(R.string.teacher_section_top_performances))
         Spacer(modifier = Modifier.height(12.dp))
         TopPerformancesCard(performances = uiState.topPerformances)
+        }
     }
 }
 
 @Composable
-private fun ClassChipsRow(
+private fun TeacherHomeFilterSection(
+    institutions: List<String>,
+    selectedInstitutionIndex: Int,
+    onInstitutionSelected: (Int) -> Unit,
     classes: List<String>,
     selectedClass: String,
     onClassSelected: (String) -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(FilterPanelShape)
+            .background(BgLight)
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        classes.forEach { label ->
-            val selected = label == selectedClass
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(44.dp)
-                    .clip(ChipShape)
-                    .border(
-                        width = if (selected) 2.dp else 1.dp,
-                        color = if (selected) BrandBlack else BorderGray,
-                        shape = ChipShape,
-                    )
-                    .clickable { onClassSelected(label) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = label,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                    fontSize = 15.sp,
-                    color = if (selected) BrandBlack else TextSecondary,
-                    fontFamily = FontFamily.SansSerif,
-                )
-            }
+        InstitutionSelectorDropdown(
+            label = stringResource(R.string.timetable_institution),
+            institutions = institutions,
+            selectedIndex = selectedInstitutionIndex,
+            onSelect = onInstitutionSelected,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            HomeFilterLabel(text = stringResource(R.string.select_class))
+            AnimatedFilterChipRow(
+                options = classes,
+                selectedIndex = classes.indexOf(selectedClass).coerceAtLeast(0),
+                onSelect = { onClassSelected(classes[it]) },
+            )
         }
     }
+}
+
+@Composable
+private fun HomeFilterLabel(text: String) {
+    Text(
+        text = text,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = TextSecondary,
+        fontFamily = FontFamily.SansSerif,
+        letterSpacing = 0.3.sp,
+    )
 }
 
 @Composable
@@ -345,9 +378,10 @@ private fun AttendanceStatCard(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
             .background(bg)
-            .padding(horizontal = 10.dp, vertical = 12.dp)
-            .height(72.dp),
-        verticalArrangement = Arrangement.SpaceBetween,
+            .height(72.dp)
+            .padding(horizontal = 8.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
             text = label.uppercase(),
@@ -358,13 +392,18 @@ private fun AttendanceStatCard(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             lineHeight = 11.sp,
+            textAlign = TextAlign.Center,
         )
+        Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = value,
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
             color = valueColor,
             fontFamily = FontFamily.SansSerif,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
         )
     }
 }
@@ -432,6 +471,9 @@ private fun TeacherHomePreview() {
             uiState = TeacherHomeUiState(
                 displayName = "C Vanlalawmpuia",
                 notificationCount = 2,
+                institutions = listOf("Main Institution", "North Campus"),
+                institutionIds = listOf("1", "2"),
+                selectedInstitutionId = "1",
                 selectedClass = dashboard.selectedClass,
                 classes = dashboard.classes,
                 groupOutcome = dashboard.groupOutcome,
@@ -440,6 +482,7 @@ private fun TeacherHomePreview() {
                 topPerformances = dashboard.topPerformances,
             ),
             onClassSelected = {},
+            onInstitutionSelected = {},
             onNotificationsClick = {},
         )
     }

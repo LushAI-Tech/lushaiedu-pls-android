@@ -45,6 +45,8 @@ data class UnitAttendanceSummary(
     val regular: AttendanceTotals,
     val extra: AttendanceTotals,
     val students: List<StudentRate> = emptyList(),
+    val institution_id: String? = null,
+    val institution_name: String? = null,
 )
 
 @Serializable
@@ -67,6 +69,8 @@ data class PeriodCard(
     val present: Int = 0,
     val absent: Int = 0,
     val leave: Int = 0,
+    val institution_id: String? = null,
+    val institution_name: String? = null,
 )
 
 @Serializable
@@ -81,6 +85,7 @@ data class RosterStudent(
     val student: UserSummary,
     val roll_no: Int? = null,
     val status: AttendanceStatus? = null,
+    val note: String? = null,
 )
 
 @Serializable
@@ -100,6 +105,7 @@ data class RosterResponse(
 data class EntryInput(
     val student_id: String,
     val status: AttendanceStatus,
+    val note: String? = null,
 )
 
 @Serializable
@@ -107,6 +113,7 @@ data class EntryOut(
     val student: UserSummary,
     val roll_no: Int? = null,
     val status: AttendanceStatus,
+    val note: String? = null,
 )
 
 @Serializable
@@ -124,6 +131,8 @@ data class RollOut(
     val time_key: String,
     val marked_by: String? = null,
     val entries: List<EntryOut> = emptyList(),
+    val institution_id: String? = null,
+    val institution_name: String? = null,
 )
 
 @Serializable
@@ -190,11 +199,33 @@ data class NotificationUpdate(
 
 @Serializable
 data class SlotInput(
+    val subject_id: String? = null,
     val period_id: String,
     val day_of_week: DayOfWeek,
     val room: String? = null,
     val effective_from: String? = null,
     val effective_until: String? = null,
+) {
+    companion object {
+        fun of(
+            subjectId: String?,
+            periodId: String,
+            dayOfWeek: DayOfWeek,
+            room: String?,
+        ): SlotInput = SlotInput(
+            subject_id = subjectId?.trim()?.ifBlank { null },
+            period_id = periodId,
+            day_of_week = dayOfWeek,
+            room = room?.trim()?.take(120)?.ifBlank { null },
+        )
+    }
+}
+
+fun WeekSlot.toSlotInput(fallbackSubjectId: String? = null): SlotInput = SlotInput.of(
+    subjectId = subject_id ?: fallbackSubjectId,
+    periodId = period_id,
+    dayOfWeek = day_of_week,
+    room = room,
 )
 
 @Serializable
@@ -206,6 +237,8 @@ data class SetSlotsRequest(
 data class SlotOut(
     val id: String,
     val teaching_unit_id: String,
+    val subject_id: String? = null,
+    val subject_name: String? = null,
     val period_id: String,
     val period_name: String,
     val start_time: String,

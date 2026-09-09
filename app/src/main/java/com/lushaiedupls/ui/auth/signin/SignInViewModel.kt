@@ -62,7 +62,10 @@ class SignInViewModel(
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             when (val result = authRepository.google(idToken)) {
                 is NetworkResult.Success -> {
-                    val route = authRepository.resolvePostAuthRoute(result.data)
+                    val route = authRepository.resolvePostAuthRoute(
+                        result.data,
+                        fromGoogle = true,
+                    )
                     _uiState.update { it.copy(isLoading = false, successRoute = route) }
                 }
                 else -> _uiState.update {

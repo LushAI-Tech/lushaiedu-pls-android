@@ -1,6 +1,5 @@
 package com.lushaiedupls.ui.parent.menu
 
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -12,7 +11,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.BrightnessMedium
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.QrCodeScanner
@@ -21,7 +19,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -49,14 +46,15 @@ fun ParentMenuRoute(
     onLogOut: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    val themeMessage = stringResource(R.string.theme_stub_message)
+    // Theme selection — re-enable later.
+    // val context = LocalContext.current
+    // val themeMessage = stringResource(R.string.theme_stub_message)
     ParentMenuScreen(
         onAccount = onAccount,
         onScanQr = onScanQr,
-        onTheme = {
-            Toast.makeText(context, themeMessage, Toast.LENGTH_SHORT).show()
-        },
+        // onTheme = {
+        //     Toast.makeText(context, themeMessage, Toast.LENGTH_SHORT).show()
+        // },
         onPrivacy = onPrivacy,
         onTerms = onTerms,
         onLogOut = onLogOut,
@@ -99,7 +97,8 @@ fun ParentMenuOverlay(
 fun ParentMenuScreen(
     onAccount: () -> Unit,
     onScanQr: () -> Unit,
-    onTheme: () -> Unit,
+    // Theme selection — re-enable later.
+    // onTheme: () -> Unit,
     onPrivacy: () -> Unit,
     onTerms: () -> Unit,
     onLogOut: () -> Unit,
@@ -136,12 +135,13 @@ fun ParentMenuScreen(
             icon = Icons.Outlined.QrCodeScanner,
             onClick = onScanQr,
         )
-        Spacer(modifier = Modifier.height(12.dp))
-        MenuListItem(
-            title = stringResource(R.string.menu_theme),
-            icon = Icons.Outlined.BrightnessMedium,
-            onClick = onTheme,
-        )
+        // Theme selection — re-enable later.
+        // Spacer(modifier = Modifier.height(12.dp))
+        // MenuListItem(
+        //     title = stringResource(R.string.menu_theme),
+        //     icon = Icons.Outlined.BrightnessMedium,
+        //     onClick = onTheme,
+        // )
         Spacer(modifier = Modifier.height(12.dp))
         MenuListItem(
             title = stringResource(R.string.menu_privacy),

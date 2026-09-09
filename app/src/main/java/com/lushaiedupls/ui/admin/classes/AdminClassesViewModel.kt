@@ -7,6 +7,7 @@ import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.dto.ClassCreate
 import com.lushaiedupls.data.remote.dto.ClassOut
 import com.lushaiedupls.data.remote.dto.ClassUpdate
+import com.lushaiedupls.data.remote.dto.InstitutionOut
 import com.lushaiedupls.data.remote.dto.StemNode
 import com.lushaiedupls.data.remote.dto.SubjectCreate
 import com.lushaiedupls.data.remote.dto.SubjectOut
@@ -25,9 +26,13 @@ import kotlinx.coroutines.launch
 
 data class AdminClassesUiState(
     val classes: List<ClassOut> = emptyList(),
+    val institutions: List<InstitutionOut> = emptyList(),
+    val selectedInstitutionId: String? = null,
+    val formInstitutionId: String? = null,
     val subjects: List<SubjectOut> = emptyList(),
     val selectedClass: ClassOut? = null,
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val isSaving: Boolean = false,
     val isLoadingSubjects: Boolean = false,
     val errorMessage: String? = null,
@@ -55,32 +60,107 @@ class AdminClassesViewModel(
 
     private val _uiState = MutableStateFlow(AdminClassesUiState(isLoading = true))
     val uiState: StateFlow<AdminClassesUiState> = _uiState.asStateFlow()
+    private var pendingCreateSubjectClassId: String? = null
 
     init {
-        refresh()
+        refresh(forceNetwork = _uiState.value.classes.isNotEmpty())
     }
 
-    fun refresh() {
+    fun refresh(forceNetwork: Boolean = true) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            when (val result = adminRepository.listClasses(includeInactive = true)) {
+            val hasContent = _uiState.value.classes.isNotEmpty() ||
+                _uiState.value.institutions.isNotEmpty()
+            if (!hasContent) {
+                _uiState.update {
+                    it.copy(isLoading = true, isRefreshing = false, errorMessage = null)
+                }
+            } else {
+                _uiState.update {
+                    it.copy(isRefreshing = true, isLoading = false, errorMessage = null)
+                }
+            }
+            val institutions = when (val result = adminRepository.listInstitutions(includeInactive = true)) {
+                is NetworkResult.Success -> result.data.sortedWith(compareBy({ it.sort_order }, { it.name }))
+                else -> _uiState.value.institutions
+            }
+            val selectedInstitutionId = _uiState.value.selectedInstitutionId
+                ?.takeIf { id -> institutions.any { it.id == id } }
+                ?: institutions.firstOrNull()?.id
+            _uiState.update {
+                it.copy(
+                    institutions = institutions,
+                    selectedInstitutionId = selectedInstitutionId,
+                    formInstitutionId = it.formInstitutionId
+                        ?.takeIf { id -> institutions.any { inst -> inst.id == id } }
+                        ?: selectedInstitutionId,
+                )
+            }
+            if (selectedInstitutionId.isNullOrBlank()) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        classes = emptyList(),
+                        selectedClass = null,
+                        subjects = emptyList(),
+                        errorMessage = if (institutions.isEmpty()) {
+                            "No institutions are available yet."
+                        } else {
+                            "Select an institution first."
+                        },
+                    )
+                }
+                return@launch
+            }
+            when (val result = adminRepository.listClasses(
+                includeInactive = true,
+                institutionId = selectedInstitutionId,
+                forceRefresh = forceNetwork,
+            )) {
                 is NetworkResult.Success -> {
                     val selectedId = _uiState.value.selectedClass?.id
                     val classes = result.data.sortedWith(compareBy({ it.sort_order }, { it.name }))
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            isRefreshing = false,
                             classes = classes,
                             selectedClass = classes.firstOrNull { item -> item.id == selectedId },
                         )
                     }
-                    selectedId?.let { loadSubjects(it) }
+                    if (pendingCreateSubjectClassId != null) {
+                        applyPendingCreateSubject()
+                    } else {
+                        selectedId?.let { loadSubjects(it) }
+                    }
                 }
                 else -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = result.userMessage())
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        errorMessage = result.userMessage(),
+                    )
                 }
             }
         }
+    }
+
+    fun selectInstitution(institutionId: String) {
+        if (institutionId == _uiState.value.selectedInstitutionId) return
+        _uiState.update {
+            it.copy(
+                selectedInstitutionId = institutionId,
+                formInstitutionId = institutionId,
+                selectedClass = null,
+                subjects = emptyList(),
+                composingClass = false,
+                composingSubject = false,
+                editingClassId = null,
+                editingSubjectId = null,
+                errorMessage = null,
+            )
+        }
+        refresh()
     }
 
     fun selectClass(item: ClassOut) {
@@ -117,8 +197,63 @@ class AdminClassesViewModel(
                 name = "",
                 sortOrder = nextSortOrder(_uiState.value.classes.maxOfOrNull { it.sort_order }),
                 isActive = true,
+                formInstitutionId = _uiState.value.selectedInstitutionId
+                    ?: _uiState.value.institutions.firstOrNull()?.id,
                 errorMessage = null,
             )
+        }
+    }
+
+    fun openCreateClassForInstitution(institutionId: String?) {
+        val targetId = institutionId?.takeIf { it.isNotBlank() }
+        if (targetId != null && targetId != _uiState.value.selectedInstitutionId) {
+            _uiState.update {
+                it.copy(
+                    selectedInstitutionId = targetId,
+                    formInstitutionId = targetId,
+                    selectedClass = null,
+                    subjects = emptyList(),
+                )
+            }
+            refresh()
+        }
+        startCreateClass()
+    }
+
+    fun openCreateSubjectForClass(classId: String?, institutionId: String?) {
+        pendingCreateSubjectClassId = classId?.takeIf { it.isNotBlank() }
+        val targetInst = institutionId?.takeIf { it.isNotBlank() }
+        if (targetInst != null && targetInst != _uiState.value.selectedInstitutionId) {
+            _uiState.update {
+                it.copy(
+                    selectedInstitutionId = targetInst,
+                    formInstitutionId = targetInst,
+                    selectedClass = null,
+                    subjects = emptyList(),
+                )
+            }
+            refresh()
+            return
+        }
+        if (_uiState.value.classes.isNotEmpty()) {
+            applyPendingCreateSubject()
+        } else if (!_uiState.value.isLoading) {
+            refresh()
+        }
+    }
+
+    private fun applyPendingCreateSubject() {
+        val requestedId = pendingCreateSubjectClassId
+        val item = _uiState.value.classes.firstOrNull { it.id == requestedId }
+            ?: _uiState.value.classes.firstOrNull()
+            ?: return
+        pendingCreateSubjectClassId = null
+        if (_uiState.value.selectedClass?.id != item.id) {
+            _uiState.update { it.copy(selectedClass = item) }
+            loadSubjects(item.id)
+        }
+        if (!_uiState.value.composingSubject) {
+            startCreateSubject()
         }
     }
 
@@ -131,6 +266,7 @@ class AdminClassesViewModel(
                 name = item.name,
                 sortOrder = item.sort_order.toString(),
                 isActive = item.is_active,
+                formInstitutionId = item.institution_id,
                 errorMessage = null,
             )
         }
@@ -195,6 +331,9 @@ class AdminClassesViewModel(
 
     fun onNameChange(value: String) = _uiState.update { it.copy(name = value) }
 
+    fun onFormInstitution(institutionId: String) =
+        _uiState.update { it.copy(formInstitutionId = institutionId, errorMessage = null) }
+
     fun onCodeChange(value: String) = _uiState.update { it.copy(code = value.take(20)) }
 
     fun onSortOrderChange(value: String) =
@@ -206,16 +345,33 @@ class AdminClassesViewModel(
         val state = _uiState.value
         val name = state.name.trim()
         if (name.isBlank()) return
+        val institutionId = if (state.editingClassId == null) {
+            state.formInstitutionId
+        } else {
+            state.formInstitutionId
+                ?: state.selectedClass?.institution_id
+                ?: state.selectedInstitutionId
+        }
+        if (institutionId.isNullOrBlank()) {
+            _uiState.update { it.copy(errorMessage = "Select an institution first.") }
+            return
+        }
         val sortOrder = state.sortOrder.toIntOrNull() ?: 0
         viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true, errorMessage = null) }
             val result = if (state.editingClassId == null) {
                 adminRepository.createClass(
-                    ClassCreate(name = name, sort_order = sortOrder, is_active = true),
+                    ClassCreate(
+                        institution_id = institutionId,
+                        name = name,
+                        sort_order = sortOrder,
+                        is_active = true,
+                    ),
                 )
             } else {
                 adminRepository.updateClass(
                     state.editingClassId,
+                    institutionId,
                     ClassUpdate(name = name, sort_order = sortOrder, is_active = state.isActive),
                 )
             }
@@ -257,12 +413,19 @@ class AdminClassesViewModel(
         val classId = state.selectedClass?.id ?: return
         val name = state.name.trim()
         if (name.isBlank()) return
+        val institutionId = state.selectedClass?.institution_id
+            ?: state.selectedInstitutionId
+        if (institutionId.isNullOrBlank()) {
+            _uiState.update { it.copy(errorMessage = "Select an institution first.") }
+            return
+        }
         val sortOrder = state.sortOrder.toIntOrNull() ?: 0
         viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true, errorMessage = null) }
             val result = if (state.editingSubjectId == null) {
                 adminRepository.createSubject(
                     SubjectCreate(
+                        institution_id = institutionId,
                         class_id = classId,
                         name = name,
                         code = state.code.trim().ifBlank { null },
@@ -273,6 +436,7 @@ class AdminClassesViewModel(
             } else {
                 adminRepository.updateSubject(
                     state.editingSubjectId,
+                    institutionId,
                     SubjectUpdate(
                         name = name,
                         code = state.code.trim().ifBlank { null },
@@ -325,7 +489,12 @@ class AdminClassesViewModel(
                 )
             }
             when (val result = adminRepository.stemGrades(id)) {
-                is NetworkResult.Success -> _uiState.update { it.copy(stemGrades = result.data) }
+                is NetworkResult.Success -> {
+                    val grades = result.data
+                    _uiState.update { it.copy(stemGrades = grades) }
+                    // Pre-select the first grade (which then pre-selects the first AI subject).
+                    grades.firstOrNull()?.id?.let { selectGrade(it) }
+                }
                 else -> _uiState.update { it.copy(errorMessage = result.userMessage()) }
             }
         }
@@ -337,7 +506,18 @@ class AdminClassesViewModel(
                 it.copy(selectedGradeId = id, stemSubjects = emptyList(), errorMessage = null)
             }
             when (val result = adminRepository.stemSubjects(id)) {
-                is NetworkResult.Success -> _uiState.update { it.copy(stemSubjects = result.data) }
+                is NetworkResult.Success -> {
+                    val subjects = result.data
+                    _uiState.update { state ->
+                        val retained = state.formStemSubjectId
+                            ?.takeIf { sid -> subjects.any { it.id == sid } }
+                        state.copy(
+                            stemSubjects = subjects,
+                            // Pre-select the first AI subject when none is selected for this grade.
+                            formStemSubjectId = retained ?: subjects.firstOrNull()?.id,
+                        )
+                    }
+                }
                 else -> _uiState.update { it.copy(errorMessage = result.userMessage()) }
             }
         }
@@ -399,8 +579,34 @@ class AdminClassesViewModel(
 
     private fun loadSubjects(classId: String) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoadingSubjects = true) }
-            when (val result = adminRepository.listSubjects(classId, includeInactive = true)) {
+            val institutionId = _uiState.value.selectedClass?.institution_id
+                ?: _uiState.value.selectedInstitutionId
+            if (institutionId.isNullOrBlank()) {
+                _uiState.update {
+                    it.copy(
+                        isLoadingSubjects = false,
+                        subjects = emptyList(),
+                        errorMessage = "Select an institution first.",
+                    )
+                }
+                return@launch
+            }
+            val cached = adminRepository.cachedSubjects(
+                classId = classId,
+                includeInactive = true,
+                institutionId = institutionId,
+            )?.sortedWith(compareBy({ it.sort_order }, { it.name }))
+            if (!cached.isNullOrEmpty()) {
+                _uiState.update { it.copy(subjects = cached, isLoadingSubjects = false) }
+            } else {
+                _uiState.update { it.copy(isLoadingSubjects = true) }
+            }
+            when (val result = adminRepository.listSubjects(
+                classId = classId,
+                institutionId = institutionId,
+                includeInactive = true,
+                forceRefresh = !cached.isNullOrEmpty(),
+            )) {
                 is NetworkResult.Success -> {
                     val subjects = result.data.sortedWith(compareBy({ it.sort_order }, { it.name }))
                     _uiState.update {
@@ -417,11 +623,23 @@ class AdminClassesViewModel(
     }
 
     private fun ensureStemBoards() {
-        if (_uiState.value.stemBoards.isNotEmpty()) return
         viewModelScope.launch {
-            when (val result = adminRepository.stemBoards()) {
-                is NetworkResult.Success -> _uiState.update { it.copy(stemBoards = result.data) }
-                else -> _uiState.update { it.copy(errorMessage = result.userMessage()) }
+            if (_uiState.value.stemBoards.isEmpty()) {
+                when (val result = adminRepository.stemBoards()) {
+                    is NetworkResult.Success -> _uiState.update { it.copy(stemBoards = result.data) }
+                    else -> {
+                        _uiState.update { it.copy(errorMessage = result.userMessage()) }
+                        return@launch
+                    }
+                }
+            }
+            val state = _uiState.value
+            // Add/Edit subject: pre-select first board → grade → AI subject cascade.
+            if (state.composingSubject &&
+                state.selectedBoardId == null &&
+                state.stemBoards.isNotEmpty()
+            ) {
+                selectBoard(state.stemBoards.first().id)
             }
         }
     }
@@ -466,6 +684,10 @@ class AdminClassesViewModel(
 
     private fun nextSortOrder(currentMax: Int?): String =
         ((currentMax ?: -1) + 1).coerceAtLeast(0).toString()
+
+    fun clearError() {
+        _uiState.update { it.copy(errorMessage = null) }
+    }
 
     companion object {
         fun provideFactory(adminRepository: AdminRepository): ViewModelProvider.Factory =

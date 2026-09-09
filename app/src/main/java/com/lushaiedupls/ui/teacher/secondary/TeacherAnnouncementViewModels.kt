@@ -3,7 +3,9 @@ package com.lushaiedupls.ui.teacher.secondary
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.lushaiedupls.data.mapper.StudentUiMappers
 import com.lushaiedupls.data.mapper.TeacherUiMappers
+import com.lushaiedupls.data.mock.AppNotification
 import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.dto.NotificationAudience
 import com.lushaiedupls.data.remote.userMessage
@@ -28,17 +30,106 @@ class TeacherAnnouncementsViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val hasContent = _uiState.value.announcements.isNotEmpty()
+            _uiState.update {
+                if (hasContent) {
+                    it.copy(isRefreshing = true, isLoading = false, errorMessage = null)
+                } else {
+                    it.copy(isLoading = true, isRefreshing = false, errorMessage = null)
+                }
+            }
             when (val result = teacherRepository.notifications()) {
                 is NetworkResult.Success -> _uiState.update {
                     it.copy(
                         isLoading = false,
-                        announcements = TeacherUiMappers.announcements(result.data),
+                        isRefreshing = false,
+                        announcements = StudentUiMappers.notifications(result.data),
                     )
                 }
                 else -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = result.userMessage())
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        errorMessage = result.userMessage(),
+                    )
                 }
+            }
+        }
+    }
+
+    fun startEdit(item: AppNotification) {
+        _uiState.update {
+            it.copy(
+                composing = true,
+                editingId = item.id,
+                title = item.title,
+                body = item.body,
+                errorMessage = null,
+            )
+        }
+    }
+
+    fun cancelCompose() {
+        _uiState.update {
+            it.copy(
+                composing = false,
+                editingId = null,
+                title = "",
+                body = "",
+                errorMessage = null,
+            )
+        }
+    }
+
+    fun onTitle(value: String) {
+        if (value.length <= 180) {
+            _uiState.update { it.copy(title = value, errorMessage = null) }
+        }
+    }
+
+    fun onBody(value: String) {
+        if (value.length <= 2000) {
+            _uiState.update { it.copy(body = value, errorMessage = null) }
+        }
+    }
+
+    fun save() {
+        val state = _uiState.value
+        val id = state.editingId ?: return
+        if (state.title.isBlank() || state.body.isBlank()) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSaving = true, errorMessage = null) }
+            when (
+                val result = teacherRepository.updateNotification(
+                    notificationId = id,
+                    title = state.title.trim(),
+                    body = state.body.trim(),
+                )
+            ) {
+                is NetworkResult.Success -> {
+                    _uiState.update {
+                        it.copy(
+                            isSaving = false,
+                            composing = false,
+                            editingId = null,
+                            title = "",
+                            body = "",
+                        )
+                    }
+                    refresh()
+                }
+                else -> _uiState.update {
+                    it.copy(isSaving = false, errorMessage = result.userMessage())
+                }
+            }
+        }
+    }
+
+    fun delete(id: String) {
+        viewModelScope.launch {
+            when (val result = teacherRepository.deleteNotification(id)) {
+                is NetworkResult.Success -> refresh()
+                else -> _uiState.update { it.copy(errorMessage = result.userMessage()) }
             }
         }
     }

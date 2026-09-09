@@ -4,28 +4,30 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Phone
@@ -36,19 +38,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
@@ -56,11 +55,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
 import com.lushaiedupls.R
 import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.session.UserSessionStore
+import com.lushaiedupls.ui.auth.components.AuthProfilePhotoPicker
 import com.lushaiedupls.ui.auth.components.AuthTextLink
 import com.lushaiedupls.ui.auth.components.GenderChip
 import com.lushaiedupls.ui.auth.components.GoogleButton
@@ -68,14 +67,13 @@ import com.lushaiedupls.ui.auth.components.LushAiEduWordmark
 import com.lushaiedupls.ui.auth.components.OrContinueWithDivider
 import com.lushaiedupls.ui.auth.components.OutlinedAuthField
 import com.lushaiedupls.ui.auth.components.PrimaryButton
-import com.lushaiedupls.ui.auth.google.GoogleSignInHelper
+import com.lushaiedupls.ui.auth.google.rememberGoogleSignInAction
 import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BrandBlack
 import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.LushAIEdu_PLSTheme
 import com.lushaiedupls.ui.theme.TextSecondary
-import kotlinx.coroutines.launch
 
 @Composable
 fun CreateAccountRoute(
@@ -95,7 +93,10 @@ fun CreateAccountRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        viewModel.clearError()
+    }
 
     LaunchedEffect(uiState.successRoute) {
         uiState.successRoute?.let { route ->
@@ -103,6 +104,11 @@ fun CreateAccountRoute(
             onNavigate(route)
         }
     }
+
+    val googleSignIn = rememberGoogleSignInAction(
+        onIdToken = { token -> viewModel.signInWithGoogle(token, context) },
+        onError = viewModel::setError,
+    )
 
     CreateAccountScreen(
         uiState = uiState,
@@ -115,13 +121,7 @@ fun CreateAccountRoute(
         onAvatarSelected = viewModel::onAvatarSelected,
         onRegister = { viewModel.register(context) },
         onSignIn = onSignIn,
-        onGoogle = {
-            scope.launch {
-                GoogleSignInHelper.requestIdToken(context)
-                    .onSuccess { viewModel.signInWithGoogle(it) }
-                    .onFailure { viewModel.setError(it.message ?: "Google sign-in failed.") }
-            }
-        },
+        onGoogle = googleSignIn,
         modifier = modifier,
     )
 }
@@ -145,16 +145,19 @@ fun CreateAccountScreen(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri -> uri?.let(onAvatarSelected) }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(BgLight)
-            .systemBarsPadding(),
+            .systemBarsPadding()
+            .imePadding(),
     ) {
+        val scrollState = rememberScrollState()
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .fillMaxWidth()
+                .heightIn(min = maxHeight)
+                .verticalScroll(scrollState)
                 .padding(horizontal = 20.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -177,53 +180,17 @@ fun CreateAccountScreen(
                     )
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // Profile photo picker
-                    Box(
-                        modifier = Modifier
-                            .size(88.dp)
-                            .clickable(enabled = !uiState.isLoading) {
-                                photoPicker.launch(
-                                    PickVisualMediaRequest(
-                                        ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                    ),
-                                )
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (uiState.avatarUri != null) {
-                            AsyncImage(
-                                model = uiState.avatarUri,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(88.dp)
-                                    .clip(CircleShape),
-                                error = painterResource(R.drawable.ic_avatar_placeholder),
+                    AuthProfilePhotoPicker(
+                        localUri = uiState.avatarUri,
+                        enabled = !uiState.isLoading,
+                        onClick = {
+                            photoPicker.launch(
+                                PickVisualMediaRequest(
+                                    ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                ),
                             )
-                        } else {
-                            Image(
-                                painter = painterResource(R.drawable.ic_avatar_placeholder),
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(88.dp)
-                                    .clip(CircleShape),
-                            )
-                        }
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .size(26.dp)
-                                .clip(CircleShape)
-                                .background(BrandBlack),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.CameraAlt,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(14.dp),
-                            )
-                        }
-                    }
+                        },
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
 
                     OutlinedAuthField(
@@ -258,8 +225,7 @@ fun CreateAccountScreen(
                         onValueChange = onPasswordChange,
                         placeholder = stringResource(R.string.password_placeholder),
                         leadingIcon = Icons.Outlined.Lock,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        visualTransformation = PasswordVisualTransformation(),
+                        isPassword = true,
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedAuthField(
@@ -303,13 +269,27 @@ fun CreateAccountScreen(
                     }
 
                     uiState.errorMessage?.let { error ->
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = error,
-                            color = BrandOrange,
-                            fontSize = 13.sp,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        if (uiState.accountAlreadyExists || uiState.googleLinkBlocked) {
+                            AccountExistsBanner(
+                                title = stringResource(
+                                    if (uiState.googleLinkBlocked) {
+                                        R.string.create_account_google_link_title
+                                    } else {
+                                        R.string.create_account_exists_title
+                                    },
+                                ),
+                                message = error,
+                                onSignIn = onSignIn,
+                            )
+                        } else {
+                            Text(
+                                text = error,
+                                color = BrandOrange,
+                                fontSize = 13.sp,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(20.dp))
@@ -339,23 +319,83 @@ fun CreateAccountScreen(
                     Text(
                         text = buildAnnotatedString {
                             append(stringResource(R.string.terms_prefix))
+                            append(' ')
                             withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = BrandBlack)) {
                                 append(stringResource(R.string.terms_conditions))
                             }
+                            append(' ')
                             append(stringResource(R.string.terms_and))
+                            append(' ')
                             withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = BrandBlack)) {
                                 append(stringResource(R.string.privacy_policy))
                             }
-                            append(".")
+                            append('.')
                         },
+                        modifier = Modifier.padding(horizontal = 4.dp),
                         color = TextSecondary,
                         fontSize = 12.sp,
                         textAlign = TextAlign.Center,
-                        lineHeight = 16.sp,
+                        lineHeight = 18.sp,
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AccountExistsBanner(
+    message: String,
+    onSignIn: () -> Unit,
+    modifier: Modifier = Modifier,
+    title: String = stringResource(R.string.create_account_exists_title),
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(BrandOrange.copy(alpha = 0.08f))
+            .border(1.dp, BrandOrange.copy(alpha = 0.28f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.Top) {
+            Icon(
+                imageVector = Icons.Outlined.Info,
+                contentDescription = null,
+                tint = BrandOrange,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = BrandBlack,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    fontFamily = FontFamily.SansSerif,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = message,
+                    color = TextSecondary,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    fontFamily = FontFamily.SansSerif,
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = stringResource(R.string.create_account_exists_action),
+            color = BrandOrange,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            fontFamily = FontFamily.SansSerif,
+            modifier = Modifier
+                .align(Alignment.End)
+                .clickable(onClick = onSignIn)
+                .padding(vertical = 2.dp),
+        )
     }
 }
 

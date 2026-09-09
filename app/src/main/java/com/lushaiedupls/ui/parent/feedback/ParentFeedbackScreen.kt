@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,25 +48,30 @@ import com.lushaiedupls.data.remote.dto.ParentFeedbackOut
 import com.lushaiedupls.data.repository.ParentRepository
 import com.lushaiedupls.ui.auth.components.OutlinedAuthField
 import com.lushaiedupls.ui.auth.components.PrimaryButton
+import com.lushaiedupls.ui.common.AnimatedFilterChipRow
 import com.lushaiedupls.ui.common.AppBackNav
-import com.lushaiedupls.ui.common.LoadErrorPanel
+import com.lushaiedupls.ui.common.CenteredEmptyState
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
+import com.lushaiedupls.ui.parent.components.ParentLoadErrorPanel
+import com.lushaiedupls.ui.parent.components.ParentPendingApprovalPanel
 import com.lushaiedupls.ui.parent.formatIsoDate
 import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
+import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.TextSecondary
 
 private val CardShape = RoundedCornerShape(16.dp)
-private val ChipShape = RoundedCornerShape(50)
 private val DeleteRed = Color(0xFFF25F5C)
 
 @Composable
 fun ParentFeedbackRoute(
     parentRepository: ParentRepository,
     studentId: String?,
+    onScanClick: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -86,6 +90,8 @@ fun ParentFeedbackRoute(
             if (uiState.composing) viewModel.cancelComposer() else onBack()
         },
         onRetry = viewModel::refresh,
+        onPullRefresh = { viewModel.refresh(asPullRefresh = true) },
+        onScanClick = onScanClick,
         onNew = viewModel::startCreate,
         onOpen = viewModel::startEdit,
         onSubjectChange = viewModel::setSubject,
@@ -102,6 +108,8 @@ fun ParentFeedbackScreen(
     uiState: ParentFeedbackUiState,
     onBack: () -> Unit,
     onRetry: () -> Unit,
+    onPullRefresh: () -> Unit,
+    onScanClick: () -> Unit,
     onNew: () -> Unit,
     onOpen: (ParentFeedbackOut) -> Unit,
     onSubjectChange: (String) -> Unit,
@@ -112,14 +120,22 @@ fun ParentFeedbackScreen(
     modifier: Modifier = Modifier,
 ) {
     when {
-        uiState.isLoading && uiState.items.isEmpty() && uiState.errorMessage == null && !uiState.composing ->
+        uiState.isLoading && uiState.items.isEmpty() && uiState.errorMessage == null &&
+            !uiState.needsApproval && !uiState.composing ->
             StudentPageSkeleton(
                 kind = StudentSkeletonKind.List,
                 title = stringResource(R.string.parent_feedback_title),
                 modifier = modifier,
             )
+        uiState.needsApproval && uiState.items.isEmpty() && !uiState.composing ->
+            ParentPendingApprovalPanel(
+                onScanClick = onScanClick,
+                onRefresh = onRetry,
+                isRefreshing = uiState.isLoading,
+                modifier = modifier,
+            )
         uiState.errorMessage != null && uiState.items.isEmpty() && !uiState.composing ->
-            LoadErrorPanel(
+            ParentLoadErrorPanel(
                 screenTitle = stringResource(R.string.parent_feedback_title),
                 message = uiState.errorMessage.orEmpty(),
                 onRetry = onRetry,
@@ -141,6 +157,7 @@ fun ParentFeedbackScreen(
             onBack = onBack,
             onNew = onNew,
             onOpen = onOpen,
+            onPullRefresh = onPullRefresh,
             modifier = modifier,
         )
     }
@@ -152,60 +169,63 @@ private fun FeedbackList(
     onBack: () -> Unit,
     onNew: () -> Unit,
     onOpen: (ParentFeedbackOut) -> Unit,
+    onPullRefresh: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(
+    LushPullToRefreshBox(
+        isRefreshing = uiState.isRefreshing,
+        onRefresh = onPullRefresh,
         modifier = modifier
             .fillMaxSize()
             .background(BgWhite),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(top = 8.dp, bottom = 96.dp),
-        ) {
-            AppBackNav(onBack = onBack)
-            Text(
-                text = stringResource(R.string.parent_feedback_title),
-                fontWeight = FontWeight.Bold,
-                fontSize = 24.sp,
-                color = BrandBlack,
-                fontFamily = FontFamily.SansSerif,
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            if (uiState.items.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 8.dp, bottom = 96.dp),
+            ) {
+                AppBackNav(onBack = onBack)
                 Text(
-                    text = stringResource(R.string.parent_feedback_empty),
-                    color = TextSecondary,
-                    fontSize = 15.sp,
+                    text = stringResource(R.string.parent_feedback_title),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 24.sp,
+                    color = BrandBlack,
                     fontFamily = FontFamily.SansSerif,
                 )
-            } else {
-                uiState.items.forEach { item ->
-                    FeedbackCard(item = item, onClick = { onOpen(item) })
-                    Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+                if (uiState.items.isEmpty()) {
+                    CenteredEmptyState(
+                        message = stringResource(R.string.parent_feedback_empty),
+                        icon = Icons.Filled.Forum,
+                    )
+                } else {
+                    uiState.items.forEach { item ->
+                        FeedbackCard(item = item, onClick = { onOpen(item) })
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
                 }
             }
-        }
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 20.dp, bottom = 20.dp)
-                .size(56.dp)
-                .shadow(6.dp, CircleShape)
-                .clip(CircleShape)
-                .background(BrandBlack)
-                .clickable(onClick = onNew),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Add,
-                contentDescription = stringResource(R.string.parent_feedback_new),
-                tint = BgWhite,
-                modifier = Modifier.size(28.dp),
-            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 20.dp, bottom = 20.dp)
+                    .size(56.dp)
+                    .shadow(6.dp, CircleShape)
+                    .clip(CircleShape)
+                    .background(BrandBlack)
+                    .clickable(onClick = onNew),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Add,
+                    contentDescription = stringResource(R.string.parent_feedback_new),
+                    tint = BgWhite,
+                    modifier = Modifier.size(28.dp),
+                )
+            }
         }
     }
 }
@@ -406,46 +426,29 @@ private fun ChildChips(
     includeNone: Boolean,
     onSelect: (String?) -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        if (includeNone) {
-            StudentChip(
-                label = stringResource(R.string.parent_feedback_child_none),
-                selected = selectedStudentId == null,
-                onClick = { onSelect(null) },
-            )
-        }
-        children.forEach { child ->
-            StudentChip(
-                label = child.student.name,
-                selected = child.student.id == selectedStudentId,
-                onClick = { onSelect(child.student.id) },
-            )
+    val noneLabel = stringResource(R.string.parent_feedback_child_none)
+    val options = buildList {
+        if (includeNone) add(noneLabel)
+        addAll(children.map { it.student.name })
+    }
+    val selectedIndex = when {
+        includeNone && selectedStudentId == null -> 0
+        else -> {
+            val childIndex = children.indexOfFirst { it.student.id == selectedStudentId }
+            if (childIndex < 0) 0 else childIndex + if (includeNone) 1 else 0
         }
     }
-}
-
-@Composable
-private fun StudentChip(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    Text(
-        text = label,
-        color = if (selected) BgWhite else BrandBlack,
-        fontSize = 13.sp,
-        fontWeight = FontWeight.Medium,
-        fontFamily = FontFamily.SansSerif,
-        modifier = Modifier
-            .clip(ChipShape)
-            .background(if (selected) BrandBlack else BgLight)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+    AnimatedFilterChipRow(
+        options = options,
+        selectedIndex = selectedIndex,
+        onSelect = { index ->
+            if (includeNone && index == 0) {
+                onSelect(null)
+            } else {
+                val childIndex = index - if (includeNone) 1 else 0
+                onSelect(children[childIndex].student.id)
+            }
+        },
     )
 }
 

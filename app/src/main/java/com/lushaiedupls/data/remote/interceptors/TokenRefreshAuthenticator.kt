@@ -3,12 +3,13 @@ package com.lushaiedupls.data.remote.interceptors
 import android.util.Log
 import com.lushaiedupls.data.remote.ApiConfig
 import com.lushaiedupls.data.remote.ApiHttpLogger
-import com.lushaiedupls.data.remote.device.DeviceIdProvider
 import com.lushaiedupls.data.remote.dto.RefreshRequest
-import com.lushaiedupls.data.remote.dto.TokenPair
 import com.lushaiedupls.data.remote.token.TokenProvider
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Authenticator
 import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -19,33 +20,49 @@ import okhttp3.Response
 import okhttp3.Route
 
 /**
- * On 401, exchanges the stored refresh token (+ device_id) for a new token pair
- * and retries the original request. Concurrent 401s share a single refresh.
+ * On 401, calls `/auth/refresh` and retries the original request up to [MAX_REFRESH_RETRIES]
+ * times. Concurrent 401s share a single refresh. If the request is still 401 after that,
+ * the session is cleared and the user is logged out.
  */
 class TokenRefreshAuthenticator(
     private val tokenProvider: TokenProvider,
-    private val deviceIdProvider: DeviceIdProvider,
+    private val deviceId: () -> String,
     private val json: Json,
     private val refreshClient: OkHttpClient,
     private val onRefreshFailed: () -> Unit,
 ) : Authenticator {
 
     private val lock = Any()
+    private val sessionExpired = AtomicBoolean(false)
 
     override fun authenticate(route: Route?, response: Response): Request? {
-        if (responseCount(response) >= MAX_RETRIES) return null
-        if (AuthPaths.isRefresh(response.request.url.encodedPath)) return null
+        if (response.code != HTTP_UNAUTHORIZED) return null
+        if (AuthPaths.isPublicAuth(response.request.url.encodedPath)) return null
+        if (sessionExpired.get()) {
+            if (tokenProvider.getRefreshToken().isNullOrBlank()) return null
+            sessionExpired.set(false)
+        }
+
+        val attempt = unauthorizedCount(response)
+        if (attempt > MAX_REFRESH_RETRIES) {
+            Log.w(
+                ApiHttpLogger.TAG,
+                "Still 401 after $MAX_REFRESH_RETRIES refresh retries; logging out",
+            )
+            expireSession()
+            return null
+        }
 
         val failedAccess = bearerOf(response.request)
-
         val newAccess = synchronized(lock) {
+            if (sessionExpired.get()) return@synchronized null
             val currentAccess = tokenProvider.getAccessToken()
             if (!currentAccess.isNullOrBlank() && currentAccess != failedAccess) {
                 currentAccess
             } else {
                 val refreshToken = tokenProvider.getRefreshToken()
                 if (refreshToken.isNullOrBlank()) {
-                    if (!failedAccess.isNullOrBlank()) onRefreshFailed()
+                    expireSession()
                     null
                 } else {
                     refreshAccessToken(
@@ -66,7 +83,7 @@ class TokenRefreshAuthenticator(
             val body = json.encodeToString(
                 RefreshRequest(
                     refresh_token = refreshToken,
-                    device_id = deviceIdProvider.deviceId(),
+                    device_id = deviceId(),
                 ),
             )
             val request = Request.Builder()
@@ -84,14 +101,18 @@ class TokenRefreshAuthenticator(
                     if (refreshResponse.code == HTTP_UNAUTHORIZED ||
                         refreshResponse.code == HTTP_FORBIDDEN
                     ) {
-                        onRefreshFailed()
+                        expireSession()
                     }
                     return null
                 }
-                val pair = json.decodeFromString<TokenPair>(payload)
-                tokenProvider.saveTokens(pair.access_token, pair.refresh_token)
+                val tokens = parseTokenPair(payload) ?: run {
+                    Log.w(ApiHttpLogger.TAG, "Token refresh returned an unreadable payload")
+                    return null
+                }
+                tokenProvider.saveTokens(tokens.first, tokens.second)
+                sessionExpired.set(false)
                 Log.d(ApiHttpLogger.TAG, "Token refresh succeeded; retrying original request")
-                pair.access_token
+                tokens.first
             }
         } catch (e: Exception) {
             Log.w(ApiHttpLogger.TAG, "Token refresh error: ${e.message}")
@@ -99,8 +120,25 @@ class TokenRefreshAuthenticator(
         }
     }
 
+    private fun parseTokenPair(payload: String): Pair<String, String>? {
+        return try {
+            val obj = json.parseToJsonElement(payload).jsonObject
+            val access = obj["access_token"]?.jsonPrimitive?.content?.trim().orEmpty()
+            val refresh = obj["refresh_token"]?.jsonPrimitive?.content?.trim().orEmpty()
+            if (access.isBlank() || refresh.isBlank()) null else access to refresh
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun expireSession() {
+        if (sessionExpired.compareAndSet(false, true)) {
+            onRefreshFailed()
+        }
+    }
+
     private companion object {
-        const val MAX_RETRIES = 2
+        const val MAX_REFRESH_RETRIES = 3
         const val HTTP_UNAUTHORIZED = 401
         const val HTTP_FORBIDDEN = 403
         val JSON_MEDIA_TYPE = ApiConfig.CONTENT_TYPE_JSON.toMediaType()
@@ -117,12 +155,12 @@ class TokenRefreshAuthenticator(
             return header.removePrefix("Bearer ").trim().takeIf { it.isNotBlank() }
         }
 
-        fun responseCount(response: Response): Int {
-            var count = 1
-            var prior = response.priorResponse
-            while (prior != null) {
-                count++
-                prior = prior.priorResponse
+        fun unauthorizedCount(response: Response): Int {
+            var count = 0
+            var current: Response? = response
+            while (current != null) {
+                if (current.code == HTTP_UNAUTHORIZED) count++
+                current = current.priorResponse
             }
             return count
         }

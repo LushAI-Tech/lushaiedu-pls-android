@@ -23,6 +23,7 @@ data class TimetableUiState(
     val timetable: WeeklyTimetable? = null,
     val teachingUnits: List<TeachingUnitOut> = emptyList(),
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val needsApproval: Boolean = false,
     val errorMessage: String? = null,
 )
@@ -40,7 +41,14 @@ class TimetableViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val hasContent = _uiState.value.timetable != null
+            _uiState.update {
+                it.copy(
+                    isLoading = !hasContent,
+                    isRefreshing = hasContent,
+                    errorMessage = null,
+                )
+            }
             coroutineScope {
                 val unitsDeferred = async { studentRepository.teachingUnits(forceRefresh = true) }
                 val timetableDeferred = async { studentRepository.timetable(forceRefresh = true) }
@@ -54,6 +62,7 @@ class TimetableViewModel(
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
+                                isRefreshing = false,
                                 needsApproval = false,
                                 errorMessage = null,
                                 teachingUnits = units,
@@ -64,6 +73,7 @@ class TimetableViewModel(
                     else -> _uiState.update {
                         it.copy(
                             isLoading = false,
+                            isRefreshing = false,
                             needsApproval = timetableResult.needsAdminApproval(),
                             errorMessage = timetableResult.userMessage(),
                             timetable = null,

@@ -9,6 +9,7 @@ data class StudentAiHubUiState(
     val classOptions: List<String> = emptyList(),
     val selectedClass: String = "",
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val needsApproval: Boolean = false,
     val errorMessage: String? = null,
 )

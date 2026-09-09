@@ -1,6 +1,6 @@
 package com.lushaiedupls.ui.teacher.secondary
 
-import com.lushaiedupls.data.mock.TeacherAnnouncement
+import com.lushaiedupls.data.mock.AppNotification
 import com.lushaiedupls.data.mock.TeacherAnnouncementAudience
 
 enum class AnnouncementPriority {
@@ -9,8 +9,14 @@ enum class AnnouncementPriority {
 }
 
 data class TeacherAnnouncementsUiState(
-    val announcements: List<TeacherAnnouncement> = emptyList(),
+    val announcements: List<AppNotification> = emptyList(),
+    val composing: Boolean = false,
+    val editingId: String? = null,
+    val title: String = "",
+    val body: String = "",
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
+    val isSaving: Boolean = false,
     val errorMessage: String? = null,
 )
 

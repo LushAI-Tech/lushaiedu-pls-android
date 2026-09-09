@@ -19,9 +19,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,10 +51,14 @@ import com.lushaiedupls.R
 import com.lushaiedupls.data.mock.TeacherTeachingTimetable
 import com.lushaiedupls.data.mock.TeacherTimetableCell
 import com.lushaiedupls.data.repository.TeacherRepository
+import com.lushaiedupls.ui.common.AnimatedFilterChipRow
 import com.lushaiedupls.ui.common.AppBackNav
+import com.lushaiedupls.ui.common.CenteredEmptyState
 import com.lushaiedupls.ui.common.LoadErrorPanel
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
+import com.lushaiedupls.ui.teacher.overlays.SessionSubjectOption
 import com.lushaiedupls.ui.teacher.overlays.SetReminderOverlay
 import com.lushaiedupls.ui.teacher.overlays.SetSessionOverlay
 import com.lushaiedupls.ui.theme.BgLight
@@ -62,7 +69,6 @@ import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.TextSecondary
 
 private val TableShape = RoundedCornerShape(14.dp)
-private val ChipShape = RoundedCornerShape(12.dp)
 private val ReminderShape = RoundedCornerShape(12.dp)
 private val HeaderBg = Color(0xFF4B5563)
 private val DayColWidth = 96.dp
@@ -75,10 +81,15 @@ fun TeacherTimetableRoute(
     teacherRepository: TeacherRepository,
     editable: Boolean,
     onBack: (() -> Unit)? = null,
+    initialInstitutionId: String? = null,
     modifier: Modifier = Modifier,
     viewModel: TeacherTimetableViewModel = viewModel(
         key = if (editable) "teacher-timetable-edit" else "teacher-timetable-view",
-        factory = TeacherTimetableViewModel.provideFactory(teacherRepository, editable),
+        factory = TeacherTimetableViewModel.provideFactory(
+            teacherRepository,
+            editable,
+            initialInstitutionId,
+        ),
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -92,15 +103,17 @@ fun TeacherTimetableRoute(
         stringResource(R.string.teacher_my_timetable_title)
     }
     when {
-        uiState.isLoading && uiState.timetable == null && uiState.errorMessage == null ->
+        uiState.isLoading && uiState.timetable == null && uiState.institutions.isEmpty() &&
+            uiState.errorMessage == null ->
             StudentPageSkeleton(kind = StudentSkeletonKind.Timetable, title = title, modifier = modifier)
-        uiState.errorMessage != null && uiState.timetable == null -> LoadErrorPanel(
-            screenTitle = title,
-            message = uiState.errorMessage.orEmpty(),
-            onRetry = viewModel::refresh,
-            isRetrying = uiState.isLoading,
-            modifier = modifier,
-        )
+        uiState.errorMessage != null && uiState.timetable == null && uiState.institutions.isEmpty() ->
+            LoadErrorPanel(
+                screenTitle = title,
+                message = uiState.errorMessage.orEmpty(),
+                onRetry = viewModel::refresh,
+                isRetrying = uiState.isLoading,
+                modifier = modifier,
+            )
         else -> TeacherTimetableScreen(
             timetable = uiState.timetable ?: TeacherTeachingTimetable(
                 classes = emptyList(),
@@ -108,12 +121,25 @@ fun TeacherTimetableRoute(
                 timeSlots = emptyList(),
                 cells = emptyMap(),
             ),
-            subjects = uiState.subjects,
+            institutions = uiState.institutions.map { it.name },
+            selectedInstitutionIndex = uiState.institutions
+                .indexOfFirst { it.id == uiState.selectedInstitutionId }
+                .coerceAtLeast(0),
+            onSelectInstitution = viewModel::selectInstitution,
+            subjects = uiState.sessionSubjects,
+            isLoadingSubjects = uiState.isLoadingSubjects,
             editable = editable,
+            teacherRepository = teacherRepository,
+            selectedClassIndex = uiState.classes
+                .indexOfFirst { it.id == uiState.selectedClassId }
+                .coerceAtLeast(0),
             onSelectClass = viewModel::selectClass,
+            onLoadSessionSubjects = viewModel::prepareSessionSubjects,
             onSaveSlot = viewModel::saveSlot,
             onClearSlot = viewModel::clearSlot,
             onBack = onBack,
+            isRefreshing = uiState.isRefreshing,
+            onRefresh = viewModel::refresh,
             modifier = modifier,
         )
     }
@@ -126,29 +152,41 @@ fun TeacherTimetableRoute(
 @Composable
 fun TeacherTimetableScreen(
     timetable: TeacherTeachingTimetable,
-    subjects: List<String> = listOf("Mathematics", "Chemistry", "Economics", "Biology"),
+    subjects: List<SessionSubjectOption> = emptyList(),
+    isLoadingSubjects: Boolean = false,
     editable: Boolean = false,
+    teacherRepository: TeacherRepository? = null,
+    institutions: List<String> = emptyList(),
+    selectedInstitutionIndex: Int = 0,
+    onSelectInstitution: (Int) -> Unit = {},
+    selectedClassIndex: Int = 0,
     onSelectClass: (Int) -> Unit = {},
-    onSaveSlot: (timeIndex: Int, dayIndex: Int, subject: String, room: String, onDone: (Boolean) -> Unit) -> Unit = { _, _, _, _, cb -> cb(true) },
+    onLoadSessionSubjects: () -> Unit = {},
+    onSaveSlot: (timeIndex: Int, dayIndex: Int, subjectId: String, subjectName: String, room: String, onDone: (Boolean) -> Unit) -> Unit = { _, _, _, _, _, cb -> cb(true) },
     onClearSlot: (timeIndex: Int, dayIndex: Int, onDone: (Boolean) -> Unit) -> Unit = { _, _, cb -> cb(true) },
     onBack: (() -> Unit)? = null,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    var selectedClassIndex by remember(timetable.classes) {
-        mutableStateOf(0)
-    }
     var showReminder by remember { mutableStateOf(false) }
     var targetCell by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
-    Column(
+    LushPullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
         modifier = modifier
             .fillMaxSize()
-            .background(BgWhite)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-            .padding(top = if (onBack == null) 12.dp else 0.dp, bottom = 24.dp),
+            .background(BgWhite),
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(top = if (onBack == null) 12.dp else 0.dp, bottom = 24.dp),
+        ) {
         if (onBack != null) {
             AppBackNav(
                 onBack = onBack,
@@ -170,6 +208,23 @@ fun TeacherTimetableScreen(
         )
 
         Spacer(modifier = Modifier.height(18.dp))
+
+        if (institutions.isNotEmpty()) {
+            Text(
+                text = stringResource(R.string.timetable_institution),
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = BrandBlack,
+                fontFamily = FontFamily.SansSerif,
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            AnimatedFilterChipRow(
+                options = institutions,
+                selectedIndex = selectedInstitutionIndex,
+                onSelect = onSelectInstitution,
+            )
+            Spacer(modifier = Modifier.height(18.dp))
+        }
 
         if (!editable) {
             Box(
@@ -222,7 +277,7 @@ fun TeacherTimetableScreen(
             Spacer(modifier = Modifier.height(20.dp))
         }
 
-        if (editable) {
+        if (editable && timetable.classes.isNotEmpty()) {
             Text(
                 text = stringResource(R.string.timetable_class),
                 fontWeight = FontWeight.Bold,
@@ -231,80 +286,73 @@ fun TeacherTimetableScreen(
                 fontFamily = FontFamily.SansSerif,
             )
             Spacer(modifier = Modifier.height(10.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(ChipShape)
-                    .background(BgLight)
-                    .horizontalScroll(rememberScrollState())
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                timetable.classes.forEachIndexed { index, label ->
-                    val selected = index == selectedClassIndex
-                    Box(
-                        modifier = Modifier
-                            .height(40.dp)
-                            .clip(ChipShape)
-                            .then(
-                                if (selected) {
-                                    Modifier
-                                        .border(1.dp, BorderGray, ChipShape)
-                                        .background(BgWhite)
-                                } else {
-                                    Modifier.background(Color.Transparent)
-                                },
-                            )
-                            .clickable {
-                                selectedClassIndex = index
-                                onSelectClass(index)
-                            }
-                            .padding(horizontal = 14.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = label,
-                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                            fontSize = 13.sp,
-                            color = if (selected) BrandBlack else TextSecondary,
-                            fontFamily = FontFamily.SansSerif,
-                        )
-                    }
-                }
-            }
+            AnimatedFilterChipRow(
+                options = timetable.classes,
+                selectedIndex = selectedClassIndex,
+                onSelect = onSelectClass,
+            )
         }
 
         Spacer(modifier = Modifier.height(18.dp))
-        TeacherTimetableGrid(
-            timetable = timetable,
-            editable = editable,
-            onCellTap = { timeIndex, dayIndex ->
-                if (editable) {
-                    targetCell = timeIndex to dayIndex
-                }
-            },
-        )
+        val hasTimetableStructure = timetable.days.isNotEmpty() &&
+            timetable.timeSlots.any { it.isNotBlank() && it != "—" }
+        if (!hasTimetableStructure) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .shadow(2.dp, TableShape, clip = false)
+                    .clip(TableShape)
+                    .border(1.dp, BorderGray, TableShape)
+                    .background(BgWhite)
+                    .padding(vertical = 8.dp),
+            ) {
+                CenteredEmptyState(
+                    title = stringResource(R.string.teacher_timetable_no_data),
+                    message = stringResource(R.string.teacher_timetable_no_periods_hint),
+                    icon = Icons.Outlined.Schedule,
+                    compact = true,
+                )
+            }
+        } else {
+            TeacherTimetableGrid(
+                timetable = timetable,
+                editable = editable,
+                onCellTap = { timeIndex, dayIndex ->
+                    if (editable) {
+                        targetCell = timeIndex to dayIndex
+                    }
+                },
+            )
+        }
+        }
     }
 
-    if (showReminder) {
-        SetReminderOverlay(onDismiss = { showReminder = false })
+    if (showReminder && teacherRepository != null) {
+        SetReminderOverlay(
+            teacherRepository = teacherRepository,
+            onDismiss = { showReminder = false },
+        )
     }
     targetCell?.let { (timeIndex, dayIndex) ->
+        LaunchedEffect(timeIndex, dayIndex, selectedClassIndex) {
+            onLoadSessionSubjects()
+        }
         val existingCell = timetable.cells[timeIndex to dayIndex]
         SetSessionOverlay(
             subjects = subjects,
-            initialSubject = existingCell?.subject,
+            initialSubjectId = existingCell?.subjectId,
+            initialSubjectName = existingCell?.subject,
             initialRoom = existingCell?.detail?.takeIf { it.isNotBlank() },
+            isLoading = isLoadingSubjects,
             onDismiss = { targetCell = null },
-            onDone = { subject, room ->
-                onSaveSlot(timeIndex, dayIndex, subject, room) { ok ->
-                    if (ok) {
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.teacher_session_saved, subject, room.ifBlank { "—" }),
-                            Toast.LENGTH_SHORT,
-                        ).show()
+            onDone = { subjectId, subjectName, room ->
+                onSaveSlot(timeIndex, dayIndex, subjectId, subjectName, room) { ok ->
+                    val message = if (ok) {
+                        context.getString(R.string.teacher_session_saved, subjectName, room.ifBlank { "—" })
+                    } else {
+                        context.getString(R.string.teacher_session_save_failed)
                     }
+                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                 }
                 targetCell = null
             },
@@ -384,9 +432,11 @@ private fun TeacherTimetableGrid(
                         )
                         timetable.timeSlots.indices.forEach { timeIndex ->
                             val cell = timetable.cells[timeIndex to dayIndex]
+                            val canEditCell = editable && (cell == null || cell.isOwned)
                             ScheduleCell(
                                 cell = cell,
                                 editable = editable,
+                                canInteract = canEditCell,
                                 onClick = { onCellTap(timeIndex, dayIndex) },
                                 modifier = Modifier.width(PeriodColWidth),
                                 dividerColor = cellDividerColor,
@@ -497,16 +547,23 @@ private fun DayCell(
 private fun ScheduleCell(
     cell: TeacherTimetableCell?,
     editable: Boolean,
+    canInteract: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     dividerColor: Color = BorderGray,
     showEndDivider: Boolean = true,
     showBottomDivider: Boolean = true,
 ) {
+    val locked = editable && cell != null && !cell.isOwned
+    val background = when {
+        locked -> Color(0xFFE8E8EC)
+        cell != null -> Color(0xFFF4F5F7)
+        else -> BgWhite
+    }
     Box(
         modifier = modifier
             .fillMaxHeight()
-            .background(if (cell != null) Color(0xFFF4F5F7) else BgWhite)
+            .background(background)
             .drawBehind {
                 val stroke = 1.dp.toPx()
                 if (showEndDivider) {
@@ -527,7 +584,7 @@ private fun ScheduleCell(
                 }
             }
             .then(
-                if (editable) {
+                if (canInteract) {
                     Modifier.clickable(onClick = onClick)
                 } else {
                     Modifier
@@ -555,7 +612,7 @@ private fun ScheduleCell(
                     modifier = Modifier
                         .width(2.5.dp)
                         .fillMaxHeight()
-                        .background(BrandOrange),
+                        .background(if (locked) Color(0xFF9CA3AF) else BrandOrange),
                 )
                 Column(
                     modifier = Modifier
@@ -565,7 +622,7 @@ private fun ScheduleCell(
                 ) {
                     Text(
                         text = cell.subject,
-                        color = BrandBlack,
+                        color = if (locked) Color(0xFF4B5563) else BrandBlack,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.5.sp,
                         fontFamily = FontFamily.SansSerif,
@@ -573,7 +630,9 @@ private fun ScheduleCell(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = cell.detail,
+                        text = cell.detail.ifBlank {
+                            cell.teacherName.orEmpty()
+                        }.ifBlank { "—" },
                         color = Color(0xFF71717A),
                         fontSize = 9.5.sp,
                         fontFamily = FontFamily.SansSerif,

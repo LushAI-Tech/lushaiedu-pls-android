@@ -6,15 +6,17 @@ import androidx.lifecycle.viewModelScope
 import com.lushaiedupls.data.mapper.TeacherUiMappers
 import com.lushaiedupls.data.mock.TeacherOverviewDashboard
 import com.lushaiedupls.data.remote.NetworkResult
+import com.lushaiedupls.data.remote.dto.InstitutionOut
 import com.lushaiedupls.data.remote.dto.TeachingUnitOut
+import com.lushaiedupls.data.remote.dto.TeachingUnitStatus
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.TeacherRepository
+import com.lushaiedupls.data.session.UserSessionStore
 import com.lushaiedupls.ui.common.viewModelFactory
 import com.lushaiedupls.ui.teacher.overlays.AttendancePeriodOption
 import java.time.YearMonth
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,6 +26,7 @@ import kotlinx.coroutines.launch
 
 class TeacherOverviewViewModel(
     private val teacherRepository: TeacherRepository,
+    private val userSessionStore: UserSessionStore? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -35,41 +38,86 @@ class TeacherOverviewViewModel(
 
     private data class CacheEntry(
         val dashboard: TeacherOverviewDashboard,
-        val attendanceClasses: List<String>,
-        val selectedAttendanceClass: String,
-        val selectedUnitId: String?,
-        val unitIdsByLabel: Map<String, String>,
     )
 
     private val overviewCache = linkedMapOf<CacheKey, CacheEntry>()
     private var cachedTeachingUnits: List<TeachingUnitOut>? = null
+    private var cachedInstitutions: List<InstitutionOut>? = null
     private var refreshJob: Job? = null
-    private var prefetchJob: Job? = null
+    private var pickerJob: Job? = null
 
     init {
-        refresh(forceNetwork = true)
+        refresh(forceNetwork = false)
     }
 
     fun onSectionSelected(section: TeacherOverviewSection) {
         _uiState.update { it.copy(section = section) }
     }
 
-    fun onAttendanceClassSelected(classLabel: String) {
-        val unitId = _uiState.value.unitIdsByLabel[classLabel]
-        _uiState.update {
-            it.copy(
-                selectedAttendanceClass = classLabel,
-                selectedUnitId = unitId,
-                selectedAttendanceDay = null,
+    fun onInstitutionSelected(index: Int) {
+        val institutionId = _uiState.value.institutionIds.getOrNull(index) ?: return
+        if (institutionId == _uiState.value.selectedInstitutionId) return
+        userSessionStore?.setInstitutionId(institutionId)
+        overviewCache.clear()
+        pickerJob?.cancel()
+        pickerJob = viewModelScope.launch {
+            val unitId = syncAttendancePicker(
+                institutionId = institutionId,
+                classId = null,
+                subjectId = null,
+                forceReloadInstitutions = true,
+            )
+            _uiState.update { it.copy(selectedAttendanceDay = null) }
+            loadMonth(
+                month = _uiState.value.attendanceMonth,
+                unitId = unitId,
+                forceNetwork = true,
+                asPullRefresh = false,
+                showSkeleton = true,
             )
         }
-        loadMonth(
-            month = _uiState.value.attendanceMonth,
-            unitId = unitId,
-            forceNetwork = false,
-            asPullRefresh = false,
-            showSkeleton = false,
-        )
+    }
+
+    fun onAttendanceClassSelected(classLabel: String) {
+        val classId = _uiState.value.classIdsByLabel[classLabel] ?: return
+        if (classId == _uiState.value.selectedClassId) return
+        pickerJob?.cancel()
+        pickerJob = viewModelScope.launch {
+            val unitId = syncAttendancePicker(
+                institutionId = _uiState.value.selectedInstitutionId,
+                classId = classId,
+                subjectId = null,
+            )
+            _uiState.update { it.copy(selectedAttendanceDay = null) }
+            loadMonth(
+                month = _uiState.value.attendanceMonth,
+                unitId = unitId,
+                forceNetwork = false,
+                asPullRefresh = false,
+                showSkeleton = false,
+            )
+        }
+    }
+
+    fun onAttendanceSubjectSelected(subjectLabel: String) {
+        val subjectId = _uiState.value.subjectIdsByLabel[subjectLabel] ?: return
+        if (subjectId == _uiState.value.selectedSubjectId) return
+        pickerJob?.cancel()
+        pickerJob = viewModelScope.launch {
+            val unitId = syncAttendancePicker(
+                institutionId = _uiState.value.selectedInstitutionId,
+                classId = _uiState.value.selectedClassId,
+                subjectId = subjectId,
+            )
+            _uiState.update { it.copy(selectedAttendanceDay = null) }
+            loadMonth(
+                month = _uiState.value.attendanceMonth,
+                unitId = unitId,
+                forceNetwork = false,
+                asPullRefresh = false,
+                showSkeleton = false,
+            )
+        }
     }
 
     fun previousAttendanceMonth() {
@@ -91,7 +139,16 @@ class TeacherOverviewViewModel(
             _uiState.update {
                 it.copy(
                     selectedAttendanceDay = day,
-                    setupErrorMessage = "Select a class first.",
+                    setupErrorMessage = "Select a class and subject first.",
+                )
+            }
+            return
+        }
+        if (current.selectedInstitutionId.isNullOrBlank()) {
+            _uiState.update {
+                it.copy(
+                    selectedAttendanceDay = day,
+                    setupErrorMessage = "Select an institution first.",
                 )
             }
             return
@@ -111,7 +168,7 @@ class TeacherOverviewViewModel(
                 setupErrorMessage = null,
             )
         }
-        loadSetupPeriods(unitId, dateLabel)
+        loadSetupPeriods(unitId, dateLabel, current.selectedInstitutionId)
     }
 
     fun dismissAttendanceSetup() {
@@ -156,7 +213,6 @@ class TeacherOverviewViewModel(
         if (cached != null) {
             refreshJob?.cancel()
             applyCacheEntry(month, cached, clearSelectedDay = true)
-            prefetchAdjacentMonths(month, cached.selectedUnitId)
             return
         }
         loadMonth(
@@ -184,7 +240,6 @@ class TeacherOverviewViewModel(
                     entry = cached,
                     clearSelectedDay = showSkeleton,
                 )
-                prefetchAdjacentMonths(month, cached.selectedUnitId)
                 return
             }
         }
@@ -223,12 +278,10 @@ class TeacherOverviewViewModel(
                 bypassCache = forceNetwork,
             )
 
-            // Ignore stale responses after a newer month/class selection.
             if (_uiState.value.attendanceMonth != month) return@launch
 
             if (entry != null) {
                 applyCacheEntry(month, entry)
-                prefetchAdjacentMonths(month, entry.selectedUnitId)
             } else {
                 _uiState.update {
                     it.copy(
@@ -241,46 +294,24 @@ class TeacherOverviewViewModel(
         }
     }
 
-    /**
-     * Quietly loads previous/next months for the selected class so month
-     * navigation can hit the cache without a content loading state.
-     */
-    private fun prefetchAdjacentMonths(center: YearMonth, unitId: String?) {
-        prefetchJob?.cancel()
-        prefetchJob = viewModelScope.launch {
-            val neighbors = listOf(center.minusMonths(1), center.plusMonths(1))
-            coroutineScope {
-                neighbors.map { month ->
-                    async {
-                        val key = CacheKey(month, unitId)
-                        if (overviewCache.containsKey(key)) return@async
-                        fetchMonthEntry(
-                            month = month,
-                            unitId = unitId,
-                            forceNetworkUnits = false,
-                            bypassCache = false,
-                        )
-                    }
-                }.awaitAll()
-            }
-        }
-    }
-
     private suspend fun fetchMonthEntry(
         month: YearMonth,
         unitId: String?,
         forceNetworkUnits: Boolean,
         bypassCache: Boolean,
     ): CacheEntry? {
-        val resolvedUnits = loadTeachingUnits(forceNetworkUnits)
-        val groups = TeacherUiMappers.groups(resolvedUnits)
-        val labels = groups.map { it.title }
-        val idsByLabel = groups.associate { it.title to it.id }
+        if (forceNetworkUnits) {
+            loadInstitutions(forceNetwork = true)
+        }
+        loadTeachingUnits(forceNetworkUnits)
+
         val resolvedUnitId = unitId
+            ?: syncAttendancePicker(
+                institutionId = _uiState.value.selectedInstitutionId,
+                classId = _uiState.value.selectedClassId,
+                subjectId = _uiState.value.selectedSubjectId,
+            )
             ?: _uiState.value.selectedUnitId
-            ?: groups.firstOrNull()?.id
-        val resolvedLabel = groups.find { it.id == resolvedUnitId }?.title
-            ?: labels.firstOrNull().orEmpty()
         val resolvedKey = CacheKey(month, resolvedUnitId)
 
         if (!bypassCache) {
@@ -289,7 +320,9 @@ class TeacherOverviewViewModel(
 
         return coroutineScope {
             val monthKey = month.toString()
-            val overviewDeferred = async { teacherRepository.overview(month = monthKey) }
+            val overviewDeferred = async {
+                teacherRepository.overview(month = monthKey, forceRefresh = bypassCache)
+            }
             val unitSummaryDeferred = async {
                 if (resolvedUnitId != null) {
                     teacherRepository.unitSummary(resolvedUnitId, monthKey)
@@ -307,10 +340,6 @@ class TeacherOverviewViewModel(
                             overviewResult.data,
                             (unitSummary as? NetworkResult.Success)?.data,
                         ),
-                        attendanceClasses = labels,
-                        selectedAttendanceClass = resolvedLabel,
-                        selectedUnitId = resolvedUnitId,
-                        unitIdsByLabel = idsByLabel,
                     )
                     putCache(resolvedKey, entry)
                     entry
@@ -327,11 +356,168 @@ class TeacherOverviewViewModel(
         }
     }
 
+    /**
+     * Institution → teacher-assigned class/subject pickers → teaching_unit_id.
+     * Only shows classes/subjects from GET /teaching-units (this teacher's assignments).
+     * Attendance APIs always use the resolved [selectedUnitId].
+     */
+    private suspend fun syncAttendancePicker(
+        institutionId: String?,
+        classId: String?,
+        subjectId: String?,
+        forceReloadInstitutions: Boolean = false,
+    ): String? {
+        val institutions = loadInstitutions(forceNetwork = forceReloadInstitutions)
+        val institutionNames = institutions.map { it.name }
+        val institutionIds = institutions.map { it.id }
+        val allUnits = loadTeachingUnits(forceNetwork = false)
+        val resolvedInstitutionId = institutionId
+            ?.takeIf { id -> institutions.any { it.id == id } }
+            ?: userSessionStore?.getInstitutionId()?.takeIf { id ->
+                institutions.any { it.id == id }
+            }
+            ?: institutions.firstOrNull()?.id
+
+        if (institutions.isEmpty()) {
+            _uiState.update {
+                it.copy(
+                    institutions = emptyList(),
+                    institutionIds = emptyList(),
+                    selectedInstitutionId = null,
+                    attendancePickerError = "No institutions are available yet.",
+                    selectedUnitId = null,
+                )
+            }
+            return null
+        }
+
+        if (resolvedInstitutionId.isNullOrBlank()) {
+            _uiState.update {
+                it.copy(
+                    institutions = institutionNames,
+                    institutionIds = institutionIds,
+                    selectedInstitutionId = null,
+                    attendancePickerError = "Please select an institution.",
+                    selectedUnitId = null,
+                )
+            }
+            return null
+        }
+        userSessionStore?.setInstitutionId(resolvedInstitutionId)
+
+        val scopedUnits = TeacherUiMappers.unitsForInstitution(allUnits, resolvedInstitutionId)
+            .filter { it.status == TeachingUnitStatus.ACTIVE }
+        val classChips = TeacherUiMappers.classChips(scopedUnits)
+        val classLabels = classChips.map { it.label }
+        val classIdsByLabel = classChips.associate { it.label to it.classId }
+
+        val resolvedClassId = classId?.takeIf { id -> classChips.any { it.classId == id } }
+            ?: _uiState.value.selectedClassId?.takeIf { id -> classChips.any { it.classId == id } }
+            ?: classChips.firstOrNull()?.classId
+        val resolvedClassLabel = classChips.firstOrNull { it.classId == resolvedClassId }?.label
+            .orEmpty()
+
+        if (resolvedClassId.isNullOrBlank()) {
+            _uiState.update {
+                it.copy(
+                    institutions = institutionNames,
+                    institutionIds = institutionIds,
+                    selectedInstitutionId = resolvedInstitutionId,
+                    attendanceClasses = emptyList(),
+                    classIdsByLabel = emptyMap(),
+                    selectedAttendanceClass = "",
+                    selectedClassId = null,
+                    attendanceSubjects = emptyList(),
+                    subjectIdsByLabel = emptyMap(),
+                    selectedAttendanceSubject = "",
+                    selectedSubjectId = null,
+                    selectedUnitId = null,
+                    attendancePickerError = "No assigned classes for this institution.",
+                )
+            }
+            return null
+        }
+
+        val classUnits = scopedUnits.filter { it.class_id == resolvedClassId }
+        val subjectOptions = classUnits
+            .mapNotNull { unit ->
+                val id = unit.subject_id.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val name = unit.subject_name.trim().ifBlank { return@mapNotNull null }
+                id to name
+            }
+            .distinctBy { it.first }
+            .sortedBy { it.second.lowercase() }
+        val subjectLabels = subjectOptions.map { it.second }
+        val subjectIdsByLabel = subjectOptions.associate { (id, name) -> name to id }
+
+        val resolvedSubjectId = subjectId?.takeIf { id -> subjectOptions.any { it.first == id } }
+            ?: _uiState.value.selectedSubjectId?.takeIf { id -> subjectOptions.any { it.first == id } }
+            ?: subjectOptions.firstOrNull()?.first
+        val resolvedSubjectLabel = subjectOptions.firstOrNull { it.first == resolvedSubjectId }?.second
+            .orEmpty()
+
+        val resolvedUnitId = if (!resolvedSubjectId.isNullOrBlank()) {
+            TeacherUiMappers.resolveTeachingUnitId(
+                units = scopedUnits,
+                classId = resolvedClassId,
+                subjectId = resolvedSubjectId,
+                institutionId = resolvedInstitutionId,
+            )
+        } else {
+            null
+        }
+
+        val pickerError = when {
+            subjectOptions.isEmpty() ->
+                "No assigned subjects for this class."
+            resolvedSubjectId.isNullOrBlank() ->
+                "Select a subject for this class."
+            resolvedUnitId.isNullOrBlank() ->
+                "No teaching unit found for this class and subject."
+            else -> null
+        }
+
+        _uiState.update {
+            it.copy(
+                institutions = institutionNames,
+                institutionIds = institutionIds,
+                selectedInstitutionId = resolvedInstitutionId,
+                attendanceClasses = classLabels,
+                classIdsByLabel = classIdsByLabel,
+                selectedAttendanceClass = resolvedClassLabel,
+                selectedClassId = resolvedClassId,
+                attendanceSubjects = subjectLabels,
+                subjectIdsByLabel = subjectIdsByLabel,
+                selectedAttendanceSubject = resolvedSubjectLabel,
+                selectedSubjectId = resolvedSubjectId,
+                selectedUnitId = resolvedUnitId,
+                attendancePickerError = pickerError,
+            )
+        }
+        return resolvedUnitId
+    }
+
+    private suspend fun loadInstitutions(forceNetwork: Boolean = false): List<InstitutionOut> {
+        if (!forceNetwork) {
+            cachedInstitutions?.let { return it }
+        }
+        return when (val result = teacherRepository.institutions(forceNetwork)) {
+            is NetworkResult.Success -> {
+                val institutions = result.data
+                    .filter { it.is_active }
+                    .sortedWith(compareBy({ it.sort_order }, { it.name }))
+                cachedInstitutions = institutions
+                institutions
+            }
+            else -> cachedInstitutions.orEmpty()
+        }
+    }
+
     private suspend fun loadTeachingUnits(forceNetwork: Boolean): List<TeachingUnitOut> {
         if (!forceNetwork) {
             cachedTeachingUnits?.let { return it }
         }
-        return when (val result = teacherRepository.teachingUnits()) {
+        return when (val result = teacherRepository.teachingUnits(forceNetwork)) {
             is NetworkResult.Success -> {
                 cachedTeachingUnits = result.data
                 result.data
@@ -360,21 +546,23 @@ class TeacherOverviewViewModel(
                 isRefreshing = false,
                 errorMessage = null,
                 dashboard = entry.dashboard,
-                attendanceClasses = entry.attendanceClasses,
-                selectedAttendanceClass = entry.selectedAttendanceClass,
-                selectedUnitId = entry.selectedUnitId,
-                unitIdsByLabel = entry.unitIdsByLabel,
                 attendanceMonth = month,
                 selectedAttendanceDay = if (clearSelectedDay) null else it.selectedAttendanceDay,
             )
         }
     }
 
-    private fun loadSetupPeriods(unitId: String, dateLabel: String) {
+    private fun loadSetupPeriods(
+        unitId: String,
+        dateLabel: String,
+        institutionId: String,
+    ) {
         viewModelScope.launch {
             coroutineScope {
                 val dayDeferred = async { teacherRepository.unitDay(unitId, dateLabel) }
-                val periodsDeferred = async { teacherRepository.periods() }
+                val periodsDeferred = async {
+                    teacherRepository.periods(institutionId)
+                }
                 val dayResult = dayDeferred.await()
                 val periodsResult = periodsDeferred.await()
 
@@ -390,7 +578,6 @@ class TeacherOverviewViewModel(
                             AttendancePeriodOption(
                                 periodId = period.id,
                                 label = timeLabel,
-                                // Docs: extra_label distinguishes extras on the same day (max 30).
                                 extraLabel = period.name.trim().take(30).ifBlank {
                                     timeLabel.take(30)
                                 },
@@ -440,8 +627,9 @@ class TeacherOverviewViewModel(
 
         fun provideFactory(
             teacherRepository: TeacherRepository,
+            userSessionStore: UserSessionStore? = null,
         ): ViewModelProvider.Factory = viewModelFactory {
-            TeacherOverviewViewModel(teacherRepository)
+            TeacherOverviewViewModel(teacherRepository, userSessionStore)
         }
     }
 }

@@ -37,7 +37,11 @@ class TeacherCalendarViewModel(
     }
 
     fun refresh() {
-        loadMonth(_uiState.value.visibleMonth, selectedDay = _uiState.value.selectedDay)
+        loadMonth(
+            month = _uiState.value.visibleMonth,
+            selectedDay = _uiState.value.selectedDay,
+            asPullRefresh = true,
+        )
     }
 
     fun selectDay(day: Int) {
@@ -60,15 +64,37 @@ class TeacherCalendarViewModel(
         _uiState.update { it.copy(selectedDay = null, selectedDayEvents = emptyList()) }
     }
 
-    private fun loadMonth(month: YearMonth, selectedDay: Int? = _uiState.value.selectedDay) {
+    private fun loadMonth(
+        month: YearMonth,
+        selectedDay: Int? = _uiState.value.selectedDay,
+        asPullRefresh: Boolean = false,
+    ) {
         viewModelScope.launch {
+            val hasContent = _uiState.value.allEvents.isNotEmpty()
             _uiState.update {
-                it.copy(
-                    isLoading = true,
-                    errorMessage = null,
-                    visibleMonth = month,
-                    selectedDay = selectedDay,
-                )
+                when {
+                    asPullRefresh -> it.copy(
+                        isRefreshing = true,
+                        isLoading = false,
+                        errorMessage = null,
+                        visibleMonth = month,
+                        selectedDay = selectedDay,
+                    )
+                    hasContent -> it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        errorMessage = null,
+                        visibleMonth = month,
+                        selectedDay = selectedDay,
+                    )
+                    else -> it.copy(
+                        isLoading = true,
+                        isRefreshing = false,
+                        errorMessage = null,
+                        visibleMonth = month,
+                        selectedDay = selectedDay,
+                    )
+                }
             }
             val from = month.atDay(1).toString()
             val to = month.atEndOfMonth().toString()
@@ -80,6 +106,7 @@ class TeacherCalendarViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            isRefreshing = false,
                             allEvents = events,
                             dayMarks = marks,
                             selectedDayEvents = if (day != null) {
@@ -91,7 +118,11 @@ class TeacherCalendarViewModel(
                     }
                 }
                 else -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = result.userMessage())
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        errorMessage = result.userMessage(),
+                    )
                 }
             }
         }

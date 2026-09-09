@@ -11,8 +11,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
@@ -21,11 +24,13 @@ import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -33,12 +38,19 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.lushaiedupls.R
 import com.lushaiedupls.ui.common.navItemClickable
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
+import com.lushaiedupls.ui.theme.BrandOrange
 
 enum class AdminTab(val route: String) {
     Home(AdminRoutes.HOME),
@@ -52,6 +64,7 @@ fun AdminBottomBar(
     selectedTab: AdminTab,
     onTabSelected: (AdminTab) -> Unit,
     modifier: Modifier = Modifier,
+    pendingUserCount: Int = 0,
 ) {
     Column(
         modifier = modifier
@@ -79,6 +92,7 @@ fun AdminBottomBar(
                 label = stringResource(R.string.admin_tab_users),
                 selected = selectedTab == AdminTab.Users,
                 onClick = { onTabSelected(AdminTab.Users) },
+                badgeCount = pendingUserCount,
             )
             BottomNavIcon(
                 icon = Icons.Outlined.School,
@@ -102,11 +116,16 @@ private fun BottomNavIcon(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
+    badgeCount: Int = 0,
 ) {
     Column(
         modifier = Modifier
             .semantics {
-                contentDescription = label
+                contentDescription = if (badgeCount > 0) {
+                    "$label, $badgeCount pending"
+                } else {
+                    label
+                }
                 role = Role.Tab
                 this.selected = selected
             }
@@ -114,12 +133,43 @@ private fun BottomNavIcon(
             .padding(horizontal = 10.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = BrandBlack,
-            modifier = Modifier.size(26.dp),
-        )
+        Box {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = BrandBlack,
+                modifier = Modifier.size(26.dp),
+            )
+            if (badgeCount > 0) {
+                val diameter = 18.dp
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 7.dp, y = (-5).dp)
+                        .size(diameter)
+                        .clip(CircleShape)
+                        .background(BrandOrange),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = if (badgeCount > 99) "99+" else badgeCount.toString(),
+                        color = Color.White,
+                        fontSize = if (badgeCount > 9) 8.sp else 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        lineHeight = if (badgeCount > 9) 8.sp else 10.sp,
+                        modifier = Modifier.wrapContentHeight(align = Alignment.CenterVertically),
+                        style = TextStyle(
+                            platformStyle = PlatformTextStyle(includeFontPadding = false),
+                            lineHeightStyle = LineHeightStyle(
+                                alignment = LineHeightStyle.Alignment.Center,
+                                trim = LineHeightStyle.Trim.Both,
+                            ),
+                        ),
+                    )
+                }
+            }
+        }
         Spacer(modifier = Modifier.height(5.dp))
         val indicatorWidth by animateDpAsState(
             targetValue = if (selected) 18.dp else 0.dp,

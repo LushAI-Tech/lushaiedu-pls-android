@@ -16,7 +16,6 @@ data class RoleChoice(
 data class SelectRoleUiState(
     val roles: List<RoleChoice> = emptyList(),
     val selectedRole: UserRole? = UserRole.Student,
-    val inviteCode: String = "",
     val isLoadingRoles: Boolean = true,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
@@ -24,7 +23,4 @@ data class SelectRoleUiState(
 ) {
     val selectedChoice: RoleChoice?
         get() = roles.firstOrNull { it.role == selectedRole }
-
-    val requiresInviteCode: Boolean
-        get() = selectedChoice?.requiresInviteCode == true
 }

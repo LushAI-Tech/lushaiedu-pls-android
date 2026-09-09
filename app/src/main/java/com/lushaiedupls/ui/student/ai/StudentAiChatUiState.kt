@@ -7,6 +7,11 @@ import com.lushaiedupls.data.mock.AiQuickCheck
 import com.lushaiedupls.data.mock.AiQuizHistoryItem
 import com.lushaiedupls.data.mock.AiSyllabusItem
 
+data class PendingAsk(
+    val item: AiMenuContentItem,
+    val tab: AiMenuTab,
+)
+
 data class StudentAiChatUiState(
     val chapterId: String = "",
     val chapterTitle: String = "",
@@ -19,6 +24,8 @@ data class StudentAiChatUiState(
     val resources: List<AiMenuContentItem> = emptyList(),
     val quizHistory: List<AiQuizHistoryItem> = emptyList(),
     val draft: String = "",
+    val pendingAsk: PendingAsk? = null,
+    val composerFocusNonce: Int = 0,
     val language: String = "English",
     val selectedQuickOption: String? = null,
     val quickCheckAnswered: Boolean = false,
@@ -28,6 +35,8 @@ data class StudentAiChatUiState(
     val menuTab: AiMenuTab = AiMenuTab.Chats,
     val selectedSyllabusIds: Set<String> = emptySet(),
     val showQuickCheck: Boolean = false,
+    val scrollToQuestionId: String? = null,
+    val scrollToQuestionNonce: Int = 0,
     val isLoading: Boolean = false,
     val isMenuContentLoading: Boolean = false,
     val isSending: Boolean = false,

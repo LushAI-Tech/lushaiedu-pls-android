@@ -29,7 +29,22 @@ data class AdminOverview(
 )
 
 @Serializable
+data class InstitutionCreate(
+    val name: String,
+    val sort_order: Int = 0,
+    val is_active: Boolean = true,
+)
+
+@Serializable
+data class InstitutionUpdate(
+    val name: String? = null,
+    val sort_order: Int? = null,
+    val is_active: Boolean? = null,
+)
+
+@Serializable
 data class ClassCreate(
+    val institution_id: String,
     val name: String,
     val sort_order: Int = 0,
     val is_active: Boolean = true,
@@ -44,6 +59,7 @@ data class ClassUpdate(
 
 @Serializable
 data class SubjectCreate(
+    val institution_id: String,
     val class_id: String,
     val name: String,
     val code: String? = null,
@@ -125,12 +141,20 @@ data class UserStatusUpdate(
 )
 
 @Serializable
+data class TeacherInstitutionAssignmentRequest(
+    val institution_id: String,
+    val assignments: List<TeacherAssignment>,
+    val replace_existing: Boolean = true,
+)
+
+@Serializable
 data class ClassReassignRequest(
     val class_id: String,
 )
 
 @Serializable
 data class PeriodCreate(
+    val institution_id: String,
     val name: String,
     val start_time: String,
     val end_time: String,
@@ -150,7 +174,8 @@ data class PeriodUpdate(
 @Serializable
 data class DeletedResponse(
     val deleted: Boolean = true,
-    val id: String,
+    val id: String = "",
+    val message: String? = null,
 )
 
 @Serializable
@@ -160,16 +185,19 @@ data class AdminFeedbackUpdateRequest(
 )
 
 @Serializable
-data class ClassMonthlyFeeUpsertRequest(
-    val class_id: String,
+data class SubjectMonthlyFeeUpsertRequest(
+    val subject_id: String,
     val month: String,
     val amount_paise: Int,
 )
 
 @Serializable
-data class ClassMonthlyFeeOut(
+data class SubjectMonthlyFeeOut(
     val id: String,
+    val subject_id: String,
     val class_id: String,
+    val class_name: String,
+    val subject_name: String,
     val month: String,
     val amount_paise: Int,
     val created_at: String,
@@ -179,6 +207,22 @@ data class ClassMonthlyFeeOut(
 @Serializable
 data class LedgerGenerationRequest(
     val month: String,
+)
+
+@Serializable
+data class FeeLedgerBulkDeleteRequest(
+    val month: String,
+    val class_id: String? = null,
+    val subject_id: String? = null,
+    val student_id: String? = null,
+    val include_paid: Boolean = false,
+)
+
+@Serializable
+data class FeeLedgerBulkDeleteResponse(
+    val message: String = "",
+    val matched_count: Int = 0,
+    val deleted_count: Int = 0,
 )
 
 @Serializable
@@ -254,4 +298,11 @@ data class AdminUserEditRequest(
     val role: UserRole? = null,
     val status: UserStatus? = null,
     val class_id: String? = null,
+)
+
+@Serializable
+data class AdminParentLinkCreateRequest(
+    val parent_user_id: String,
+    val student_user_id: String,
+    val relationship: ParentRelationship = ParentRelationship.GUARDIAN,
 )

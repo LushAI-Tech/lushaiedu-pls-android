@@ -71,4 +71,36 @@ class TeacherUiMappersRollTest {
         assertEquals("Charlie", students[1].name)
         assertEquals(15, students[1].rollNumber)
     }
+
+    @Test
+    fun resolveTeachingUnitId_matchesClassSubjectAndInstitution() {
+        val units = listOf(
+            teachingUnit(id = "u1", classId = "c1", subjectId = "s1", institutionId = "inst-a"),
+            teachingUnit(id = "u2", classId = "c1", subjectId = "s2", institutionId = "inst-a"),
+            teachingUnit(id = "u3", classId = "c1", subjectId = "s1", institutionId = "inst-b"),
+        )
+        assertEquals(
+            "u1",
+            TeacherUiMappers.resolveTeachingUnitId(units, "c1", "s1", "inst-a"),
+        )
+        assertEquals(
+            "u3",
+            TeacherUiMappers.resolveTeachingUnitId(units, "c1", "s1", "inst-b"),
+        )
+        assertEquals(null, TeacherUiMappers.resolveTeachingUnitId(units, "c1", "s9", "inst-a"))
+    }
+
+    private fun teachingUnit(
+        id: String,
+        classId: String,
+        subjectId: String,
+        institutionId: String,
+    ) = com.lushaiedupls.data.remote.dto.TeachingUnitOut(
+        id = id,
+        class_id = classId,
+        subject_id = subjectId,
+        class_name = "X",
+        subject_name = "Physics",
+        institution_id = institutionId,
+    )
 }

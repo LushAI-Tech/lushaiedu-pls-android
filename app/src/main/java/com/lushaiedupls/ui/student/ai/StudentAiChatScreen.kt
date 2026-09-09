@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,10 +20,13 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -31,6 +35,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -64,6 +69,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -73,11 +79,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -98,16 +109,20 @@ import com.lushaiedupls.data.mock.AiChatMessage
 import com.lushaiedupls.data.mock.AiMenuContentItem
 import com.lushaiedupls.data.mock.AiMenuTab
 import com.lushaiedupls.data.mock.AiQuickCheck
-import com.lushaiedupls.data.mock.AiQuizHistoryItem
 import com.lushaiedupls.data.mock.AiSyllabusItem
 import com.lushaiedupls.data.mock.StudentMockRepository
+import com.lushaiedupls.data.mock.isQuestionAskMessage
+import com.lushaiedupls.data.mock.isResourceAskMessage
 import com.lushaiedupls.data.repository.StudentRepository
+import com.lushaiedupls.ui.common.AiChatIntroSkeleton
+import com.lushaiedupls.ui.common.AiMenuQuestionCardSkeleton
+import com.lushaiedupls.ui.common.AiMenuSectionHeaderSkeleton
+import com.lushaiedupls.ui.common.CenteredEmptyState
 import com.lushaiedupls.ui.common.SkeletonBox
 import com.lushaiedupls.ui.common.SkeletonLine
 import com.lushaiedupls.ui.common.SlideFromRightOverlay
-import com.lushaiedupls.ui.common.StudentPageSkeleton
-import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.common.markdown.MarkdownLatexText
+import com.lushaiedupls.data.remote.friendlyStemBindingMessage
 import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
@@ -125,6 +140,13 @@ private val HighlightPeach = Color(0xFFFFEFE6)
 private val SyllabusText = Color(0xFF3A4256)
 private val QuickCheckGreen = Color(0xFF16A34A)
 private val QuickCheckRed = Color(0xFFDC2626)
+
+private suspend fun LazyListState.animateScrollToLastItem() {
+    val lastIndex = (layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+    if (layoutInfo.totalItemsCount > 0) {
+        animateScrollToItem(lastIndex)
+    }
+}
 
 @Composable
 fun StudentAiChatRoute(
@@ -158,7 +180,12 @@ fun StudentAiChatRoute(
         onLanguageSelected = viewModel::setLanguage,
         onTakeQuiz = { onTakeQuiz(uiState.chapterId, viewModel.selectedSectionIds()) },
         onAskAboutContent = viewModel::askAboutContent,
+        onAskAboutResource = viewModel::askAboutResource,
+        onClearPendingAsk = viewModel::clearPendingAsk,
+        onBackToQuestion = viewModel::returnToQuestion,
+        onBackToResource = viewModel::returnToResource,
         onToggleSyllabus = viewModel::toggleSyllabusSelection,
+        onSelectAllSyllabus = viewModel::selectAllSyllabus,
         modifier = modifier,
     )
 }
@@ -179,7 +206,12 @@ fun StudentAiChatScreen(
     onLanguageSelected: (String) -> Unit = {},
     onTakeQuiz: () -> Unit = {},
     onAskAboutContent: (AiMenuContentItem) -> Unit = {},
+    onAskAboutResource: (AiMenuContentItem) -> Unit = {},
+    onClearPendingAsk: () -> Unit = {},
+    onBackToQuestion: (AiChatMessage) -> Unit = {},
+    onBackToResource: (AiChatMessage) -> Unit = {},
     onToggleSyllabus: (AiSyllabusItem) -> Unit = {},
+    onSelectAllSyllabus: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -189,52 +221,108 @@ fun StudentAiChatScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             ChatTopBar(
-                title = uiState.chapterTitle,
+                title = uiState.chapterTitle.ifBlank {
+                    stringResource(R.string.ai_learn_title)
+                },
                 activeTab = uiState.menuTab,
                 onBack = onBack,
                 onClear = onClearChat,
                 onMenu = onOpenMenu,
             )
 
+            val blockingEmptyError = !uiState.isLoading &&
+                uiState.messages.isEmpty() &&
+                !uiState.errorMessage.isNullOrBlank()
+
+            if (blockingEmptyError) {
+                CenteredEmptyState(
+                    message = friendlyStemBindingMessage(uiState.errorMessage.orEmpty())
+                        ?: uiState.errorMessage.orEmpty(),
+                    icon = Icons.Outlined.AutoStories,
+                    title = stringResource(R.string.ai_subject_unavailable_title),
+                    modifier = Modifier.weight(1f),
+                    fillMaxSize = true,
+                )
+            } else {
+            uiState.errorMessage?.takeIf { it.isNotBlank() }?.let { message ->
+                Text(
+                    text = message,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    color = BrandOrange,
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.SansSerif,
+                )
+            }
+
             when (uiState.menuTab) {
                 AiMenuTab.Chats -> {
                     val listState = rememberLazyListState()
+                    val composerFocusRequester = remember { FocusRequester() }
+                    val keyboardController = LocalSoftwareKeyboardController.current
+                    val density = LocalDensity.current
+                    var composerFocused by remember { mutableStateOf(false) }
+                    val imeBottom = WindowInsets.ime.getBottom(density)
 
-                    LaunchedEffect(uiState.messages.size, uiState.isSending) {
+                    LaunchedEffect(uiState.messages.size, uiState.isSending, uiState.suggestions.size) {
                         if (uiState.messages.isNotEmpty() || uiState.isSending) {
-                            val targetIndex = (uiState.messages.size + (if (uiState.isSending) 1 else 0)).coerceAtLeast(0)
-                            listState.animateScrollToItem(targetIndex)
+                            listState.animateScrollToLastItem()
                         }
                     }
+                    LaunchedEffect(composerFocused, imeBottom) {
+                        if (!composerFocused && imeBottom <= 0) return@LaunchedEffect
+                        withFrameNanos { }
+                        listState.animateScrollToLastItem()
+                    }
+                    LaunchedEffect(uiState.composerFocusNonce) {
+                        if (uiState.composerFocusNonce <= 0) return@LaunchedEffect
+                        withFrameNanos { }
+                        runCatching { composerFocusRequester.requestFocus() }
+                        keyboardController?.show()
+                    }
 
-                    Box(
+                    Column(
                         modifier = Modifier
                             .weight(1f)
-                            .fillMaxWidth(),
+                            .fillMaxWidth()
+                            .imePadding(),
                     ) {
-                        if (uiState.isLoading && uiState.messages.isEmpty()) {
-                            StudentPageSkeleton(
-                                kind = StudentSkeletonKind.Chat,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        } else {
-                            LazyColumn(
-                                state = listState,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(horizontal = 16.dp),
-                                verticalArrangement = Arrangement.spacedBy(14.dp),
-                            ) {
-                                item { Spacer(modifier = Modifier.height(4.dp)) }
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            item { Spacer(modifier = Modifier.height(4.dp)) }
+                            if (uiState.isLoading && uiState.messages.isEmpty()) {
+                                item(key = "chat_intro_skeleton") {
+                                    AiChatIntroSkeleton()
+                                }
+                            } else {
                                 items(uiState.messages, key = { it.id }) { message ->
-                                    ChatBubble(message = message)
+                                    ChatBubble(
+                                        message = message,
+                                        onBackToQuestion = if (message.isQuestionAskMessage()) {
+                                            { onBackToQuestion(message) }
+                                        } else {
+                                            null
+                                        },
+                                        onBackToResource = if (message.isResourceAskMessage()) {
+                                            { onBackToResource(message) }
+                                        } else {
+                                            null
+                                        },
+                                    )
                                 }
                                 if (uiState.isSending) {
                                     item(key = "ai_thinking") {
                                         AiThinkingBubble()
                                     }
                                 }
-                                if (uiState.suggestions.isNotEmpty()) {
+                                if (!uiState.isSending && uiState.suggestions.isNotEmpty()) {
                                     item {
                                         FlowRow(
                                             modifier = Modifier.fillMaxWidth(),
@@ -250,7 +338,7 @@ fun StudentAiChatScreen(
                                         }
                                     }
                                 }
-                                if (uiState.showQuickCheck && uiState.quickCheck != null) {
+                                if (!uiState.isSending && uiState.showQuickCheck && uiState.quickCheck != null) {
                                     item {
                                         Spacer(modifier = Modifier.height(8.dp))
                                         QuickCheckCard(
@@ -262,29 +350,46 @@ fun StudentAiChatScreen(
                                         )
                                     }
                                 }
-                                item { Spacer(modifier = Modifier.height(100.dp)) }
+                            }
+                            item {
+                                Spacer(modifier = Modifier.height(12.dp))
                             }
                         }
 
-                        // Bottom message bar with white background
                         Column(
                             modifier = Modifier
-                                .align(Alignment.BottomCenter)
                                 .fillMaxWidth()
-                                .background(BgWhite)
-                                .navigationBarsPadding(),
+                                .background(BgWhite),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             HorizontalDivider(color = BorderGray.copy(alpha = 0.4f))
+                            uiState.pendingAsk?.let { pending ->
+                                PendingAskComposerChip(
+                                    pending = pending,
+                                    onClear = onClearPendingAsk,
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.94f)
+                                        .padding(top = 10.dp),
+                                )
+                            }
                             ChatInputBar(
                                 language = uiState.language,
                                 draft = uiState.draft,
+                                placeholder = when (uiState.pendingAsk?.tab) {
+                                    AiMenuTab.Resources -> stringResource(R.string.ai_ask_about_resource)
+                                    AiMenuTab.TextbookQuestions,
+                                    AiMenuTab.ExamPreparation,
+                                    -> stringResource(R.string.ai_ask_about_question)
+                                    else -> stringResource(R.string.ai_send_messages)
+                                },
                                 onDraftChange = onDraftChange,
                                 onSend = onSend,
                                 onLanguageSelected = onLanguageSelected,
+                                focusRequester = composerFocusRequester,
+                                onComposerFocusChange = { composerFocused = it },
                                 modifier = Modifier
                                     .fillMaxWidth(0.94f)
-                                    .padding(vertical = 10.dp),
+                                    .padding(top = 8.dp, bottom = 8.dp),
                             )
                         }
                     }
@@ -294,6 +399,8 @@ fun StudentAiChatScreen(
                         questions = uiState.textbookQuestions,
                         isLoading = uiState.isMenuContentLoading,
                         onAskAboutQuestion = onAskAboutContent,
+                        highlightedQuestionId = uiState.scrollToQuestionId,
+                        scrollToQuestionNonce = uiState.scrollToQuestionNonce,
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),
@@ -304,6 +411,8 @@ fun StudentAiChatScreen(
                         examPrepPyqs = uiState.examPrepPyqs,
                         isLoading = uiState.isMenuContentLoading,
                         onAskAboutPyq = onAskAboutContent,
+                        highlightedQuestionId = uiState.scrollToQuestionId,
+                        scrollToQuestionNonce = uiState.scrollToQuestionNonce,
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),
@@ -313,12 +422,15 @@ fun StudentAiChatScreen(
                     ResourcesPageView(
                         resources = uiState.resources,
                         isLoading = uiState.isMenuContentLoading,
-                        onOpenResource = onAskAboutContent,
+                        onOpenResource = onAskAboutResource,
+                        highlightedResourceId = uiState.scrollToQuestionId,
+                        scrollToResourceNonce = uiState.scrollToQuestionNonce,
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),
                     )
                 }
+            }
             }
         }
     }
@@ -335,21 +447,13 @@ fun StudentAiChatScreen(
                 selectedTab = uiState.menuTab,
                 syllabus = uiState.syllabus,
                 selectedSyllabusIds = uiState.selectedSyllabusIds,
-                textbookQuestions = uiState.textbookQuestions,
-                examPrepPyqs = uiState.examPrepPyqs,
-                resources = uiState.resources,
-                quizHistory = uiState.quizHistory,
-                isMenuContentLoading = uiState.isMenuContentLoading,
                 onTabSelected = onMenuTabSelected,
                 onTakeQuiz = {
                     requestDismiss()
                     onTakeQuiz()
                 },
-                onContentClick = { item ->
-                    requestDismiss()
-                    onAskAboutContent(item)
-                },
                 onSyllabusClick = onToggleSyllabus,
+                onSelectAllSyllabus = onSelectAllSyllabus,
                 onDismiss = requestDismiss,
                 modifier = Modifier
                     .fillMaxSize()
@@ -415,24 +519,70 @@ private fun ChatTopBar(
 }
 
 @Composable
-private fun ChatBubble(message: AiChatMessage) {
+private fun ChatBubble(
+    message: AiChatMessage,
+    onBackToQuestion: (() -> Unit)? = null,
+    onBackToResource: (() -> Unit)? = null,
+) {
     if (message.fromUser) {
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 10.dp, bottom = 8.dp),
-            contentAlignment = Alignment.CenterEnd,
+            horizontalAlignment = Alignment.End,
         ) {
-            Text(
-                text = message.text,
-                modifier = Modifier
-                    .widthIn(max = 290.dp)
-                    .background(BrandBlack, BubbleShape)
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                color = Color.White,
-                fontSize = 14.sp,
-                fontFamily = FontFamily.SansSerif,
-            )
+            val resourceTitle = message.linkedResourceTitle?.takeIf { it.isNotBlank() }
+            val questionTitle = message.linkedQuestionTitle?.takeIf { it.isNotBlank() }
+            if (onBackToResource != null && resourceTitle != null) {
+                LinkedAskChip(
+                    title = resourceTitle,
+                    icon = Icons.Outlined.FolderOpen,
+                    contentDescription = stringResource(R.string.cd_ai_back_to_resource),
+                    onClick = onBackToResource,
+                )
+            } else if (onBackToQuestion != null && questionTitle != null) {
+                LinkedAskChip(
+                    title = questionTitle,
+                    icon = Icons.Outlined.AutoStories,
+                    contentDescription = stringResource(R.string.cd_ai_back_to_question),
+                    onClick = onBackToQuestion,
+                )
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
+            ) {
+                if (onBackToQuestion != null && questionTitle == null && onBackToResource == null) {
+                    IconButton(
+                        onClick = onBackToQuestion,
+                        modifier = Modifier
+                            .padding(end = 6.dp)
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(BgLight)
+                            .border(1.dp, BorderGray.copy(alpha = 0.6f), CircleShape),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.AutoStories,
+                            contentDescription = stringResource(R.string.cd_ai_back_to_question),
+                            tint = BrandOrange,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+                if (message.text.isNotBlank()) {
+                    Text(
+                        text = message.text,
+                        modifier = Modifier
+                            .widthIn(max = 290.dp)
+                            .background(BrandBlack, BubbleShape)
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontFamily = FontFamily.SansSerif,
+                    )
+                }
+            }
         }
     } else {
         MarkdownLatexText(
@@ -652,12 +802,131 @@ private fun QuickCheckCard(
 }
 
 @Composable
+private fun LinkedAskChip(
+    title: String,
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .padding(bottom = 6.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(HighlightPeach)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = BrandOrange,
+            modifier = Modifier.size(14.dp),
+        )
+        Text(
+            text = title,
+            color = BrandBlack,
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            fontFamily = FontFamily.SansSerif,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = 220.dp),
+        )
+    }
+}
+
+@Composable
+private fun PendingAskComposerChip(
+    pending: PendingAsk,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val item = pending.item
+    val chipShape = RoundedCornerShape(14.dp)
+    val fallbackTitle = when (pending.tab) {
+        AiMenuTab.ExamPreparation -> stringResource(R.string.ai_menu_exam)
+        AiMenuTab.TextbookQuestions -> stringResource(R.string.ai_menu_textbook)
+        else -> stringResource(R.string.ai_menu_resources)
+    }
+    val leadingIcon = when (pending.tab) {
+        AiMenuTab.ExamPreparation -> Icons.Outlined.AutoAwesome
+        AiMenuTab.TextbookQuestions -> Icons.Outlined.AutoStories
+        else -> Icons.Outlined.FolderOpen
+    }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(chipShape)
+            .background(HighlightPeach)
+            .border(1.dp, BrandOrange.copy(alpha = 0.45f), chipShape)
+            .padding(start = 8.dp, end = 2.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(BrandBlack),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (pending.tab == AiMenuTab.Resources && !item.imageUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = item.imageUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Icon(
+                    imageVector = leadingIcon,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.ai_asking_about_resource),
+                color = BrandOrange,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = FontFamily.SansSerif,
+            )
+            Text(
+                text = item.title.ifBlank { fallbackTitle },
+                color = BrandBlack,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = FontFamily.SansSerif,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        IconButton(onClick = onClear) {
+            Icon(
+                imageVector = Icons.Outlined.Close,
+                contentDescription = stringResource(R.string.cd_ai_clear_resource),
+                tint = TextSecondary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+@Composable
 private fun ChatInputBar(
     language: String,
     draft: String,
+    placeholder: String,
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
     onLanguageSelected: (String) -> Unit = {},
+    focusRequester: FocusRequester? = null,
+    onComposerFocusChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -789,12 +1058,18 @@ private fun ChatInputBar(
                 .heightIn(min = 44.dp)
                 .clip(InputShape)
                 .background(BgLight)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) {
+                    focusRequester?.let { runCatching { it.requestFocus() } }
+                }
                 .padding(horizontal = 16.dp, vertical = 11.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
             if (draft.isEmpty()) {
                 Text(
-                    text = stringResource(R.string.ai_send_messages),
+                    text = placeholder,
                     color = TextSecondary,
                     fontSize = 13.sp,
                     fontFamily = FontFamily.SansSerif,
@@ -803,7 +1078,17 @@ private fun ChatInputBar(
             BasicTextField(
                 value = draft,
                 onValueChange = onDraftChange,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (focusRequester != null) {
+                            Modifier
+                                .focusRequester(focusRequester)
+                                .onFocusChanged { onComposerFocusChange(it.isFocused) }
+                        } else {
+                            Modifier
+                        },
+                    ),
                 singleLine = true,
                 textStyle = TextStyle(
                     color = BrandBlack,
@@ -836,13 +1121,25 @@ private fun TextbookQuestionsPageView(
     questions: List<AiMenuContentItem>,
     isLoading: Boolean,
     onAskAboutQuestion: (AiMenuContentItem) -> Unit,
+    highlightedQuestionId: String? = null,
+    scrollToQuestionNonce: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     if (isLoading && questions.isEmpty()) {
-        StudentPageSkeleton(
-            kind = StudentSkeletonKind.TextbookQuestions,
-            modifier = modifier.fillMaxSize(),
-        )
+        LazyColumn(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                AiMenuSectionHeaderSkeleton(titleWidth = 150.dp, trailingWidth = 52.dp)
+            }
+            items(3) {
+                AiMenuQuestionCardSkeleton()
+            }
+            item { Spacer(modifier = Modifier.height(24.dp)) }
+        }
     } else if (questions.isEmpty()) {
         AiEmptyStateView(
             tab = AiMenuTab.TextbookQuestions,
@@ -858,7 +1155,16 @@ private fun TextbookQuestionsPageView(
             modifier = modifier,
         )
     } else {
+        val listState = rememberLazyListState()
+        LaunchedEffect(scrollToQuestionNonce, highlightedQuestionId) {
+            val targetId = highlightedQuestionId ?: return@LaunchedEffect
+            val index = questions.indexOfFirst { it.id == targetId }
+            if (index >= 0) {
+                listState.animateScrollToItem(index + 1)
+            }
+        }
         LazyColumn(
+            state = listState,
             modifier = modifier
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
@@ -889,11 +1195,17 @@ private fun TextbookQuestionsPageView(
                 }
             }
             itemsIndexed(questions, key = { index, item -> item.id.ifBlank { index.toString() } }) { index, item ->
+                val highlighted = item.id == highlightedQuestionId
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = BgWhite),
-                    border = BorderStroke(1.dp, BorderGray.copy(alpha = 0.65f)),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (highlighted) HighlightPeach else BgWhite,
+                    ),
+                    border = BorderStroke(
+                        width = if (highlighted) 2.dp else 1.dp,
+                        color = if (highlighted) BrandOrange else BorderGray.copy(alpha = 0.65f),
+                    ),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 ) {
                     Column(
@@ -901,62 +1213,21 @@ private fun TextbookQuestionsPageView(
                             .fillMaxWidth()
                             .padding(14.dp),
                     ) {
+                        AiMenuQuestionNumber(number = index + 1)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        AiMenuQuestionContent(item = item)
+                        Spacer(modifier = Modifier.height(12.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Box(
+                            AiMenuQuestionFooter(
+                                subtitle = item.subtitle,
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(BgLight)
-                                    .padding(horizontal = 8.dp, vertical = 3.dp),
-                            ) {
-                                Text(
-                                    text = "Q ${index + 1}",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    color = BrandBlack,
-                                    fontFamily = FontFamily.SansSerif,
-                                )
-                            }
-                            if (!item.subtitle.isNullOrBlank()) {
-                                Text(
-                                    text = item.subtitle,
-                                    fontSize = 11.sp,
-                                    color = TextSecondary,
-                                    fontFamily = FontFamily.SansSerif,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
-                        MarkdownLatexText(
-                            text = item.title,
-                            color = BrandBlack,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            lineHeightMultiplier = 20f / 14f,
-                        )
-                        if (!item.imageUrl.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            AsyncImage(
-                                model = item.imageUrl,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(160.dp)
-                                    .clip(RoundedCornerShape(10.dp)),
-                                contentScale = ContentScale.Fit,
+                                    .weight(1f)
+                                    .padding(end = 12.dp),
                             )
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
                             Box(
                                 modifier = Modifier
                                     .height(32.dp)
@@ -999,20 +1270,41 @@ private fun ExamPreparationPageView(
     examPrepPyqs: List<AiMenuContentItem>,
     isLoading: Boolean,
     onAskAboutPyq: (AiMenuContentItem) -> Unit,
+    highlightedQuestionId: String? = null,
+    scrollToQuestionNonce: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     if (isLoading && examPrepPyqs.isEmpty()) {
-        StudentPageSkeleton(
-            kind = StudentSkeletonKind.ExamPreparation,
-            modifier = modifier.fillMaxSize(),
-        )
+        LazyColumn(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                AiMenuSectionHeaderSkeleton(titleWidth = 140.dp, trailingWidth = 72.dp)
+            }
+            items(3) {
+                AiMenuQuestionCardSkeleton()
+            }
+            item { Spacer(modifier = Modifier.height(24.dp)) }
+        }
     } else if (examPrepPyqs.isEmpty()) {
         AiEmptyStateView(
             tab = AiMenuTab.ExamPreparation,
             modifier = modifier,
         )
     } else {
+        val listState = rememberLazyListState()
+        LaunchedEffect(scrollToQuestionNonce, highlightedQuestionId) {
+            val targetId = highlightedQuestionId ?: return@LaunchedEffect
+            val index = examPrepPyqs.indexOfFirst { it.id == targetId }
+            if (index >= 0) {
+                listState.animateScrollToItem(index + 1)
+            }
+        }
         LazyColumn(
+            state = listState,
             modifier = modifier
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
@@ -1043,13 +1335,19 @@ private fun ExamPreparationPageView(
                 }
             }
             itemsIndexed(examPrepPyqs, key = { index, item -> item.id.ifBlank { index.toString() } }) { index, item ->
+                val highlighted = item.id == highlightedQuestionId
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onAskAboutPyq(item) },
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = BgWhite),
-                    border = BorderStroke(1.dp, BorderGray.copy(alpha = 0.65f)),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (highlighted) HighlightPeach else BgWhite,
+                    ),
+                    border = BorderStroke(
+                        width = if (highlighted) 2.dp else 1.dp,
+                        color = if (highlighted) BrandOrange else BorderGray.copy(alpha = 0.65f),
+                    ),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 ) {
                     Column(
@@ -1057,62 +1355,21 @@ private fun ExamPreparationPageView(
                             .fillMaxWidth()
                             .padding(14.dp),
                     ) {
+                        AiMenuQuestionNumber(number = index + 1)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        AiMenuQuestionContent(item = item)
+                        Spacer(modifier = Modifier.height(12.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Box(
+                            AiMenuQuestionFooter(
+                                subtitle = item.subtitle,
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(BgLight)
-                                    .padding(horizontal = 8.dp, vertical = 3.dp),
-                            ) {
-                                Text(
-                                    text = "Q ${index + 1}",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    color = BrandBlack,
-                                    fontFamily = FontFamily.SansSerif,
-                                )
-                            }
-                            if (!item.subtitle.isNullOrBlank()) {
-                                Text(
-                                    text = item.subtitle,
-                                    fontSize = 11.sp,
-                                    color = TextSecondary,
-                                    fontFamily = FontFamily.SansSerif,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
-                        MarkdownLatexText(
-                            text = item.title,
-                            color = BrandBlack,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            lineHeightMultiplier = 20f / 14f,
-                        )
-                        if (!item.imageUrl.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            AsyncImage(
-                                model = item.imageUrl,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(160.dp)
-                                    .clip(RoundedCornerShape(10.dp)),
-                                contentScale = ContentScale.Fit,
+                                    .weight(1f)
+                                    .padding(end = 12.dp),
                             )
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
                             Box(
                                 modifier = Modifier
                                     .height(32.dp)
@@ -1155,12 +1412,16 @@ private fun ResourcesPageView(
     resources: List<AiMenuContentItem>,
     isLoading: Boolean,
     onOpenResource: (AiMenuContentItem) -> Unit,
+    highlightedResourceId: String? = null,
+    scrollToResourceNonce: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     if (isLoading && resources.isEmpty()) {
-        StudentPageSkeleton(
-            kind = StudentSkeletonKind.Resources,
-            modifier = modifier.fillMaxSize(),
+        ResourceVideosPage(
+            resources = emptyList(),
+            isLoading = true,
+            onAskAboutResource = {},
+            modifier = modifier,
         )
     } else if (resources.isEmpty()) {
         AiEmptyStateView(
@@ -1169,119 +1430,14 @@ private fun ResourcesPageView(
             modifier = modifier,
         )
     } else {
-        LazyColumn(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp, bottom = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.ai_menu_resources),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = BrandBlack,
-                        fontFamily = FontFamily.SansSerif,
-                    )
-                    Text(
-                        text = "${resources.size} files",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextSecondary,
-                        fontFamily = FontFamily.SansSerif,
-                    )
-                }
-            }
-            itemsIndexed(resources, key = { index, item -> item.id.ifBlank { index.toString() } }) { _, item ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onOpenResource(item) },
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = BgWhite),
-                    border = BorderStroke(1.dp, BorderGray.copy(alpha = 0.65f)),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(54.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(BgLight),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (!item.imageUrl.isNullOrBlank()) {
-                                AsyncImage(
-                                    model = item.imageUrl,
-                                    contentDescription = item.title,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop,
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Outlined.InsertDriveFile,
-                                    contentDescription = null,
-                                    tint = BrandOrange,
-                                    modifier = Modifier.size(26.dp),
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = item.title,
-                                color = BrandBlack,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                fontFamily = FontFamily.SansSerif,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            if (!item.subtitle.isNullOrBlank()) {
-                                Spacer(modifier = Modifier.height(3.dp))
-                                Text(
-                                    text = item.subtitle,
-                                    color = TextSecondary,
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.SansSerif,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .height(32.dp)
-                                .clip(ChipShape)
-                                .background(BgLight)
-                                .padding(horizontal = 10.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = "Ask AI",
-                                color = BrandBlack,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.SansSerif,
-                            )
-                        }
-                    }
-                }
-            }
-            item { Spacer(modifier = Modifier.height(24.dp)) }
-        }
+        ResourceVideosPage(
+            resources = resources,
+            isLoading = false,
+            onAskAboutResource = onOpenResource,
+            highlightedResourceId = highlightedResourceId,
+            scrollToResourceNonce = scrollToResourceNonce,
+            modifier = modifier,
+        )
     }
 }
 
@@ -1415,19 +1571,14 @@ fun AiChatsMenuOverlay(
     selectedTab: AiMenuTab,
     syllabus: List<AiSyllabusItem>,
     selectedSyllabusIds: Set<String> = emptySet(),
-    textbookQuestions: List<AiMenuContentItem> = emptyList(),
-    examPrepPyqs: List<AiMenuContentItem> = emptyList(),
-    resources: List<AiMenuContentItem> = emptyList(),
-    quizHistory: List<AiQuizHistoryItem> = emptyList(),
-    isMenuContentLoading: Boolean = false,
     onTabSelected: (AiMenuTab) -> Unit,
     onTakeQuiz: () -> Unit,
-    onContentClick: (AiMenuContentItem) -> Unit = {},
     onSyllabusClick: (AiSyllabusItem) -> Unit = {},
+    onSelectAllSyllabus: () -> Unit = {},
     onDismiss: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val showQuizButton = selectedTab == AiMenuTab.Chats || selectedTab == AiMenuTab.ExamPreparation
+    val showQuizButton = selectedTab == AiMenuTab.Chats
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -1492,126 +1643,13 @@ fun AiChatsMenuOverlay(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            when (selectedTab) {
-                AiMenuTab.Chats -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .verticalScroll(rememberScrollState()),
-                    ) {
-                        syllabus.forEachIndexed { index, item ->
-                            SyllabusRow(
-                                item = item,
-                                selected = item.id in selectedSyllabusIds,
-                                onClick = { onSyllabusClick(item) },
-                            )
-                            if (index != syllabus.lastIndex) {
-                                HorizontalDivider(color = BorderGray.copy(alpha = 0.35f))
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(72.dp))
-                    }
-                }
-                AiMenuTab.TextbookQuestions -> MenuContentList(
-                    items = textbookQuestions,
-                    isLoading = isMenuContentLoading,
-                    tab = AiMenuTab.TextbookQuestions,
-                    onItemClick = onContentClick,
-                    modifier = Modifier.weight(1f),
-                )
-                AiMenuTab.Resources -> MenuContentList(
-                    items = resources,
-                    isLoading = isMenuContentLoading,
-                    tab = AiMenuTab.Resources,
-                    showThumbnail = true,
-                    onItemClick = onContentClick,
-                    modifier = Modifier.weight(1f),
-                )
-                AiMenuTab.ExamPreparation -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .verticalScroll(rememberScrollState()),
-                    ) {
-                        if (examPrepPyqs.isNotEmpty()) {
-                            Text(
-                                text = "Past exam questions (PYQs)",
-                                color = BrandBlack,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp,
-                                modifier = Modifier.padding(bottom = 8.dp),
-                            )
-                            examPrepPyqs.forEachIndexed { index, item ->
-                                MenuContentRow(
-                                    item = item,
-                                    showThumbnail = false,
-                                    onClick = { onContentClick(item) },
-                                )
-                                if (index != examPrepPyqs.lastIndex) {
-                                    HorizontalDivider(color = BorderGray.copy(alpha = 0.35f))
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(20.dp))
-                        }
-                        if (syllabus.isNotEmpty()) {
-                            Text(
-                                text = stringResource(R.string.ai_exam_section_practice),
-                                color = BrandBlack,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp,
-                                modifier = Modifier.padding(bottom = 8.dp),
-                            )
-                            syllabus.forEachIndexed { index, item ->
-                                SyllabusRow(
-                                    item = item,
-                                    selected = item.id in selectedSyllabusIds,
-                                    onClick = { onSyllabusClick(item) },
-                                )
-                                if (index != syllabus.lastIndex) {
-                                    HorizontalDivider(color = BorderGray.copy(alpha = 0.35f))
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(20.dp))
-                        }
-                        Text(
-                            text = stringResource(R.string.ai_exam_past_attempts),
-                            color = BrandBlack,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp,
-                            modifier = Modifier.padding(bottom = 8.dp),
-                        )
-                        when {
-                            isMenuContentLoading && quizHistory.isEmpty() -> {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                                ) {
-                                    repeat(3) {
-                                        SkeletonLine(modifier = Modifier.fillMaxWidth(0.7f), height = 12.dp)
-                                        SkeletonLine(modifier = Modifier.fillMaxWidth(0.4f), height = 10.dp)
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                    }
-                                }
-                            }
-                            quizHistory.isEmpty() -> Text(
-                                text = stringResource(R.string.ai_exam_no_history),
-                                color = TextSecondary,
-                                fontSize = 14.sp,
-                                modifier = Modifier.padding(vertical = 8.dp),
-                            )
-                            else -> quizHistory.forEachIndexed { index, item ->
-                                QuizHistoryRow(item = item)
-                                if (index != quizHistory.lastIndex) {
-                                    HorizontalDivider(color = BorderGray.copy(alpha = 0.35f))
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(72.dp))
-                    }
-                }
-            }
+            AiMenuSyllabusList(
+                syllabus = syllabus,
+                selectedSyllabusIds = selectedSyllabusIds,
+                onSyllabusClick = onSyllabusClick,
+                onSelectAllSyllabus = onSelectAllSyllabus,
+                modifier = Modifier.weight(1f),
+            )
         }
 
         if (showQuizButton) {
@@ -1634,6 +1672,47 @@ fun AiChatsMenuOverlay(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun AiMenuSyllabusList(
+    syllabus: List<AiSyllabusItem>,
+    selectedSyllabusIds: Set<String>,
+    onSyllabusClick: (AiSyllabusItem) -> Unit,
+    onSelectAllSyllabus: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val allTopicsSelected = selectedSyllabusIds.isEmpty() ||
+        (syllabus.isNotEmpty() && selectedSyllabusIds.containsAll(syllabus.map { it.id }))
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+    ) {
+        SyllabusRow(
+            item = AiSyllabusItem(
+                id = "",
+                title = stringResource(R.string.ai_menu_all_topics),
+                progressLabel = null,
+            ),
+            selected = allTopicsSelected,
+            onClick = onSelectAllSyllabus,
+        )
+        if (syllabus.isNotEmpty()) {
+            HorizontalDivider(color = BorderGray.copy(alpha = 0.35f))
+        }
+        syllabus.forEachIndexed { index, item ->
+            SyllabusRow(
+                item = item,
+                selected = !allTopicsSelected && item.id in selectedSyllabusIds,
+                onClick = { onSyllabusClick(item) },
+            )
+            if (index != syllabus.lastIndex) {
+                HorizontalDivider(color = BorderGray.copy(alpha = 0.35f))
+            }
+        }
+        Spacer(modifier = Modifier.height(72.dp))
     }
 }
 
@@ -1665,157 +1744,58 @@ private fun MenuTabChip(
 }
 
 @Composable
-private fun MenuContentList(
-    items: List<AiMenuContentItem>,
-    isLoading: Boolean,
-    tab: AiMenuTab,
-    onItemClick: (AiMenuContentItem) -> Unit,
-    showThumbnail: Boolean = false,
+private fun AiMenuQuestionNumber(number: Int) {
+    Text(
+        text = "Q $number",
+        color = BrandOrange,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.SansSerif,
+    )
+}
+
+@Composable
+private fun AiMenuQuestionContent(item: AiMenuContentItem) {
+    MarkdownLatexText(
+        text = item.title,
+        color = BrandBlack,
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Medium,
+        lineHeightMultiplier = 20f / 14f,
+    )
+    if (!item.imageUrl.isNullOrBlank()) {
+        Spacer(modifier = Modifier.height(10.dp))
+        AsyncImage(
+            model = item.imageUrl,
+            contentDescription = null,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(160.dp)
+                .clip(RoundedCornerShape(10.dp)),
+            contentScale = ContentScale.Fit,
+        )
+    }
+}
+
+@Composable
+private fun AiMenuQuestionFooter(
+    subtitle: String?,
     modifier: Modifier = Modifier,
 ) {
-    when {
-        isLoading && items.isEmpty() -> {
-            Column(
-                modifier = modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                repeat(4) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (showThumbnail) {
-                            SkeletonBox(modifier = Modifier.size(44.dp), shape = RoundedCornerShape(8.dp))
-                            Spacer(modifier = Modifier.width(10.dp))
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            SkeletonLine(modifier = Modifier.fillMaxWidth(0.75f), height = 12.dp)
-                            Spacer(modifier = Modifier.height(6.dp))
-                            SkeletonLine(modifier = Modifier.fillMaxWidth(0.4f), height = 10.dp)
-                        }
-                    }
-                    HorizontalDivider(color = BorderGray.copy(alpha = 0.25f))
-                }
-            }
-        }
-        items.isEmpty() -> {
-            AiEmptyStateView(
-                tab = tab,
-                compact = true,
-                onAction = if (tab == AiMenuTab.Resources || tab == AiMenuTab.ExamPreparation) null else {
-                    {
-                        onItemClick(
-                            AiMenuContentItem(
-                                id = "",
-                                sectionId = "",
-                                title = when (tab) {
-                                    AiMenuTab.TextbookQuestions -> "Ask tutor a textbook question"
-                                    else -> "Ask tutor a question"
-                                },
-                            ),
-                        )
-                    }
-                },
-                modifier = modifier,
-            )
-        }
-        else -> Column(
-            modifier = modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
-        ) {
-            items.forEachIndexed { index, item ->
-                MenuContentRow(
-                    item = item,
-                    showThumbnail = showThumbnail,
-                    onClick = { onItemClick(item) },
-                )
-                if (index != items.lastIndex) {
-                    HorizontalDivider(color = BorderGray.copy(alpha = 0.35f))
-                }
-            }
-        }
+    if (subtitle.isNullOrBlank()) {
+        Spacer(modifier = modifier.width(1.dp))
+        return
     }
-}
-
-@Composable
-private fun MenuContentRow(
-    item: AiMenuContentItem,
-    showThumbnail: Boolean,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 12.dp, horizontal = 8.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        if (showThumbnail) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(BgLight),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (!item.imageUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = item.imageUrl,
-                        contentDescription = item.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.width(10.dp))
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.title,
-                color = SyllabusText,
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-                fontFamily = FontFamily.SansSerif,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (!item.subtitle.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = item.subtitle,
-                    color = TextSecondary,
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun QuizHistoryRow(item: AiQuizHistoryItem) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp, horizontal = 8.dp),
-    ) {
-        Text(
-            text = item.title,
-            color = SyllabusText,
-            fontSize = 14.sp,
-            fontFamily = FontFamily.SansSerif,
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = item.subtitle,
-            color = TextSecondary,
-            fontSize = 12.sp,
-        )
-    }
+    Text(
+        text = subtitle,
+        modifier = modifier,
+        color = TextSecondary,
+        fontSize = 12.sp,
+        lineHeight = 17.sp,
+        fontFamily = FontFamily.SansSerif,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable

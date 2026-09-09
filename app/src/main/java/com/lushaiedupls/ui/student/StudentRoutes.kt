@@ -19,6 +19,7 @@ object StudentRoutes {
     const val CHAPTERS = "student_chapters"
     const val QUIZ = "student_quiz?chapterId={chapterId}&sectionId={sectionId}"
     const val TIMETABLE = "student_timetable"
+    const val FEES = "student_fees"
 
     fun aiChapters(subjectId: String, name: String = ""): String =
         "student_ai_chapters/$subjectId?name=${Uri.encode(name)}"

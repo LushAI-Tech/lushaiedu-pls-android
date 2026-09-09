@@ -36,9 +36,16 @@ class SelectClassViewModel(
     }
 
     fun loadClasses() {
+        val institutionId = userSessionStore.getInstitutionId()
+        if (institutionId.isNullOrBlank()) {
+            _uiState.update {
+                it.copy(isLoading = false, errorMessage = "Please select an institution first.")
+            }
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            when (val result = studentRepository.classes()) {
+            when (val result = studentRepository.classes(institutionId)) {
                 is NetworkResult.Success -> {
                     val options = result.data
                         .filter { it.is_active }

@@ -69,6 +69,7 @@ import com.lushaiedupls.data.mock.AcademicEventType
 import com.lushaiedupls.data.mock.CalendarEvent
 import com.lushaiedupls.data.mock.StudentMockRepository
 import com.lushaiedupls.data.repository.StudentRepository
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.theme.BgLight
@@ -105,6 +106,7 @@ fun StudentCalendarRoute(
         onPreviousMonth = viewModel::previousMonth,
         onNextMonth = viewModel::nextMonth,
         onSelectDay = viewModel::selectDay,
+        onRefresh = viewModel::refresh,
         onBack = onBack,
         modifier = modifier,
     )
@@ -117,6 +119,7 @@ fun StudentCalendarScreen(
     onNextMonth: () -> Unit,
     onSelectDay: (Int) -> Unit,
     onBack: (() -> Unit)? = null,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     if (uiState.isLoading && uiState.allEvents.isEmpty() && uiState.errorMessage == null) {
@@ -127,14 +130,19 @@ fun StudentCalendarScreen(
         )
         return
     }
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(BgWhite)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-            .padding(top = 8.dp, bottom = 24.dp),
+    LushPullToRefreshBox(
+        isRefreshing = uiState.isRefreshing,
+        onRefresh = onRefresh,
+        modifier = modifier.fillMaxSize(),
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(BgWhite)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(top = 8.dp, bottom = 24.dp),
+        ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -194,6 +202,7 @@ fun StudentCalendarScreen(
             fontSize = 13.sp,
             fontFamily = FontFamily.SansSerif,
         )
+        }
     }
 }
 

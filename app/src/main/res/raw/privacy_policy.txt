@@ -1,0 +1,69 @@
+Privacy Policy
+
+Last updated: September 1, 2026
+
+LushAIEdu ("we", "us", or "our") is a Personalised Learning System operated by LushAITech. This Privacy Policy explains how we collect, use, store, and protect your information when you use the LushAIEdu mobile application and related services (the "Service").
+
+1. Information We Collect
+
+Account information: When you register or sign in, we may collect your name, email address, phone number, postal address, gender, profile photo, and login credentials (or authentication tokens if you sign in with Google).
+
+School and profile information: Depending on your role (student, teacher, parent, or administrator), we collect your institution, class, subject assignments, invite codes, and other onboarding details you or your school provide.
+
+Learning activity: We collect information about your use of educational features, including AI tutoring conversations, quiz attempts, chapter progress, attendance records, timetables, fee payment status (where applicable), and academic calendar events.
+
+Device information: We assign a unique device identifier to your installation and may collect device name, operating system, app version, language preferences, and push notification tokens (Firebase Cloud Messaging) to deliver notifications and keep your session secure.
+
+Parent-student linking: Parents may link to a student account using a secure token or QR code. We store the relationship type and link status so guardians can access permitted student information.
+
+Camera access: If you use QR code scanning to link a parent account, the camera is used only for scanning. We do not store photos or video from your camera for this feature.
+
+2. How We Use Your Information
+
+We use your information to:
+- Provide and personalise your learning experience, including AI-assisted tutoring and progress tracking
+- Display timetables, attendance, fees, announcements, and school calendars
+- Authenticate your account and maintain secure sessions across devices
+- Send push notifications about announcements, reminders, and account activity
+- Enable teachers and administrators to manage classes, attendance, and school operations
+- Enable parents to view information about linked students where permitted
+- Improve the Service, troubleshoot issues, and protect against fraud or misuse
+- Comply with legal obligations and legitimate requests from your school or institution
+
+3. How We Share Information
+
+We do not sell your personal information.
+
+We may share information with:
+- Your school or institution and its authorised administrators, teachers, and staff, as needed to operate the Service
+- Service providers that help us run the app (for example, cloud hosting, push notification delivery through Google Firebase, and authentication services such as Google Sign-In), bound by obligations to protect your data
+- Other users only as intended by the Service (for example, teachers viewing class attendance, or parents viewing a linked student's permitted records)
+- Law enforcement or regulators when required by applicable law
+
+4. AI Features
+
+LushAIEdu includes AI-powered tutoring, quizzes, and study assistance. Your messages and interactions with AI features may be processed to generate responses and track learning progress. Do not share sensitive personal information unrelated to your studies in AI chat. AI responses are for educational support only and may not always be accurate. Verify important information with your teacher.
+
+5. Data Retention
+
+We retain your information for as long as your account is active or as needed to provide the Service, comply with legal obligations, resolve disputes, and enforce our agreements. When you delete your account through Account settings, we schedule permanent removal in line with our data retention procedures. Your institution may retain certain records as part of school administration.
+
+6. Security
+
+We use industry-standard measures including encrypted connections (HTTPS), secure token-based authentication, and access controls. No method of transmission or storage is completely secure. Keep your password confidential and log out on shared devices.
+
+7. Your Rights and Choices
+
+Depending on applicable law, you may have the right to access, correct, or delete your personal information. You can update profile details and delete your account from Account settings in the app. You may disable push notifications in your device settings. For other requests, contact your school administrator or LushAITech support through the channel provided by your institution.
+
+8. Children's Privacy
+
+LushAIEdu is designed for use in educational settings. Student accounts are typically created or approved through a school or institution. If you believe a child's information was collected improperly, contact your institution or us to request correction or deletion.
+
+9. Changes to This Policy
+
+We may update this Privacy Policy from time to time. The updated version will be posted in the app. Continued use after changes constitutes acceptance of the revised Policy.
+
+10. Contact Us
+
+For privacy questions or requests, contact your institution administrator or LushAITech through the support channel provided by your school or via the LushAIEdu Account section in the app.

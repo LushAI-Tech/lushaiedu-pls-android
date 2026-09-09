@@ -1,5 +1,6 @@
 package com.lushaiedupls.ui.admin.notifications
 
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -17,6 +18,7 @@ import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.AdminRepository
 import com.lushaiedupls.ui.common.LoadErrorPanel
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.common.viewModelFactory
@@ -38,15 +40,32 @@ class AdminNotificationsViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val hasContent = _uiState.value.notifications.isNotEmpty()
+            _uiState.update {
+                it.copy(
+                    isLoading = !hasContent,
+                    isRefreshing = hasContent,
+                    errorMessage = null,
+                )
+            }
             when (val result = adminRepository.notifications()) {
                 is NetworkResult.Success -> {
                     val list = StudentUiMappers.notifications(result.data)
-                    _uiState.update { it.copy(isLoading = false, notifications = list) }
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isRefreshing = false,
+                            notifications = list,
+                        )
+                    }
                     adminRepository.setUnreadNotificationCount(list.count { it.unread })
                 }
                 else -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = result.userMessage())
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        errorMessage = result.userMessage(),
+                    )
                 }
             }
         }
@@ -109,15 +128,21 @@ fun AdminNotificationsRoute(
             screenTitle = stringResource(R.string.parent_notifications_title),
             message = state.errorMessage.orEmpty(),
             onRetry = viewModel::refresh,
-            isRetrying = state.isLoading,
+            isRetrying = state.isLoading || state.isRefreshing,
             modifier = modifier,
         )
-        else -> NotificationsScreen(
-            notifications = state.notifications,
-            onBack = onBack,
-            onMarkAllRead = viewModel::markAllRead,
-            onOpenNotification = { item: AppNotification -> viewModel.markRead(item.id) },
-            modifier = modifier,
-        )
+        else -> LushPullToRefreshBox(
+            isRefreshing = state.isRefreshing,
+            onRefresh = viewModel::refresh,
+            modifier = modifier.fillMaxSize(),
+        ) {
+            NotificationsScreen(
+                notifications = state.notifications,
+                onBack = onBack,
+                onMarkAllRead = viewModel::markAllRead,
+                onOpenNotification = { item: AppNotification -> viewModel.markRead(item.id) },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }

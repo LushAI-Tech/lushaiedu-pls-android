@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -44,10 +45,10 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lushaiedupls.R
-import com.lushaiedupls.data.mock.TeacherAnnouncement
 import com.lushaiedupls.data.mock.TeacherAnnouncementAudience
 import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.ui.common.AppBackNav
+import com.lushaiedupls.ui.common.scrollIntoViewOnFocus
 import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
@@ -94,25 +95,6 @@ fun TeacherNewAnnouncementRoute(
 }
 
 @Composable
-fun TeacherAnnouncementsRoute(
-    teacherRepository: TeacherRepository,
-    onBack: () -> Unit,
-    onCreate: () -> Unit,
-    modifier: Modifier = Modifier,
-    viewModel: TeacherAnnouncementsViewModel = viewModel(
-        factory = TeacherAnnouncementsViewModel.provideFactory(teacherRepository),
-    ),
-) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    TeacherAnnouncementsScreen(
-        announcements = uiState.announcements,
-        onBack = onBack,
-        onCreate = onCreate,
-        modifier = modifier,
-    )
-}
-
-@Composable
 fun TeacherNewAnnouncementScreen(
     uiState: TeacherNewAnnouncementUiState,
     onBack: () -> Unit,
@@ -145,6 +127,7 @@ fun TeacherNewAnnouncementScreen(
         Column(
             modifier = Modifier
                 .weight(1f)
+                .imePadding()
                 .verticalScroll(rememberScrollState()),
         ) {
             Text(
@@ -396,7 +379,9 @@ private fun AnnouncementField(
                 fontSize = 14.sp,
                 fontFamily = FontFamily.SansSerif,
             ),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .scrollIntoViewOnFocus(),
         )
     }
 }

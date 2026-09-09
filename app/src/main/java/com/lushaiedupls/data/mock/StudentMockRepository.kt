@@ -44,6 +44,7 @@ data class AttendanceRecord(
     val className: String,
     val subject: String,
     val time: String,
+    val note: String? = null,
 )
 
 enum class AttendanceStatus {
@@ -91,11 +92,14 @@ data class AttendanceSession(
     val dateLabel: String,
     val className: String,
     val subject: String,
-    val time: String,
+    val periodLabel: String = "",
+    val isExtraClass: Boolean = false,
     val status: AttendanceStatus,
+    val note: String? = null,
 )
 
 data class CalendarEvent(
+    val id: String? = null,
     val title: String,
     val dateLabel: String,
     val timeLabel: String,
@@ -197,7 +201,19 @@ data class AiChatMessage(
     val id: String,
     val text: String,
     val fromUser: Boolean,
+    val linkedQuestionId: String? = null,
+    val linkedQuestionTab: AiMenuTab? = null,
+    val linkedQuestionTitle: String? = null,
+    val linkedResourceId: String? = null,
+    val linkedResourceTitle: String? = null,
 )
+
+fun AiChatMessage.isQuestionAskMessage(): Boolean =
+    !linkedQuestionId.isNullOrBlank() ||
+        text.startsWith("Ask tutor about this question:", ignoreCase = true)
+
+fun AiChatMessage.isResourceAskMessage(): Boolean =
+    !linkedResourceId.isNullOrBlank()
 
 data class AiQuickCheck(
     val question: String,
@@ -220,6 +236,7 @@ data class AiMenuContentItem(
     val title: String,
     val subtitle: String? = null,
     val imageUrl: String? = null,
+    val videoUrl: String? = null,
 )
 
 data class AiQuizHistoryItem(
@@ -327,13 +344,13 @@ Eng atangin nge i tan duh?""".trimIndent(),
                 id = "q1",
                 sectionId = "1.1",
                 title = "What is a solution? Give two examples from daily life.",
-                subtitle = "1.1 Types of Solutions",
+                subtitle = "NCERT Chemistry Part I",
             ),
             AiMenuContentItem(
                 id = "q2",
                 sectionId = "1.2",
                 title = "Calculate the mole fraction of a solute in a binary solution.",
-                subtitle = "1.2 Expressing Concentration of Solutions",
+                subtitle = "NCERT Chemistry Part I",
             ),
         ),
         examPrepPyqs = listOf(
@@ -341,13 +358,13 @@ Eng atangin nge i tan duh?""".trimIndent(),
                 id = "pyq1",
                 sectionId = "1.3",
                 title = "State Henry's law and mention two of its important applications in daily life.",
-                subtitle = "MBSE · 2024 · Repeated 3x · High frequency",
+                subtitle = "MBSE · 2024",
             ),
             AiMenuContentItem(
                 id = "pyq2",
                 sectionId = "1.2",
                 title = "Define molality and molarity. Why is molality preferred over molarity in expressing concentration?",
-                subtitle = "MBSE · 2023 · Repeated 2x",
+                subtitle = "MBSE · 2023",
             ),
             AiMenuContentItem(
                 id = "pyq3",
@@ -360,14 +377,18 @@ Eng atangin nge i tan duh?""".trimIndent(),
             AiMenuContentItem(
                 id = "r1",
                 sectionId = "1.2",
-                title = "Fig. 2.1 Concentration units",
-                subtitle = "1.2 Expressing Concentration of Solutions",
+                title = "Concentration units explained",
+                subtitle = "Video · 1.2 Solutions",
+                imageUrl = "https://img.youtube.com/vi/bF3dy7n07BM/hqdefault.jpg",
+                videoUrl = "https://www.youtube.com/watch?v=bF3dy7n07BM",
             ),
             AiMenuContentItem(
                 id = "r2",
                 sectionId = "1.3",
-                title = "Fig. 2.3 Effect of pressure on solubility",
-                subtitle = "1.3 Solubility",
+                title = "Effect of pressure on solubility",
+                subtitle = "Video · 1.3 Solubility",
+                imageUrl = "https://img.youtube.com/vi/jNQXAC9IVRw/hqdefault.jpg",
+                videoUrl = "https://youtu.be/jNQXAC9IVRw",
             ),
         ),
         quizHistory = listOf(
@@ -387,7 +408,7 @@ class StudentMockRepository {
         OverviewMetric("Subject", "4", emphasized = true, OverviewIcon.Subject),
         OverviewMetric("Stem Mastery", "100%", emphasized = true, OverviewIcon.StemMastery),
         OverviewMetric("Reading Progress", "100%", emphasized = false, OverviewIcon.ReadingProgress),
-        OverviewMetric("Average Progress", "4", emphasized = false, OverviewIcon.AverageProgress),
+        OverviewMetric("Quizzes Done", "0", emphasized = false, OverviewIcon.AverageProgress),
     )
 
     fun sessionSummary(): SessionSummary = SessionSummary(
@@ -429,9 +450,30 @@ class StudentMockRepository {
             5 to AttendanceDayMark.Present,
         ),
         sessions = listOf(
-            AttendanceSession(5, "Wed, 5 Aug 2026", "Class XII", "English", "9:50 AM - 10:30 AM", AttendanceStatus.Present),
-            AttendanceSession(4, "Tue, 4 Aug 2026", "Class XII", "English", "9:50 AM - 10:30 AM", AttendanceStatus.Absent),
-            AttendanceSession(3, "Mon, 3 Aug 2026", "Class XII", "Physics", "10:00 AM - 10:40 AM", AttendanceStatus.Leave),
+            AttendanceSession(
+                dayOfMonth = 5,
+                dateLabel = "Wed, 5 Aug 2026",
+                className = "Class XII",
+                subject = "English",
+                periodLabel = "9:50 AM - 10:30 AM",
+                status = AttendanceStatus.Present,
+            ),
+            AttendanceSession(
+                dayOfMonth = 4,
+                dateLabel = "Tue, 4 Aug 2026",
+                className = "Class XII",
+                subject = "English",
+                periodLabel = "9:50 AM - 10:30 AM",
+                status = AttendanceStatus.Absent,
+            ),
+            AttendanceSession(
+                dayOfMonth = 3,
+                dateLabel = "Mon, 3 Aug 2026",
+                className = "Class XII",
+                subject = "Physics",
+                periodLabel = "10:00 AM - 10:40 AM",
+                status = AttendanceStatus.Leave,
+            ),
         ),
     )
 

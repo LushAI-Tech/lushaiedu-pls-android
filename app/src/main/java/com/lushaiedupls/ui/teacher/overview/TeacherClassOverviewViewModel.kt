@@ -189,9 +189,16 @@ class TeacherClassOverviewViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val hasContent = _uiState.value.overview != null
+            _uiState.update {
+                if (hasContent) {
+                    it.copy(isRefreshing = true, isLoading = false, errorMessage = null)
+                } else {
+                    it.copy(isLoading = true, isRefreshing = false, errorMessage = null)
+                }
+            }
             refreshSilently()
-            _uiState.update { it.copy(isLoading = false) }
+            _uiState.update { it.copy(isLoading = false, isRefreshing = false) }
         }
     }
 

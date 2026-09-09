@@ -47,6 +47,7 @@ import com.lushaiedupls.ui.common.AttendanceRingAbsent
 import com.lushaiedupls.ui.common.AttendanceRingLeave
 import com.lushaiedupls.ui.common.AttendanceRingPresent
 import com.lushaiedupls.ui.common.LoadErrorPanel
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.MetricCard
 import com.lushaiedupls.ui.common.SectionTitle
 import com.lushaiedupls.ui.common.StudentPageSkeleton
@@ -119,19 +120,30 @@ fun StudentHomeScreen(
                 modifier = Modifier.weight(1f),
             )
         }
-        uiState.errorMessage != null && uiState.overviewMetrics.isEmpty() -> LoadErrorPanel(
-            screenTitle = stringResource(R.string.section_overview),
-            message = uiState.errorMessage.orEmpty(),
-            onRetry = onRefresh,
-            isRetrying = uiState.isLoading,
-            modifier = modifier,
-        )
-        else -> HomeDashboardContent(
-            uiState = uiState,
-            onNotificationsClick = onNotificationsClick,
-            onProfileClick = onProfileClick,
-            modifier = modifier,
-        )
+        uiState.errorMessage != null && uiState.overviewMetrics.isEmpty() -> LushPullToRefreshBox(
+            isRefreshing = uiState.isLoading || uiState.isRefreshing,
+            onRefresh = onRefresh,
+            modifier = modifier.fillMaxSize(),
+        ) {
+            LoadErrorPanel(
+                screenTitle = stringResource(R.string.section_overview),
+                message = uiState.errorMessage.orEmpty(),
+                onRetry = onRefresh,
+                isRetrying = uiState.isLoading || uiState.isRefreshing,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        else -> LushPullToRefreshBox(
+            isRefreshing = uiState.isRefreshing,
+            onRefresh = onRefresh,
+            modifier = modifier.fillMaxSize(),
+        ) {
+            HomeDashboardContent(
+                uiState = uiState,
+                onNotificationsClick = onNotificationsClick,
+                onProfileClick = onProfileClick,
+            )
+        }
     }
 }
 
@@ -177,7 +189,8 @@ private fun HomeDashboardContent(
 @Composable
 private fun OverviewGrid(metrics: List<OverviewMetric>) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        metrics.chunked(2).forEach { row ->
+        metrics.chunked(2).forEachIndexed { rowIndex, row ->
+            val darkTheme = rowIndex == 0
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -186,7 +199,7 @@ private fun OverviewGrid(metrics: List<OverviewMetric>) {
                     MetricCard(
                         label = metric.label,
                         value = metric.value,
-                        emphasized = metric.emphasized,
+                        emphasized = darkTheme,
                         iconKind = metric.iconKind,
                         modifier = Modifier.weight(1f),
                     )

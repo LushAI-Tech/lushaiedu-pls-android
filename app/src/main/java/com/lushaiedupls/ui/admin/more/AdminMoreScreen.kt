@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Apartment
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.EventAvailable
 import androidx.compose.material.icons.outlined.Forum
@@ -49,6 +50,7 @@ fun AdminMoreScreen(
     onFees: () -> Unit,
     onFeedback: () -> Unit,
     onInvites: () -> Unit,
+    onInstitutions: () -> Unit,
     onPeriods: () -> Unit,
     onCalendar: () -> Unit,
     onAnnouncements: () -> Unit,
@@ -58,6 +60,7 @@ fun AdminMoreScreen(
         MoreTile(stringResource(R.string.admin_fees_title), Icons.Outlined.Payments, onFees),
         MoreTile(stringResource(R.string.admin_feedback_title), Icons.Outlined.Forum, onFeedback),
         MoreTile(stringResource(R.string.admin_invites_title), Icons.Outlined.VpnKey, onInvites),
+        MoreTile(stringResource(R.string.admin_institutions_title), Icons.Outlined.Apartment, onInstitutions),
         MoreTile(stringResource(R.string.admin_periods_title), Icons.Outlined.Schedule, onPeriods),
         MoreTile(stringResource(R.string.admin_calendar_title), Icons.Outlined.EventAvailable, onCalendar),
         MoreTile(stringResource(R.string.admin_announce_title), Icons.Outlined.Campaign, onAnnouncements),

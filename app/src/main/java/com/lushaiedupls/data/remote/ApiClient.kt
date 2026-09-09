@@ -38,7 +38,7 @@ object ApiClient {
             .authenticator(
                 TokenRefreshAuthenticator(
                     tokenProvider = tokenProvider,
-                    deviceIdProvider = deviceIdProvider,
+                    deviceId = { deviceIdProvider.deviceId() },
                     json = json,
                     refreshClient = refreshClient,
                     onRefreshFailed = onUnauthorized,

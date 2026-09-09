@@ -12,6 +12,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
@@ -24,6 +26,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lushaiedupls.R
+import com.lushaiedupls.ui.splash.LocalBrandAnchors
 import com.lushaiedupls.ui.theme.BrandBlack
 import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.TextSecondary
@@ -33,6 +36,7 @@ fun LushAiEduWordmark(
     modifier: Modifier = Modifier,
     fontSizeSp: Int = 32,
 ) {
+    val brandAnchors = LocalBrandAnchors.current
     // "AI" in brand orange; full wordmark reads LushAIEdu
     Text(
         text = buildAnnotatedString {
@@ -67,31 +71,47 @@ fun LushAiEduWordmark(
         fontSize = fontSizeSp.sp,
         textAlign = TextAlign.Center,
         letterSpacing = (-0.5).sp,
-        modifier = modifier,
+        modifier = modifier.onGloballyPositioned { coords ->
+            brandAnchors?.wordmarkBounds = coords.boundsInWindow()
+        },
     )
 }
 
 @Composable
 fun LushAiEduBrandHeader(
     modifier: Modifier = Modifier,
-    logoSize: Dp = 96.dp,
+    logoSize: Dp = 112.dp,
     showLogo: Boolean = true,
+    showAtomOrbit: Boolean = false,
     subtitle: String? = null,
     titleFontSizeSp: Int = 32,
     subtitleFontSizeSp: Int = 16,
 ) {
+    // Orbit mark uses the full requested size; static logo stays slightly tighter.
+    val displayedLogoSize = if (showAtomOrbit) logoSize else logoSize * 0.85f
+    val brandAnchors = LocalBrandAnchors.current
+
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (showLogo) {
-            Image(
-                painter = painterResource(R.drawable.ic_lushai_logo),
-                contentDescription = stringResource(R.string.cd_app_logo),
-                modifier = Modifier.size(logoSize),
-                contentScale = ContentScale.Fit,
-            )
-            Spacer(modifier = Modifier.height(12.dp))
+
+            if (showAtomOrbit) {
+                AtomOrbitLogo(logoSize = displayedLogoSize)
+            } else {
+                Image(
+                    painter = painterResource(R.drawable.logo),
+                    contentDescription = stringResource(R.string.cd_app_logo),
+                    modifier = Modifier
+                        .size(displayedLogoSize)
+                        .onGloballyPositioned { coords ->
+                            brandAnchors?.logoBounds = coords.boundsInWindow()
+                        },
+                    contentScale = ContentScale.Fit,
+                )
+            }
+            Spacer(modifier = Modifier.height(if (showAtomOrbit) 16.dp else 12.dp))
         }
         LushAiEduWordmark(fontSizeSp = titleFontSizeSp)
         if (subtitle != null) {
@@ -109,10 +129,13 @@ fun LushAiEduBrandHeader(
 }
 
 @Composable
-fun PoweredByFooter(modifier: Modifier = Modifier) {
+fun PoweredByFooter(
+    modifier: Modifier = Modifier,
+    centered: Boolean = false,
+) {
     Column(
         modifier = modifier,
-        horizontalAlignment = Alignment.Start,
+        horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start,
     ) {
         Text(
             text = stringResource(R.string.powered_by),

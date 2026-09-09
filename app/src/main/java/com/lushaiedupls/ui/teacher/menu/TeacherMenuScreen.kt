@@ -1,9 +1,6 @@
 package com.lushaiedupls.ui.teacher.menu
 
-import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,22 +11,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.BrightnessMedium
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.VerifiedUser
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -37,57 +25,70 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lushaiedupls.R
-import com.lushaiedupls.ui.auth.selectrole.UserRole
+// Switch Roles (re-enable later):
+// import com.lushaiedupls.ui.auth.selectrole.UserRole
 import com.lushaiedupls.ui.common.LogoutButton
 import com.lushaiedupls.ui.common.MenuListItem
 import com.lushaiedupls.ui.common.SlideFromRightOverlay
 import com.lushaiedupls.ui.theme.BgWhite
-import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
-import com.lushaiedupls.ui.theme.TextSecondary
+// Switch Roles (re-enable later):
+// import androidx.compose.foundation.border
+// import androidx.compose.foundation.clickable
+// import androidx.compose.material.icons.outlined.SwapHoriz
+// import androidx.compose.material3.AlertDialog
+// import androidx.compose.material3.TextButton
+// import androidx.compose.runtime.getValue
+// import androidx.compose.runtime.mutableStateOf
+// import androidx.compose.runtime.remember
+// import androidx.compose.runtime.setValue
+// import com.lushaiedupls.ui.theme.BorderGray
+// import com.lushaiedupls.ui.theme.TextSecondary
 
 private val MenuPanelShape = RoundedCornerShape(topStart = 28.dp, bottomStart = 28.dp)
 
 @Composable
 fun TeacherMenuRoute(
-    onSwitchRole: (UserRole) -> Unit,
+    // onSwitchRole: (UserRole) -> Unit,
     onAccount: () -> Unit,
     onPrivacy: () -> Unit,
     onTerms: () -> Unit,
     onLogOut: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    val themeMessage = stringResource(R.string.theme_stub_message)
-    var showRolePicker by remember { mutableStateOf(false) }
+    // Theme selection — re-enable later.
+    // val context = LocalContext.current
+    // val themeMessage = stringResource(R.string.theme_stub_message)
+    // Switch Roles — re-enable later.
+    // var showRolePicker by remember { mutableStateOf(false) }
 
     TeacherMenuScreen(
-        onSwitchRoles = { showRolePicker = true },
+        // onSwitchRoles = { showRolePicker = true },
         onAccount = onAccount,
-        onTheme = {
-            Toast.makeText(context, themeMessage, Toast.LENGTH_SHORT).show()
-        },
+        // onTheme = {
+        //     Toast.makeText(context, themeMessage, Toast.LENGTH_SHORT).show()
+        // },
         onPrivacy = onPrivacy,
         onTerms = onTerms,
         onLogOut = onLogOut,
         modifier = modifier,
     )
 
-    if (showRolePicker) {
-        SwitchRolesDialog(
-            onDismiss = { showRolePicker = false },
-            onRoleSelected = { role ->
-                showRolePicker = false
-                onSwitchRole(role)
-            },
-        )
-    }
+    // if (showRolePicker) {
+    //     SwitchRolesDialog(
+    //         onDismiss = { showRolePicker = false },
+    //         onRoleSelected = { role ->
+    //             showRolePicker = false
+    //             onSwitchRole(role)
+    //         },
+    //     )
+    // }
 }
 
 @Composable
 fun TeacherMenuOverlay(
     onDismiss: () -> Unit,
-    onSwitchRole: (UserRole) -> Unit,
+    // onSwitchRole: (UserRole) -> Unit,
     onAccount: () -> Unit,
     onPrivacy: () -> Unit,
     onTerms: () -> Unit,
@@ -101,7 +102,7 @@ fun TeacherMenuOverlay(
             .background(BgWhite),
     ) {
         TeacherMenuRoute(
-            onSwitchRole = onSwitchRole,
+            // onSwitchRole = onSwitchRole,
             onAccount = onAccount,
             onPrivacy = onPrivacy,
             onTerms = onTerms,
@@ -113,9 +114,10 @@ fun TeacherMenuOverlay(
 
 @Composable
 fun TeacherMenuScreen(
-    onSwitchRoles: () -> Unit,
+    // onSwitchRoles: () -> Unit,
     onAccount: () -> Unit,
-    onTheme: () -> Unit,
+    // Theme selection — re-enable later.
+    // onTheme: () -> Unit,
     onPrivacy: () -> Unit,
     onTerms: () -> Unit,
     onLogOut: () -> Unit,
@@ -141,23 +143,25 @@ fun TeacherMenuScreen(
             fontFamily = FontFamily.SansSerif,
         )
         Spacer(modifier = Modifier.height(20.dp))
-        MenuListItem(
-            title = stringResource(R.string.teacher_menu_switch_roles),
-            icon = Icons.Outlined.SwapHoriz,
-            onClick = onSwitchRoles,
-        )
-        Spacer(modifier = Modifier.height(12.dp))
+        // Switch Roles — re-enable later.
+        // MenuListItem(
+        //     title = stringResource(R.string.teacher_menu_switch_roles),
+        //     icon = Icons.Outlined.SwapHoriz,
+        //     onClick = onSwitchRoles,
+        // )
+        // Spacer(modifier = Modifier.height(12.dp))
         MenuListItem(
             title = stringResource(R.string.menu_account),
             icon = Icons.Outlined.Person,
             onClick = onAccount,
         )
-        Spacer(modifier = Modifier.height(12.dp))
-        MenuListItem(
-            title = stringResource(R.string.menu_theme),
-            icon = Icons.Outlined.BrightnessMedium,
-            onClick = onTheme,
-        )
+        // Theme selection — re-enable later.
+        // Spacer(modifier = Modifier.height(12.dp))
+        // MenuListItem(
+        //     title = stringResource(R.string.menu_theme),
+        //     icon = Icons.Outlined.BrightnessMedium,
+        //     onClick = onTheme,
+        // )
         Spacer(modifier = Modifier.height(12.dp))
         MenuListItem(
             title = stringResource(R.string.menu_privacy),
@@ -174,6 +178,9 @@ fun TeacherMenuScreen(
         LogoutButton(onClick = onLogOut)
     }
 }
+
+/*
+Switch Roles — re-enable later.
 
 @Composable
 private fun SwitchRolesDialog(
@@ -227,3 +234,4 @@ private fun roleLabel(role: UserRole): String = when (role) {
     UserRole.Admin -> stringResource(R.string.role_admin)
     UserRole.Parents -> stringResource(R.string.role_parents)
 }
+*/

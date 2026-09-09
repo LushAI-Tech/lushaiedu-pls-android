@@ -5,6 +5,7 @@ import com.lushaiedupls.data.remote.api.AiApi
 import com.lushaiedupls.data.remote.api.AttendanceApi
 import com.lushaiedupls.data.remote.api.CalendarApi
 import com.lushaiedupls.data.remote.api.ClassesApi
+import com.lushaiedupls.data.remote.api.FeesApi
 import com.lushaiedupls.data.remote.api.MeApi
 import com.lushaiedupls.data.remote.api.NotificationsApi
 import com.lushaiedupls.data.remote.api.OverviewApi
@@ -46,6 +47,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -69,6 +71,10 @@ class StudentRepositoryAiPrefetchTest {
         val subjectsCallCount = AtomicInteger(0)
         val chaptersCallCount = AtomicInteger(0)
         val questionsListCallCount = AtomicInteger(0)
+        var lastQuestionsIds: String? = null
+        var lastAttachmentsIds: String? = null
+        var lastPyqsSubtopicIds: String? = null
+        var lastPyqsChapterScope: Boolean? = null
         val chapterCallCount = AtomicInteger(0)
         val attachmentsCallCount = AtomicInteger(0)
         val pyqsCallCount = AtomicInteger(0)
@@ -106,8 +112,13 @@ class StudentRepositoryAiPrefetchTest {
             )
         }
 
-        override suspend fun questionsList(subjectId: String): SubjectPracticeQuestionsResponse {
+        override suspend fun questionsList(
+            subjectId: String,
+            chapterId: String?,
+            subtopicIds: String?,
+        ): SubjectPracticeQuestionsResponse {
             questionsListCallCount.incrementAndGet()
+            lastQuestionsIds = subtopicIds
             return SubjectPracticeQuestionsResponse(sets = emptyList())
         }
 
@@ -132,8 +143,12 @@ class StudentRepositoryAiPrefetchTest {
             )
         }
 
-        override suspend fun chapterAttachments(chapterId: String): List<ChapterAttachmentOut> {
+        override suspend fun chapterAttachments(
+            chapterId: String,
+            subtopicIds: String?,
+        ): List<ChapterAttachmentOut> {
             attachmentsCallCount.incrementAndGet()
+            lastAttachmentsIds = subtopicIds
             return emptyList()
         }
 
@@ -142,8 +157,11 @@ class StudentRepositoryAiPrefetchTest {
             sectionId: String?,
             chapterScope: Boolean?,
             examCodes: String?,
+            subtopicIds: String?,
         ): ExamPrepPyqsResponse {
             pyqsCallCount.incrementAndGet()
+            lastPyqsSubtopicIds = subtopicIds
+            lastPyqsChapterScope = chapterScope
             return ExamPrepPyqsResponse(hits = emptyList(), filter_codes_available = emptyList())
         }
 
@@ -290,7 +308,7 @@ class StudentRepositoryAiPrefetchTest {
     }
 
     @Test
-    fun prefetchAiLearnCachesAllDataForInstantLoading() = runBlocking {
+    fun prefetchAiLearnCachesHubMetadataOnly() = runBlocking {
         val fakeAi = FakeAiApi()
         val fakeUnits = FakeTeachingUnitsApi()
         val repo = StudentRepository(
@@ -305,34 +323,28 @@ class StudentRepositoryAiPrefetchTest {
             parentApi = createDummyProxy<ParentApi>(),
             teachingUnitsApi = fakeUnits,
             deviceIdProvider = createDummyDeviceIdProvider(),
+            feesApi = createDummyProxy<FeesApi>(),
         )
 
-        // Execute prefetch
         repo.prefetchAiLearn()
 
-        // Verify that prefetch fetched all data across AI Learn
         assertTrue("Subjects should be fetched", fakeAi.subjectsCallCount.get() >= 1)
         assertTrue("Teaching units should be fetched", fakeUnits.listCallCount.get() >= 1)
         assertTrue("Dashboard progress should be fetched", fakeAi.dashboardCallCount.get() >= 1)
         assertTrue("Resume state should be fetched", fakeAi.resumeCallCount.get() >= 1)
         assertTrue("Quiz history should be fetched", fakeAi.quizHistoryCallCount.get() >= 1)
-        assertTrue("Chapters should be fetched", fakeAi.chaptersCallCount.get() >= 1)
-        assertTrue("Questions list should be fetched", fakeAi.questionsListCallCount.get() >= 1)
-        assertTrue("Chapter details should be fetched", fakeAi.chapterCallCount.get() >= 1)
-        assertTrue("Chapter attachments should be fetched", fakeAi.attachmentsCallCount.get() >= 1)
-        assertTrue("PYQs should be fetched", fakeAi.pyqsCallCount.get() >= 1)
-        assertTrue("Chat history should be fetched", fakeAi.historyCallCount.get() >= 1)
-        assertTrue("Chat intro should be fetched for empty history", fakeAi.introCallCount.get() >= 1)
-        assertTrue("Section content blocks should be fetched", fakeAi.sectionCallCount.get() >= 1)
+        assertEquals("Chapter lists should not be prefetched", 0, fakeAi.chaptersCallCount.get())
+        assertEquals("Questions list should not be prefetched", 0, fakeAi.questionsListCallCount.get())
+        assertEquals("Chapter details should not be prefetched", 0, fakeAi.chapterCallCount.get())
+        assertEquals("Chapter attachments should not be prefetched", 0, fakeAi.attachmentsCallCount.get())
+        assertEquals("PYQs should not be prefetched", 0, fakeAi.pyqsCallCount.get())
+        assertEquals("Chat history should not be prefetched", 0, fakeAi.historyCallCount.get())
+        assertEquals("Chat intro should not be prefetched", 0, fakeAi.introCallCount.get())
+        assertEquals("Section content should not be prefetched", 0, fakeAi.sectionCallCount.get())
 
         val subjectsBefore = fakeAi.subjectsCallCount.get()
         val dashboardBefore = fakeAi.dashboardCallCount.get()
-        val chaptersBefore = fakeAi.chaptersCallCount.get()
-        val chapterBefore = fakeAi.chapterCallCount.get()
-        val sectionBefore = fakeAi.sectionCallCount.get()
-        val introBefore = fakeAi.introCallCount.get()
 
-        // Subsequent calls should hit the cache immediately without hitting the network API
         val cachedSubjects = repo.aiSubjects()
         assertTrue(cachedSubjects is NetworkResult.Success)
         assertEquals(subjectsBefore, fakeAi.subjectsCallCount.get())
@@ -343,30 +355,42 @@ class StudentRepositoryAiPrefetchTest {
 
         val cachedChapters = repo.chapters("sub_chem")
         assertTrue(cachedChapters is NetworkResult.Success)
-        assertEquals(chaptersBefore, fakeAi.chaptersCallCount.get())
+        assertEquals(1, fakeAi.chaptersCallCount.get())
 
-        val cachedChapter = repo.chapter("ch_atomic")
-        assertTrue(cachedChapter is NetworkResult.Success)
-        assertEquals(chapterBefore, fakeAi.chapterCallCount.get())
-
-        val cachedSection = repo.section("sec_1")
-        assertTrue(cachedSection is NetworkResult.Success)
-        assertEquals(sectionBefore, fakeAi.sectionCallCount.get())
-
-        val cachedIntro = repo.chatIntro("ch_atomic", "en")
-        assertTrue(cachedIntro is NetworkResult.Success)
-        assertEquals(introBefore, fakeAi.introCallCount.get())
-
-        // Verify synchronous getters return data instantly
         assertEquals("Chemistry", repo.getCachedAiSubjects()?.firstOrNull()?.name)
         assertEquals("Atomic Structure", repo.getCachedChapters("sub_chem")?.firstOrNull()?.title)
-        assertEquals("Atomic Structure", repo.getCachedChapter("ch_atomic")?.title)
         assertEquals(75.0, repo.getCachedProgressDashboard()?.overall_progress_pct ?: 0.0, 0.01)
 
-        // Verify clearAiCache clears memory cache
         repo.clearAiCache()
         repo.aiSubjects()
         assertEquals(subjectsBefore + 1, fakeAi.subjectsCallCount.get())
+    }
+
+    @Test
+    fun prefetchAiChatWarmsOnlyOneChapterConversation() = runBlocking {
+        val fakeAi = FakeAiApi()
+        val repo = StudentRepository(
+            overviewApi = createDummyProxy<OverviewApi>(),
+            attendanceApi = createDummyProxy<AttendanceApi>(),
+            calendarApi = createDummyProxy<CalendarApi>(),
+            timetableApi = createDummyProxy<TimetableApi>(),
+            notificationsApi = createDummyProxy<NotificationsApi>(),
+            meApi = createDummyProxy<MeApi>(),
+            classesApi = createDummyProxy<ClassesApi>(),
+            aiApi = fakeAi,
+            parentApi = createDummyProxy<ParentApi>(),
+            teachingUnitsApi = createDummyProxy<TeachingUnitsApi>(),
+            deviceIdProvider = createDummyDeviceIdProvider(),
+            feesApi = createDummyProxy<FeesApi>(),
+        )
+
+        repo.prefetchAiChat(listOf("ch_atomic", "ch_ignored"))
+
+        assertEquals(1, fakeAi.chapterCallCount.get())
+        assertEquals(1, fakeAi.historyCallCount.get())
+        assertEquals(1, fakeAi.introCallCount.get())
+        assertEquals(0, fakeAi.attachmentsCallCount.get())
+        assertEquals(0, fakeAi.pyqsCallCount.get())
     }
 
     @Test
@@ -400,6 +424,7 @@ class StudentRepositoryAiPrefetchTest {
             parentApi = createDummyProxy<ParentApi>(),
             teachingUnitsApi = createDummyProxy<TeachingUnitsApi>(),
             deviceIdProvider = createDummyDeviceIdProvider(),
+            feesApi = createDummyProxy<FeesApi>(),
         )
 
         // Fire 10 concurrent requests for subjects simultaneously
@@ -419,5 +444,68 @@ class StudentRepositoryAiPrefetchTest {
 
         // But only ONE network request was actually fired because singleFlight joined them!
         assertEquals("Single-flight should coalesce concurrent requests into 1 network call", 1, fakeAi.count.get())
+    }
+
+    @Test
+    fun examPrepPyqs_dropsSubtopicIdsWhenChapterScopeIsTrue() = runBlocking {
+        val fakeAi = FakeAiApi()
+        val repo = StudentRepository(
+            overviewApi = createDummyProxy<OverviewApi>(),
+            attendanceApi = createDummyProxy<AttendanceApi>(),
+            calendarApi = createDummyProxy<CalendarApi>(),
+            timetableApi = createDummyProxy<TimetableApi>(),
+            notificationsApi = createDummyProxy<NotificationsApi>(),
+            meApi = createDummyProxy<MeApi>(),
+            classesApi = createDummyProxy<ClassesApi>(),
+            aiApi = fakeAi,
+            parentApi = createDummyProxy<ParentApi>(),
+            teachingUnitsApi = createDummyProxy<TeachingUnitsApi>(),
+            deviceIdProvider = createDummyDeviceIdProvider(),
+            feesApi = createDummyProxy<FeesApi>(),
+        )
+
+        repo.examPrepPyqs(
+            chapterId = "ch_atomic",
+            chapterScope = true,
+            subtopicIds = "sec_1,sec_2",
+        )
+        assertEquals(true, fakeAi.lastPyqsChapterScope)
+        assertNull(fakeAi.lastPyqsSubtopicIds)
+
+        repo.examPrepPyqs(
+            chapterId = "ch_atomic",
+            chapterScope = false,
+            subtopicIds = "sec_1,sec_2",
+        )
+        assertEquals(false, fakeAi.lastPyqsChapterScope)
+        assertEquals("sec_1,sec_2", fakeAi.lastPyqsSubtopicIds)
+    }
+
+    @Test
+    fun questionsAndAttachments_passCommaSeparatedSubtopicIds() = runBlocking {
+        val fakeAi = FakeAiApi()
+        val repo = StudentRepository(
+            overviewApi = createDummyProxy<OverviewApi>(),
+            attendanceApi = createDummyProxy<AttendanceApi>(),
+            calendarApi = createDummyProxy<CalendarApi>(),
+            timetableApi = createDummyProxy<TimetableApi>(),
+            notificationsApi = createDummyProxy<NotificationsApi>(),
+            meApi = createDummyProxy<MeApi>(),
+            classesApi = createDummyProxy<ClassesApi>(),
+            aiApi = fakeAi,
+            parentApi = createDummyProxy<ParentApi>(),
+            teachingUnitsApi = createDummyProxy<TeachingUnitsApi>(),
+            deviceIdProvider = createDummyDeviceIdProvider(),
+            feesApi = createDummyProxy<FeesApi>(),
+        )
+
+        repo.questionsList(subjectId = "sub_chem", chapterId = "ch_atomic", subtopicIds = "sec_1,sec_2")
+        assertEquals("sec_1,sec_2", fakeAi.lastQuestionsIds)
+
+        repo.chapterAttachments(chapterId = "ch_atomic", subtopicIds = "sec_1")
+        assertEquals("sec_1", fakeAi.lastAttachmentsIds)
+
+        repo.questionsList(subjectId = "sub_chem", chapterId = "ch_atomic", subtopicIds = "  ")
+        assertNull(fakeAi.lastQuestionsIds)
     }
 }

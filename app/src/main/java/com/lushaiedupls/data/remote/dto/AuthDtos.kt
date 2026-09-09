@@ -38,6 +38,7 @@ data class CompleteOnboardingRequest(
     val phone: String? = null,
     val gender: Gender? = null,
     val address: String? = null,
+    val institution_id: String? = null,
     val class_id: String? = null,
     val subject_ids: List<String>? = null,
     val assignments: List<TeacherAssignment>? = null,
@@ -62,6 +63,11 @@ data class DeviceOut(
     val created_at: String,
     val is_current: Boolean = false,
     val push_enabled: Boolean = false,
+)
+
+@Serializable
+data class FcmTokenUpdateRequest(
+    val fcm_token: String,
 )
 
 @Serializable
@@ -135,6 +141,12 @@ data class ProfileUpdate(
 )
 
 @Serializable
+data class PeriodReminderUpdateRequest(
+    /** 5–120 minutes before the period, or null to disable. */
+    val lead_minutes: Int? = null,
+)
+
+@Serializable
 data class RefreshRequest(
     val refresh_token: String,
     val device_id: String,
@@ -195,9 +207,15 @@ data class UserOut(
     val status: UserStatus,
     val onboarding_state: OnboardingState,
     val class_id: String? = null,
+    val class_name: String? = null,
+    val subjects: List<String> = emptyList(),
+    val institution_id: String? = null,
+    val institution_name: String? = null,
     val created_at: String,
     val has_password: Boolean = false,
     val email_verified: Boolean = false,
+    /** Teachers only: minutes before a period to send FCM. Null = off. */
+    val period_reminder_lead_minutes: Int? = null,
 )
 
 @Serializable

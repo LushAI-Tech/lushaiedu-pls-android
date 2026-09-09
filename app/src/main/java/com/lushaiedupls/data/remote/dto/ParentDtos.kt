@@ -8,6 +8,8 @@ data class FeeLedgerOut(
     val student: UserSummary,
     val class_id: String? = null,
     val class_name: String? = null,
+    val subject_id: String? = null,
+    val subject_name: String? = null,
     val month: String,
     val amount_paise: Int,
     val payment_status: FeePaymentStatus,
@@ -19,6 +21,9 @@ data class FeeLedgerOut(
 data class FeeHistoryResponse(
     val month: String,
     val rows: List<FeeLedgerOut> = emptyList(),
+    val total_amount_paise: Int = 0,
+    val paid_amount_paise: Int = 0,
+    val pending_amount_paise: Int = 0,
 )
 
 @Serializable

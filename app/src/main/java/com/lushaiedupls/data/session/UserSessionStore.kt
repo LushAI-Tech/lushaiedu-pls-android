@@ -12,6 +12,8 @@ interface UserSessionStore {
     fun setRole(role: UserRole)
     fun getDisplayName(): String
     fun setDisplayName(name: String)
+    fun getAvatarUrl(): String?
+    fun setAvatarUrl(url: String?)
     fun getSelectedClasses(): List<SchoolClass>
     fun setSelectedClasses(classes: List<SchoolClass>)
     fun getClassSubjects(): Map<SchoolClass, List<SubjectOption>>
@@ -34,7 +36,12 @@ interface UserSessionStore {
     fun setPendingAddress(address: String?)
     fun getPendingInviteCode(): String?
     fun setPendingInviteCode(code: String?)
+    fun getInstitutionId(): String?
+    fun setInstitutionId(institutionId: String?)
     fun isParentSignupFlow(): Boolean
     fun setParentSignupFlow(enabled: Boolean)
+    /** After Google OAuth: collect name/phone/password/address/gender before role. */
+    fun needsProfileSetup(): Boolean
+    fun setNeedsProfileSetup(enabled: Boolean)
     fun clear()
 }

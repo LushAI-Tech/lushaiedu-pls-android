@@ -15,12 +15,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,8 +52,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lushaiedupls.R
 import com.lushaiedupls.data.mock.WeeklyTimetable
 import com.lushaiedupls.data.repository.StudentRepository
+import com.lushaiedupls.ui.common.AnimatedFilterChipRow
 import com.lushaiedupls.ui.common.ApprovalNeededPanel
+import com.lushaiedupls.ui.common.CenteredEmptyState
 import com.lushaiedupls.ui.common.LoadErrorPanel
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.theme.BgLight
@@ -64,8 +67,6 @@ import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.TextSecondary
 
 private val TableShape = RoundedCornerShape(14.dp)
-private val ChipShape = RoundedCornerShape(10.dp)
-private val ChipBarShape = RoundedCornerShape(12.dp)
 private val HeaderBg = Color(0xFF4B5563)
 private val DayColWidth = 110.dp
 private val PeriodColWidth = 118.dp
@@ -97,21 +98,33 @@ fun TimetableRoute(
             title = stringResource(R.string.timetable_title),
             modifier = modifier,
         )
-        uiState.timetable == null -> LoadErrorPanel(
-            screenTitle = stringResource(R.string.timetable_title),
-            message = uiState.errorMessage.orEmpty()
-                .ifBlank { stringResource(R.string.load_error_title) },
-            onRetry = viewModel::refresh,
-            isRetrying = uiState.isLoading,
-            modifier = modifier,
-        )
+        uiState.timetable == null -> LushPullToRefreshBox(
+            isRefreshing = uiState.isLoading || uiState.isRefreshing,
+            onRefresh = viewModel::refresh,
+            modifier = modifier.fillMaxSize(),
+        ) {
+            LoadErrorPanel(
+                screenTitle = stringResource(R.string.timetable_title),
+                message = uiState.errorMessage.orEmpty()
+                    .ifBlank { stringResource(R.string.load_error_title) },
+                onRetry = viewModel::refresh,
+                isRetrying = uiState.isLoading || uiState.isRefreshing,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         else -> {
             val timetable = uiState.timetable ?: return
-            TimetableScreen(
-                timetable = timetable,
-                onBack = onBack,
-                modifier = modifier,
-            )
+            LushPullToRefreshBox(
+                isRefreshing = uiState.isRefreshing,
+                onRefresh = viewModel::refresh,
+                modifier = modifier.fillMaxSize(),
+            ) {
+                TimetableScreen(
+                    timetable = timetable,
+                    onBack = onBack,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }
@@ -121,6 +134,8 @@ fun TimetableScreen(
     timetable: WeeklyTimetable,
     onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    showTitle: Boolean = true,
+    showSubjectFilter: Boolean = true,
 ) {
     val subjects = timetable.subjects
     var selectedSubject by remember { mutableStateOf(subjects.firstOrNull().orEmpty()) }
@@ -129,7 +144,12 @@ fun TimetableScreen(
             selectedSubject = subjects.firstOrNull().orEmpty()
         }
     }
-    val rows = timetable.cellsBySubject[selectedSubject].orEmpty()
+    val rows = if (showSubjectFilter) {
+        timetable.cellsBySubject[selectedSubject].orEmpty()
+    } else {
+        timetable.cellsBySubject["All"]
+            ?: timetable.cellsBySubject.values.firstOrNull().orEmpty()
+    }
 
     Column(
         modifier = modifier
@@ -139,48 +159,56 @@ fun TimetableScreen(
             .padding(horizontal = 16.dp)
             .padding(bottom = 24.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (onBack != null) {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier.align(Alignment.CenterStart),
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
-                        contentDescription = stringResource(R.string.cd_back),
-                        tint = BrandBlack,
+        if (showTitle || onBack != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (onBack != null) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.align(Alignment.CenterStart),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                            contentDescription = stringResource(R.string.cd_back),
+                            tint = BrandBlack,
+                        )
+                    }
+                }
+                if (showTitle) {
+                    Text(
+                        text = stringResource(R.string.timetable_title),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp,
+                        color = BrandBlack,
+                        fontFamily = FontFamily.SansSerif,
                     )
                 }
             }
+        }
+
+        if (showSubjectFilter) {
             Text(
-                text = stringResource(R.string.timetable_title),
+                text = stringResource(R.string.timetable_class),
                 fontWeight = FontWeight.Bold,
-                fontSize = 20.sp,
+                fontSize = 16.sp,
                 color = BrandBlack,
                 fontFamily = FontFamily.SansSerif,
             )
+            Spacer(modifier = Modifier.height(10.dp))
+            AnimatedFilterChipRow(
+                options = subjects,
+                selectedIndex = subjects.indexOf(selectedSubject).coerceAtLeast(0),
+                onSelect = { selectedSubject = subjects[it] },
+            )
+            Spacer(modifier = Modifier.height(22.dp))
+        } else {
+            Spacer(modifier = Modifier.height(8.dp))
         }
 
-        Text(
-            text = stringResource(R.string.timetable_class),
-            fontWeight = FontWeight.Bold,
-            fontSize = 16.sp,
-            color = BrandBlack,
-            fontFamily = FontFamily.SansSerif,
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        SubjectChipBar(
-            subjects = subjects,
-            selectedSubject = selectedSubject,
-            onSubjectSelected = { selectedSubject = it },
-        )
-
-        Spacer(modifier = Modifier.height(22.dp))
         Text(
             text = stringResource(R.string.timetable_weekly),
             fontWeight = FontWeight.Bold,
@@ -191,76 +219,17 @@ fun TimetableScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         if (timetable.days.isEmpty() || timetable.timeSlots.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(120.dp)
-                    .border(1.dp, BorderGray, TableShape)
-                    .clip(TableShape)
-                    .background(BgWhite),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = "No timetable available",
-                    color = TextSecondary,
-                    fontSize = 14.sp,
-                )
-            }
+            CenteredEmptyState(
+                message = stringResource(R.string.timetable_empty),
+                icon = Icons.Outlined.Schedule,
+                compact = true,
+            )
         } else {
             WeeklyTimetableTable(
                 days = timetable.days,
                 timeSlots = timetable.timeSlots,
                 rows = rows,
             )
-        }
-    }
-}
-
-@Composable
-private fun SubjectChipBar(
-    subjects: List<String>,
-    selectedSubject: String,
-    onSubjectSelected: (String) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(ChipBarShape)
-            .background(BgLight)
-            .horizontalScroll(rememberScrollState())
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        subjects.forEach { subject ->
-            val selected = subject == selectedSubject
-            Box(
-                modifier = Modifier
-                    .height(36.dp)
-                    .widthIn(min = 72.dp)
-                    .then(
-                        if (selected) {
-                            Modifier
-                                .shadow(2.dp, ChipShape, clip = false)
-                                .clip(ChipShape)
-                                .background(BgWhite)
-                        } else {
-                            Modifier.clip(ChipShape)
-                        },
-                    )
-                    .clickable { onSubjectSelected(subject) }
-                    .padding(horizontal = 14.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = subject,
-                    color = if (selected) BrandBlack else TextSecondary,
-                    fontSize = 12.sp,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                    fontFamily = FontFamily.SansSerif,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
         }
     }
 }

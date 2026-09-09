@@ -7,6 +7,7 @@ import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.dto.FeedbackStatus
 import com.lushaiedupls.data.remote.dto.LinkedStudentOut
 import com.lushaiedupls.data.remote.dto.ParentFeedbackOut
+import com.lushaiedupls.data.remote.needsAdminApproval
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.ParentRepository
 import com.lushaiedupls.ui.common.viewModelFactory
@@ -22,8 +23,10 @@ data class ParentFeedbackUiState(
     val items: List<ParentFeedbackOut> = emptyList(),
     val children: List<LinkedStudentOut> = emptyList(),
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
+    val needsApproval: Boolean = false,
     val composing: Boolean = false,
     val editingId: String? = null,
     val subject: String = "",
@@ -45,29 +48,48 @@ class ParentFeedbackViewModel(
         refresh()
     }
 
-    fun refresh() {
+    fun refresh(asPullRefresh: Boolean = false) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            if (asPullRefresh) {
+                _uiState.update { it.copy(isRefreshing = true) }
+            } else {
+                _uiState.update { it.copy(isLoading = true, isRefreshing = false) }
+            }
             coroutineScope {
                 val childrenDeferred = async { parentRepository.linkedStudents() }
                 val itemsDeferred = async { parentRepository.feedback() }
                 val childrenResult = childrenDeferred.await()
                 val itemsResult = itemsDeferred.await()
                 val children = (childrenResult as? NetworkResult.Success)?.data.orEmpty()
-                when (itemsResult) {
-                    is NetworkResult.Success -> _uiState.update {
+                val pending = childrenResult.needsAdminApproval() || itemsResult.needsAdminApproval()
+                when {
+                    pending -> _uiState.update {
                         it.copy(
                             isLoading = false,
+                            isRefreshing = false,
+                            children = children,
+                            needsApproval = true,
+                            errorMessage = null,
+                        )
+                    }
+                    itemsResult is NetworkResult.Success -> _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isRefreshing = false,
                             children = children,
                             items = sortFeedback(itemsResult.data),
                             errorMessage = null,
+                            needsApproval = false,
                         )
                     }
                     else -> _uiState.update {
                         it.copy(
                             isLoading = false,
+                            isRefreshing = false,
                             children = children,
-                            errorMessage = itemsResult.userMessage(),
+                            needsApproval = false,
+                            errorMessage = itemsResult.userMessage()
+                                .ifBlank { childrenResult.userMessage() },
                         )
                     }
                 }

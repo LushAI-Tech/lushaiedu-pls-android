@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,6 +50,7 @@ private val TileShape = RoundedCornerShape(18.dp)
 fun MoreRoute(
     studentRepository: StudentRepository,
     onAcademicCalendar: () -> Unit,
+    onFees: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: MoreViewModel = viewModel(
         factory = MoreViewModel.provideFactory(studentRepository),
@@ -57,6 +59,7 @@ fun MoreRoute(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     MoreScreen(
         onAcademicCalendar = onAcademicCalendar,
+        onFees = onFees,
         needsApproval = uiState.needsApproval,
         modifier = modifier,
     )
@@ -65,6 +68,7 @@ fun MoreRoute(
 @Composable
 fun MoreScreen(
     onAcademicCalendar: () -> Unit,
+    onFees: () -> Unit,
     needsApproval: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
@@ -77,6 +81,7 @@ fun MoreScreen(
     } else {
         MoreTilesContent(
             onAcademicCalendar = onAcademicCalendar,
+            onFees = onFees,
             modifier = modifier,
         )
     }
@@ -102,6 +107,7 @@ private fun MoreTitle() {
 @Composable
 private fun MoreTilesContent(
     onAcademicCalendar: () -> Unit,
+    onFees: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val tiles = listOf(
@@ -111,7 +117,12 @@ private fun MoreTilesContent(
             filled = true,
             onClick = onAcademicCalendar,
         ),
-        MoreTile(label = null, icon = null, filled = false, onClick = {}),
+        MoreTile(
+            label = stringResource(R.string.parent_fees_title),
+            icon = Icons.Outlined.Payments,
+            filled = true,
+            onClick = onFees,
+        ),
         MoreTile(label = null, icon = null, filled = false, onClick = {}),
         MoreTile(label = null, icon = null, filled = false, onClick = {}),
     )

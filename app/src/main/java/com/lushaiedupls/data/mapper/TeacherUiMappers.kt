@@ -24,6 +24,7 @@ import com.lushaiedupls.data.remote.dto.DayOfWeek
 import com.lushaiedupls.data.remote.dto.MemberOut
 import com.lushaiedupls.data.remote.dto.NotificationAudience
 import com.lushaiedupls.data.remote.dto.NotificationOut
+import com.lushaiedupls.data.remote.dto.PeriodOut
 import com.lushaiedupls.data.remote.dto.RosterResponse
 import com.lushaiedupls.data.remote.dto.TeacherOverview
 import com.lushaiedupls.data.remote.dto.TeachingUnitOut
@@ -68,6 +69,48 @@ object TeacherUiMappers {
             }
         }
     }
+
+    fun institutionChips(units: List<TeachingUnitOut>): List<TeacherInstitutionChip> {
+        val seen = linkedSetOf<String>()
+        return units.mapNotNull { unit ->
+            val id = unit.institution_id?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            if (seen.add(id)) {
+                TeacherInstitutionChip(
+                    id = id,
+                    name = unit.institution_name?.takeIf { it.isNotBlank() } ?: "Institution",
+                )
+            } else {
+                null
+            }
+        }
+    }
+
+    fun unitsForInstitution(
+        units: List<TeachingUnitOut>,
+        institutionId: String?,
+    ): List<TeachingUnitOut> {
+        val id = institutionId?.takeIf { it.isNotBlank() } ?: return units
+        return units.filter { unit ->
+            unit.institution_id.isNullOrBlank() || unit.institution_id == id
+        }
+    }
+
+    fun resolveTeachingUnitId(
+        units: List<TeachingUnitOut>,
+        classId: String,
+        subjectId: String,
+        institutionId: String? = null,
+    ): String? = units.firstOrNull { unit ->
+        unit.class_id == classId &&
+            unit.subject_id == subjectId &&
+            (
+                institutionId.isNullOrBlank() ||
+                    unit.institution_id.isNullOrBlank() ||
+                    unit.institution_id == institutionId
+                )
+    }?.id
+
+    fun formatClassLabel(className: String): String = classLabel(className)
 
     fun homeDashboard(
         overview: TeacherOverview,
@@ -192,7 +235,7 @@ object TeacherUiMappers {
             classLabel = classLabel(roster.class_name),
             dateLabel = roster.attendance_date,
             subjectLabel = roster.subject_name,
-            timeLabel = roster.time_key.ifBlank {
+            timeLabel = formatTimeKeyLabel(roster.time_key).ifBlank {
                 if (roster.is_extra_class) "Extra class" else ""
             },
             students = sortedStudents.mapIndexed { index, row ->
@@ -204,6 +247,7 @@ object TeacherUiMappers {
                         rollNumber = row.roll_no?.takeIf { it > 0 } ?: (index + 1),
                     ),
                     mark = row.status.toMark(),
+                    note = row.note?.trim()?.takeIf { it.isNotEmpty() },
                 )
             },
         )
@@ -239,16 +283,45 @@ object TeacherUiMappers {
             )
         }
 
+    fun profileSummary(units: List<TeachingUnitOut>): StudentEnrollmentSummary {
+        val source = units.filter { it.status == TeachingUnitStatus.ACTIVE }.ifEmpty { units }
+        val institutions = source.mapNotNull { unit ->
+            unit.institution_name?.trim()?.takeIf { it.isNotEmpty() }
+        }.distinct()
+        val classes = source.map { classLabel(it.class_name) }
+            .filter { it.isNotBlank() }
+            .distinct()
+        val subjects = source.map { it.subject_name.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .sorted()
+        return StudentEnrollmentSummary(
+            institutionName = institutions.joinToString(", ").takeIf { it.isNotBlank() },
+            className = classes.joinToString(", ").takeIf { it.isNotBlank() },
+            subjects = subjects,
+        )
+    }
+
     fun teachingTimetable(week: WeekView): TeacherTeachingTimetable {
         val periods = week.periods.filter { it.is_active }.sortedBy { it.sort_order }
+        if (periods.isEmpty()) {
+            return TeacherTeachingTimetable(
+                classes = emptyList(),
+                days = emptyList(),
+                timeSlots = emptyList(),
+                cells = emptyMap(),
+            )
+        }
         val dayOrder = listOf(
-            DayOfWeek.MON, DayOfWeek.TUE, DayOfWeek.WED, DayOfWeek.THU, DayOfWeek.FRI, DayOfWeek.SAT,
+            DayOfWeek.MON, DayOfWeek.TUE, DayOfWeek.WED, DayOfWeek.THU,
+            DayOfWeek.FRI, DayOfWeek.SAT, DayOfWeek.SUN,
         )
-        val dayLabels = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+        val dayLabels = listOf(
+            "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+        )
         val allSlots = week.days.values.flatten()
         val classes = allSlots.map { classLabel(it.class_name) }.distinct().ifEmpty { listOf("All classes") }
         val timeSlots = periods.map { formatPeriodRange(it.start_time, it.end_time) }
-            .ifEmpty { listOf("—") }
         val cells = mutableMapOf<Pair<Int, Int>, TeacherTimetableCell>()
         periods.forEachIndexed { row, period ->
             dayOrder.forEachIndexed { col, day ->
@@ -257,11 +330,81 @@ object TeacherUiMappers {
                 cells[row to col] = TeacherTimetableCell(
                     subject = slot.subject_name,
                     detail = groupTitle(slot.class_name, slot.subject_name),
+                    subjectId = slot.subject_id,
+                    teachingUnitId = slot.teaching_unit_id,
+                    slotId = slot.slot_id,
+                    teacherName = slot.teacher_name,
+                    isOwned = true,
                 )
             }
         }
         return TeacherTeachingTimetable(
             classes = classes,
+            days = dayLabels,
+            timeSlots = timeSlots,
+            cells = cells,
+        )
+    }
+
+    fun periodsForInstitution(
+        periods: List<PeriodOut>,
+        institutionId: String?,
+    ): List<PeriodOut> {
+        val id = institutionId?.takeIf { it.isNotBlank() } ?: return periods
+        val scoped = periods.filter { it.institution_id.isBlank() || it.institution_id == id }
+        return scoped.ifEmpty { periods }
+    }
+
+    /**
+     * Set-timetable occupancy grid from GET /timetable/week.
+     * Shows every filled slot for the week (all teachers). [myUnitIds] only marks ownership.
+     */
+    fun classSetTimetable(
+        week: WeekView?,
+        periods: List<PeriodOut>,
+        classLabels: List<String>,
+        myUnitIds: Set<String>,
+    ): TeacherTeachingTimetable {
+        val dayOrder = listOf(
+            DayOfWeek.MON, DayOfWeek.TUE, DayOfWeek.WED, DayOfWeek.THU,
+            DayOfWeek.FRI, DayOfWeek.SAT, DayOfWeek.SUN,
+        )
+        val dayLabels = listOf(
+            "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+        )
+        val timeSlots = periods.map { periodTimeLabel(it.start_time, it.end_time) }
+        if (timeSlots.isEmpty()) {
+            return TeacherTeachingTimetable(
+                classes = classLabels.ifEmpty { listOf("All classes") },
+                days = emptyList(),
+                timeSlots = emptyList(),
+                cells = emptyMap(),
+            )
+        }
+        val slots = week?.days?.values?.flatten().orEmpty()
+        val cells = mutableMapOf<Pair<Int, Int>, TeacherTimetableCell>()
+        periods.forEachIndexed { timeIndex, period ->
+            dayOrder.forEachIndexed { dayIndex, day ->
+                val slot = slots.firstOrNull { candidate ->
+                    candidate.period_id == period.id && candidate.day_of_week == day
+                } ?: return@forEachIndexed
+                val owned = slot.teaching_unit_id in myUnitIds
+                cells[timeIndex to dayIndex] = TeacherTimetableCell(
+                    subject = slot.subject_name,
+                    detail = listOfNotNull(
+                        slot.teacher_name?.takeIf { it.isNotBlank() },
+                        slot.room?.takeIf { it.isNotBlank() },
+                    ).joinToString(" · ").ifBlank { slot.teacher_name.orEmpty() },
+                    subjectId = slot.subject_id,
+                    teachingUnitId = slot.teaching_unit_id,
+                    slotId = slot.slot_id,
+                    teacherName = slot.teacher_name,
+                    isOwned = owned,
+                )
+            }
+        }
+        return TeacherTeachingTimetable(
+            classes = classLabels.ifEmpty { listOf("All classes") },
             days = dayLabels,
             timeSlots = timeSlots,
             cells = cells,
@@ -358,6 +501,25 @@ object TeacherUiMappers {
         return if (startLabel != null && endLabel != null) "$startLabel - $endLabel" else "$start - $end"
     }
 
+    /** Formats API `time_key` values like `16:00-17:00` → `4:00 PM - 5:00 PM`. */
+    private fun formatTimeKeyLabel(raw: String): String {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return ""
+        if (!trimmed.any { it.isDigit() }) return trimmed
+        val parts = trimmed.split(Regex("""\s*[-–—]\s*"""))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        return when (parts.size) {
+            2 -> {
+                val start = formatClock(parts[0]) ?: parts[0]
+                val end = formatClock(parts[1]) ?: parts[1]
+                "$start - $end"
+            }
+            1 -> formatClock(parts[0]) ?: trimmed
+            else -> trimmed
+        }
+    }
+
     private fun formatClock(raw: String): String? {
         val cleaned = raw.trim().take(8)
         val parts = cleaned.split(":")
@@ -388,4 +550,9 @@ object TeacherUiMappers {
 data class TeacherClassChip(
     val classId: String,
     val label: String,
+)
+
+data class TeacherInstitutionChip(
+    val id: String,
+    val name: String,
 )

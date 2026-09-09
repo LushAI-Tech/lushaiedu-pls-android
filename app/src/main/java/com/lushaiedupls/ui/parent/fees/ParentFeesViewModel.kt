@@ -3,10 +3,11 @@ package com.lushaiedupls.ui.parent.fees
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.lushaiedupls.data.mapper.FeeHistoryMappers
 import com.lushaiedupls.data.remote.NetworkResult
-import com.lushaiedupls.data.remote.dto.FeeLedgerOut
-import com.lushaiedupls.data.remote.dto.FeePaymentStatus
+import com.lushaiedupls.data.remote.dto.FeeHistoryResponse
 import com.lushaiedupls.data.remote.dto.LinkedStudentOut
+import com.lushaiedupls.data.remote.needsAdminApproval
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.ParentRepository
 import com.lushaiedupls.ui.common.viewModelFactory
@@ -19,9 +20,11 @@ import kotlinx.coroutines.launch
 data class ParentFeesUiState(
     val children: List<LinkedStudentOut> = emptyList(),
     val selectedStudentId: String? = null,
-    val rows: List<FeeLedgerOut> = emptyList(),
+    val history: FeeHistoryResponse? = null,
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
+    val needsApproval: Boolean = false,
 )
 
 class ParentFeesViewModel(
@@ -41,12 +44,16 @@ class ParentFeesViewModel(
     fun selectStudent(studentId: String) {
         if (_uiState.value.selectedStudentId == studentId) return
         _uiState.update { it.copy(selectedStudentId = studentId) }
-        loadHistory()
+        loadHistory(asPullRefresh = false)
     }
 
-    fun refresh() {
+    fun refresh(asPullRefresh: Boolean = false) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            if (asPullRefresh) {
+                _uiState.update { it.copy(isRefreshing = true) }
+            } else {
+                _uiState.update { it.copy(isLoading = true, isRefreshing = false) }
+            }
             when (val result = parentRepository.linkedStudents()) {
                 is NetworkResult.Success -> {
                     val children = result.data
@@ -54,31 +61,69 @@ class ParentFeesViewModel(
                         ?.takeIf { id -> children.any { it.student.id == id } }
                         ?: children.firstOrNull()?.student?.id
                     _uiState.update {
-                        it.copy(children = children, selectedStudentId = selected)
+                        it.copy(
+                            children = children,
+                            selectedStudentId = selected,
+                            needsApproval = false,
+                            errorMessage = null,
+                        )
                     }
-                    loadHistory()
+                    loadHistory(asPullRefresh = asPullRefresh)
                 }
-                else -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = result.userMessage())
+                else -> {
+                    val pending = result.needsAdminApproval()
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isRefreshing = false,
+                            needsApproval = pending,
+                            errorMessage = if (pending) null else result.userMessage(),
+                        )
+                    }
                 }
             }
         }
     }
 
-    private fun loadHistory() {
+    private fun loadHistory(asPullRefresh: Boolean = false) {
         val studentId = _uiState.value.selectedStudentId
         if (studentId.isNullOrBlank()) {
-            _uiState.update { it.copy(isLoading = false, rows = emptyList(), errorMessage = null) }
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    isRefreshing = false,
+                    history = null,
+                    errorMessage = null,
+                    needsApproval = false,
+                )
+            }
             return
         }
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            if (!asPullRefresh) {
+                _uiState.update { it.copy(isLoading = true) }
+            }
             when (val result = parentRepository.studentFeeHistory(studentId, month = "all")) {
                 is NetworkResult.Success -> _uiState.update {
-                    it.copy(isLoading = false, rows = sortFeeRows(result.data.rows), errorMessage = null)
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        history = FeeHistoryMappers.subjectFeeHistoryOnly(result.data),
+                        errorMessage = null,
+                        needsApproval = false,
+                    )
                 }
-                else -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = result.userMessage(), rows = emptyList())
+                else -> {
+                    val pending = result.needsAdminApproval()
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isRefreshing = false,
+                            history = if (asPullRefresh) it.history else null,
+                            needsApproval = pending,
+                            errorMessage = if (pending) null else result.userMessage(),
+                        )
+                    }
                 }
             }
         }
@@ -93,9 +138,3 @@ class ParentFeesViewModel(
         }
     }
 }
-
-private fun sortFeeRows(rows: List<FeeLedgerOut>): List<FeeLedgerOut> =
-    rows.sortedWith(
-        compareBy<FeeLedgerOut> { it.payment_status == FeePaymentStatus.PAID }
-            .thenByDescending { it.month },
-    )

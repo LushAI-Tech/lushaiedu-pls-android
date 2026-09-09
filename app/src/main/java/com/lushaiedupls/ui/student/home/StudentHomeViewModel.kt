@@ -57,16 +57,21 @@ class StudentHomeViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            if (_uiState.value.overviewMetrics.isEmpty()) {
-                _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val hasContent = _uiState.value.overviewMetrics.isNotEmpty()
+            _uiState.update {
+                if (hasContent) {
+                    it.copy(isRefreshing = true, errorMessage = null)
+                } else {
+                    it.copy(isLoading = true, errorMessage = null)
+                }
             }
-            prefetchAiLearn()
             when (val result = studentRepository.overview()) {
                 is NetworkResult.Success -> {
                     val overview = result.data
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            isRefreshing = false,
                             needsApproval = false,
                             errorMessage = null,
                             displayName = overview.student.name.ifBlank {
@@ -82,6 +87,7 @@ class StudentHomeViewModel(
                 else -> _uiState.update {
                     it.copy(
                         isLoading = false,
+                        isRefreshing = false,
                         needsApproval = result.needsAdminApproval(),
                         errorMessage = if (_uiState.value.overviewMetrics.isEmpty()) result.userMessage() else null,
                     )

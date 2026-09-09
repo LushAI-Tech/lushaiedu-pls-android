@@ -28,6 +28,7 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.People
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -65,9 +66,13 @@ import com.lushaiedupls.data.mock.TeacherMockRepository
 import com.lushaiedupls.data.mock.TeacherStudent
 import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.ui.common.AppBackNav
+import com.lushaiedupls.ui.common.CenteredEmptyState
 import com.lushaiedupls.ui.common.LoadErrorPanel
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
+import com.lushaiedupls.ui.common.scrollIntoViewOnFocus
+import com.lushaiedupls.ui.common.verticalScrollWithIme
 import com.lushaiedupls.ui.teacher.overlays.AddStudentOverlay
 import com.lushaiedupls.ui.teacher.overlays.InviteParentOverlay
 import com.lushaiedupls.ui.theme.BgLight
@@ -129,6 +134,7 @@ fun TeacherClassOverviewRoute(
             onApproveRollNumbers = viewModel::approveRollNumbers,
             onToggleMarkStudentDelete = viewModel::toggleMarkStudentDelete,
             onParentsLinked = viewModel::markParentsSelected,
+            onRefresh = viewModel::refresh,
             modifier = modifier,
         )
     }
@@ -145,20 +151,27 @@ fun TeacherClassOverviewScreen(
     onApproveRollNumbers: () -> Unit = {},
     onToggleMarkStudentDelete: (String) -> Unit = {},
     onParentsLinked: (String) -> Unit = {},
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val overview = uiState.overview ?: return
     var showAddStudent by remember { mutableStateOf(false) }
     var inviteForStudent by remember { mutableStateOf<TeacherStudent?>(null) }
 
-    Column(
+    LushPullToRefreshBox(
+        isRefreshing = uiState.isRefreshing,
+        onRefresh = onRefresh,
         modifier = modifier
             .fillMaxSize()
-            .background(BgWhite)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-            .padding(bottom = 24.dp),
+            .background(BgWhite),
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScrollWithIme(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+        ) {
         AppBackNav(
             onBack = onBack,
             modifier = Modifier.padding(top = 4.dp),
@@ -258,6 +271,7 @@ fun TeacherClassOverviewScreen(
                 )
             }
         }
+        }
     }
 
     if (showAddStudent) {
@@ -338,11 +352,10 @@ private fun StudentsInClassSection(
     }
     Spacer(modifier = Modifier.height(8.dp))
     if (students.isEmpty()) {
-        Text(
-            text = stringResource(R.string.teacher_my_classes_empty),
-            fontSize = 14.sp,
-            color = TextSecondary,
-            fontFamily = FontFamily.SansSerif,
+        CenteredEmptyState(
+            message = stringResource(R.string.teacher_class_students_empty),
+            icon = Icons.Outlined.People,
+            compact = true,
         )
     } else {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -522,7 +535,9 @@ private fun StudentRosterCard(
                             textAlign = TextAlign.Center,
                             fontFamily = FontFamily.SansSerif,
                         ),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .scrollIntoViewOnFocus(),
                     )
                 }
             }
@@ -746,9 +761,10 @@ private fun ClassAttendanceStatsRow(
                     .weight(1f)
                     .clip(RoundedCornerShape(14.dp))
                     .background(bg)
-                    .padding(horizontal = 10.dp, vertical = 12.dp)
-                    .height(72.dp),
-                verticalArrangement = Arrangement.SpaceBetween,
+                    .height(72.dp)
+                    .padding(horizontal = 8.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
                     text = label.uppercase(),
@@ -759,7 +775,9 @@ private fun ClassAttendanceStatsRow(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     lineHeight = 11.sp,
+                    textAlign = TextAlign.Center,
                 )
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = value,
                     fontWeight = FontWeight.Bold,
@@ -768,6 +786,7 @@ private fun ClassAttendanceStatsRow(
                     fontFamily = FontFamily.SansSerif,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
                 )
             }
         }

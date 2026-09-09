@@ -1,20 +1,38 @@
 package com.lushaiedupls.ui.admin.feedback
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ReportProblem
+import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.MarkChatRead
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -29,16 +47,19 @@ import com.lushaiedupls.data.repository.AdminRepository
 import com.lushaiedupls.ui.admin.AdminCard
 import com.lushaiedupls.ui.admin.AdminEmptyText
 import com.lushaiedupls.ui.admin.AdminFilterRow
+import com.lushaiedupls.ui.admin.AdminLeadingIcon
 import com.lushaiedupls.ui.admin.AdminMuted
 import com.lushaiedupls.ui.admin.AdminScreenHeader
 import com.lushaiedupls.ui.admin.formatIsoDate
 import com.lushaiedupls.ui.auth.components.OutlinedAuthField
 import com.lushaiedupls.ui.auth.components.PrimaryButton
+import com.lushaiedupls.ui.common.FilterRowListLoading
 import com.lushaiedupls.ui.common.LoadErrorPanel
-import com.lushaiedupls.ui.common.StudentPageSkeleton
-import com.lushaiedupls.ui.common.StudentSkeletonKind
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
+import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BrandBlack
+import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.TextSecondary
 
 @Composable
@@ -82,24 +103,28 @@ fun AdminFeedbackScreen(
     modifier: Modifier = Modifier,
 ) {
     when {
-        uiState.isLoading && uiState.items.isEmpty() && uiState.errorMessage == null ->
-            StudentPageSkeleton(kind = StudentSkeletonKind.List, modifier = modifier)
-        uiState.errorMessage != null && uiState.items.isEmpty() -> LoadErrorPanel(
+        uiState.errorMessage != null && uiState.items.isEmpty() && uiState.selected == null ->
+            LoadErrorPanel(
             screenTitle = stringResource(R.string.admin_feedback_title),
             message = uiState.errorMessage.orEmpty(),
             onRetry = onRetry,
-            isRetrying = uiState.isLoading,
+            isRetrying = uiState.isLoading || uiState.isRefreshing,
             modifier = modifier,
         )
-        else -> Column(
-            modifier = modifier
-                .fillMaxSize()
-                .background(BgWhite)
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 24.dp),
+        else -> LushPullToRefreshBox(
+            isRefreshing = uiState.isRefreshing,
+            onRefresh = onRetry,
+            modifier = modifier.fillMaxSize(),
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(BgWhite)
+                    .imePadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 24.dp),
+            ) {
             AdminScreenHeader(title = stringResource(R.string.admin_feedback_title), onBack = onBack)
             if (uiState.selected == null) {
                 val filters = listOf<FeedbackStatus?>(FeedbackStatus.UNSEEN, FeedbackStatus.SEEN, null)
@@ -114,32 +139,57 @@ fun AdminFeedbackScreen(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 if (uiState.items.isEmpty()) {
-                    AdminEmptyText(stringResource(R.string.admin_feedback_empty))
+                    if (uiState.isLoading) {
+                        FilterRowListLoading()
+                    } else {
+                        AdminEmptyText(
+                            text = stringResource(R.string.admin_feedback_empty),
+                            icon = Icons.Outlined.Forum,
+                        )
+                    }
                 } else {
                     uiState.items.forEach { item ->
+                        val unseen = item.status == FeedbackStatus.UNSEEN
                         AdminCard(onClick = { onSelect(item) }) {
-                            Text(
-                                text = item.subject,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                color = BrandBlack,
-                                fontFamily = FontFamily.SansSerif,
-                            )
-                            AdminMuted(
-                                listOfNotNull(
-                                    item.parent.name,
-                                    item.student?.name,
-                                    formatIsoDate(item.created_at),
-                                ).joinToString(" · "),
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = item.message,
-                                color = TextSecondary,
-                                fontSize = 14.sp,
-                                fontFamily = FontFamily.SansSerif,
-                                maxLines = 3,
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.Top,
+                            ) {
+                                if (unseen) {
+                                    UnseenComplaintIcon()
+                                } else {
+                                    AdminLeadingIcon(
+                                        icon = Icons.Outlined.MarkChatRead,
+                                        background = BgLight,
+                                        tint = BrandBlack,
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = item.subject,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        color = BrandBlack,
+                                        fontFamily = FontFamily.SansSerif,
+                                    )
+                                    AdminMuted(
+                                        listOfNotNull(
+                                            item.parent.name,
+                                            item.student?.name,
+                                            formatIsoDate(item.created_at),
+                                        ).joinToString(" · "),
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = item.message,
+                                        color = TextSecondary,
+                                        fontSize = 14.sp,
+                                        fontFamily = FontFamily.SansSerif,
+                                        maxLines = 3,
+                                    )
+                                }
+                            }
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                     }
@@ -193,5 +243,44 @@ fun AdminFeedbackScreen(
                 )
             }
         }
+        }
+    }
+}
+
+private val UnseenIconShape = RoundedCornerShape(12.dp)
+
+@Composable
+private fun UnseenComplaintIcon() {
+    val strobe by rememberInfiniteTransition(label = "unseenStrobe").animateFloat(
+        initialValue = 0.18f,
+        targetValue = 0.55f,
+        animationSpec = infiniteRepeatable(
+            animation = keyframes {
+                durationMillis = 1600
+                0.18f at 0
+                0.55f at 90
+                0.18f at 180
+                0.55f at 270
+                0.18f at 360
+                0.18f at 1600
+            },
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "unseenFill",
+    )
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(UnseenIconShape)
+            .background(BrandOrange.copy(alpha = strobe))
+            .border(1.dp, BrandOrange.copy(alpha = (strobe + 0.2f).coerceAtMost(1f)), UnseenIconShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.ReportProblem,
+            contentDescription = null,
+            tint = BrandOrange.copy(alpha = 0.72f + strobe * 0.28f),
+            modifier = Modifier.size(22.dp),
+        )
     }
 }

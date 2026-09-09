@@ -48,4 +48,44 @@ class TeacherTimetableSlotTest {
         // timeIndex 1 (Period 2) to dayIndex 0 (Monday) should be empty
         assertNull(timetable.cells[1 to 0])
     }
+
+    @Test
+    fun classSetTimetable_keepsSlotSubjectId() {
+        val periods = listOf(
+            PeriodOut(id = "p1", name = "Period 1", start_time = "09:00", end_time = "09:45", sort_order = 1, is_active = true),
+        )
+        val weekView = WeekView(
+            periods = periods,
+            days = mapOf(
+                "MON" to listOf(
+                    WeekSlot(
+                        slot_id = "s1",
+                        teaching_unit_id = "u1",
+                        class_name = "Class XII",
+                        subject_name = "Physics",
+                        subject_id = "sub-physics",
+                        period_id = "p1",
+                        period_name = "Period 1",
+                        start_time = "09:00",
+                        end_time = "09:45",
+                        day_of_week = DayOfWeek.MON,
+                        room = "Lab 2",
+                    ),
+                ),
+            ),
+        )
+
+        val timetable = TeacherUiMappers.classSetTimetable(
+            week = weekView,
+            periods = periods,
+            classLabels = listOf("Class XII"),
+            myUnitIds = setOf("u1"),
+        )
+
+        val cell = timetable.cells[0 to 0]
+        assertNotNull(cell)
+        assertEquals("Physics", cell!!.subject)
+        assertEquals("sub-physics", cell.subjectId)
+        assertEquals("Lab 2", cell.detail)
+    }
 }

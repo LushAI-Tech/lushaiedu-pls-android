@@ -11,6 +11,7 @@ data class StudentHomeUiState(
     val sessionSummary: SessionSummary? = null,
     val attendancePreview: List<AttendanceRecord> = emptyList(),
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val needsApproval: Boolean = false,
     val errorMessage: String? = null,
 )
