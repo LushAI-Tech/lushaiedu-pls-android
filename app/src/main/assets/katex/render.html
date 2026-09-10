@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <link rel="stylesheet" href="katex.min.css" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      overflow: hidden;
+      -webkit-text-size-adjust: 100%;
+    }
+    #content {
+      margin: 0;
+      padding: 0;
+      word-wrap: break-word;
+      overflow-wrap: anywhere;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-weight: 400;
+    }
+    #content > *:first-child { margin-top: 0 !important; }
+    #content > *:last-child { margin-bottom: 0 !important; }
+    #content p { margin: 0 0 0.55em; font-weight: 400; }
+    #content ul, #content ol {
+      margin: 0 0 0.55em;
+      padding-left: 1.45em;
+    }
+    #content li { margin: 0.2em 0; }
+    #content li > p { margin: 0 0 0.2em; }
+    #content strong, #content b { font-weight: 700; }
+    #content em, #content i { font-style: italic; }
+    #content del { text-decoration: line-through; }
+    #content h1, #content h2, #content h3, #content h4, #content h5, #content h6 {
+      margin: 0.7em 0 0.35em;
+      line-height: 1.25;
+      font-weight: 700;
+      color: inherit;
+    }
+    #content h1 { font-size: 1.28em; }
+    #content h2 { font-size: 1.18em; }
+    #content h3 { font-size: 1.10em; }
+    #content h4 { font-size: 1.04em; }
+    #content h5, #content h6 { font-size: 1em; }
+    #content hr {
+      border: none;
+      border-top: 1px solid #E5E7EB;
+      margin: 0.75em 0;
+    }
+    #content img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+    }
+    #content blockquote {
+      margin: 0.4em 0;
+      padding: 0.15em 0 0.15em 0.75em;
+      border-left: 3px solid #F97316;
+      color: inherit;
+      opacity: 0.92;
+    }
+    #content code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.92em;
+      padding: 0.05em 0.28em;
+      border-radius: 4px;
+      background: #F3F4F6;
+    }
+    #content pre {
+      margin: 0.45em 0;
+      padding: 0.65em 0.75em;
+      overflow-x: auto;
+      border-radius: 8px;
+      background: #F3F4F6;
+    }
+    #content pre code {
+      padding: 0;
+      background: transparent;
+    }
+    #content table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 0.45em 0;
+      font-size: 0.95em;
+    }
+    #content th, #content td {
+      border: 1px solid #E5E7EB;
+      padding: 0.35em 0.5em;
+      text-align: left;
+    }
+    #content th { background: #F9FAFB; }
+    #content a { color: #F97316; }
+    #content .lush-math,
+    #content .katex,
+    #content .katex * {
+      overflow-wrap: normal;
+      word-break: normal;
+      word-wrap: normal;
+    }
+    #content .lush-math {
+      max-width: 100%;
+      overflow-x: auto;
+      overflow-y: hidden;
+      vertical-align: middle;
+      display: inline-block;
+    }
+    #content .katex {
+      font-size: 1.05em;
+    }
+    #content .katex-display {
+      margin: 0.65em 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      max-width: 100%;
+    }
+  </style>
+  <script src="marked.min.js"></script>
+  <script src="katex.min.js"></script>
+  <script src="contrib/mhchem.min.js"></script>
+</head>
+<body>
+  <div id="content"></div>
+  <script>
+    (function () {
+      var pendingHeight = -1;
+      var reportTimer = null;
+
+      function reportHeight() {
+        var el = document.getElementById("content");
+        var rectH = el ? el.getBoundingClientRect().height : 0;
+        var h = Math.ceil(Math.max(
+          rectH,
+          el ? el.scrollHeight : 0,
+          el ? el.offsetHeight : 0
+        ));
+        if (h < 1) h = 1;
+        if (h === pendingHeight) return;
+        pendingHeight = h;
+        if (window.AndroidBridge && AndroidBridge.onHeight) {
+          var dpr = window.devicePixelRatio || 1;
+          AndroidBridge.onHeight(Math.ceil(h * dpr));
+        }
+      }
+
+      function scheduleReport() {
+        if (reportTimer) clearTimeout(reportTimer);
+        reportTimer = setTimeout(function () {
+          requestAnimationFrame(function () {
+            reportHeight();
+            setTimeout(reportHeight, 50);
+            setTimeout(reportHeight, 200);
+          });
+        }, 16);
+      }
+
+      window.setTheme = function (opts) {
+        var c = document.getElementById("content");
+        if (!c || !opts) return;
+        if (opts.color) c.style.color = opts.color;
+        if (opts.fontSizePx) c.style.fontSize = opts.fontSizePx + "px";
+        if (opts.lineHeight) c.style.lineHeight = String(opts.lineHeight);
+        if (opts.textAlign) c.style.textAlign = opts.textAlign;
+        if (opts.linkColor) {
+          var styleId = "dynamic-link-color";
+          var style = document.getElementById(styleId);
+          if (!style) {
+            style = document.createElement("style");
+            style.id = styleId;
+            document.head.appendChild(style);
+          }
+          style.textContent = "#content a{color:" + opts.linkColor + ";}";
+        }
+        scheduleReport();
+      };
+
+      if (window.marked && marked.use) {
+        marked.use({ gfm: true, breaks: true, pedantic: false });
+      }
+
+      var MATH_TOKEN_PREFIX = "LUSHMATHPH";
+      var MATH_TOKEN_SUFFIX = "PHLUSHMATH";
+
+      function looksLikeChemistry(tex) {
+        if (/\\ce\b/.test(tex)) return false;
+        if (/\\(?:frac|dfrac|tfrac|sqrt|sum|int|lim|sin|cos|tan|log|ln|begin|end|partial)\b/.test(tex)) {
+          return false;
+        }
+        return /COOH|\\(?:right|left)leftharpoons|<=>|(?:[A-Z][a-z]?_\{?\d)|(?:^|[\s(])(?:CH|OH|NH|SO|NO|CO)\d/.test(tex);
+      }
+
+      function wrapChemistryAsMhchem(tex) {
+        var s = String(tex || "").trim();
+        if (!s || !looksLikeChemistry(s)) return s;
+        var body = s
+          .replace(/\\mathrm\{([^{}]*)\}/g, "$1")
+          .replace(/\\mbox\{([^{}]*)\}/g, "$1")
+          .replace(/_\{(\d+)\}/g, "$1")
+          .replace(/_(\d+)/g, "$1")
+          .replace(/\^\{([^{}]+)\}/g, "^$1")
+          .replace(/\\(?:rightleftharpoons|leftrightharpoons)/g, "<=>")
+          .replace(/\\leftrightarrow/g, "<-->")
+          .replace(/\\rightarrow/g, "->")
+          .replace(/\\leftarrow/g, "<-");
+        return "\\ce{" + body + "}";
+      }
+
+      function stashMath(slots, tex, display) {
+        var id = slots.length;
+        slots.push({ tex: wrapChemistryAsMhchem(tex), display: !!display });
+        return MATH_TOKEN_PREFIX + id + MATH_TOKEN_SUFFIX;
+      }
+
+      function extractMath(markdown) {
+        var s = String(markdown || "");
+        var slots = [];
+        var out = "";
+        var i = 0;
+        while (i < s.length) {
+          if (s.indexOf("```", i) === i) {
+            var fenceEnd = s.indexOf("```", i + 3);
+            if (fenceEnd < 0) {
+              out += s.slice(i);
+              break;
+            }
+            out += s.slice(i, fenceEnd + 3);
+            i = fenceEnd + 3;
+            continue;
+          }
+          if (s.charAt(i) === "`") {
+            var codeEnd = s.indexOf("`", i + 1);
+            if (codeEnd < 0) {
+              out += s.slice(i);
+              break;
+            }
+            out += s.slice(i, codeEnd + 1);
+            i = codeEnd + 1;
+            continue;
+          }
+          if (s.indexOf("$$", i) === i) {
+            var displayEnd = s.indexOf("$$", i + 2);
+            if (displayEnd >= 0) {
+              out += stashMath(slots, s.slice(i + 2, displayEnd), true);
+              i = displayEnd + 2;
+              continue;
+            }
+          }
+          if (s.indexOf("\\[", i) === i) {
+            var bracketEnd = s.indexOf("\\]", i + 2);
+            if (bracketEnd >= 0) {
+              out += stashMath(slots, s.slice(i + 2, bracketEnd), true);
+              i = bracketEnd + 2;
+              continue;
+            }
+          }
+          if (s.indexOf("\\(", i) === i) {
+            var parenEnd = s.indexOf("\\)", i + 2);
+            if (parenEnd >= 0) {
+              out += stashMath(slots, s.slice(i + 2, parenEnd), false);
+              i = parenEnd + 2;
+              continue;
+            }
+          }
+          if (s.charAt(i) === "$" && s.charAt(i + 1) !== "$") {
+            var j = i + 1;
+            var found = -1;
+            while (j < s.length) {
+              if (s.charAt(j) === "\\") {
+                j += 2;
+                continue;
+              }
+              if (s.charAt(j) === "\n") break;
+              if (s.charAt(j) === "$") {
+                found = j;
+                break;
+              }
+              j++;
+            }
+            if (found > i + 1) {
+              out += stashMath(slots, s.slice(i + 1, found), false);
+              i = found + 1;
+              continue;
+            }
+          }
+          out += s.charAt(i);
+          i++;
+        }
+        return { markdown: out, math: slots };
+      }
+
+      function renderSlot(el, slot) {
+        var tex = (slot && slot.tex) ? String(slot.tex) : "";
+        if (!tex) return;
+        var display = !!(slot && slot.display);
+        try {
+          katex.render(tex, el, {
+            displayMode: display,
+            throwOnError: false,
+            strict: "ignore",
+            trust: false,
+            output: "html"
+          });
+        } catch (e) {
+          el.textContent = tex;
+        }
+      }
+
+      window.renderPrepared = function (payload) {
+        var c = document.getElementById("content");
+        if (!c) return;
+        pendingHeight = -1;
+        var source = (payload && payload.markdown) ? String(payload.markdown) : "";
+        var slots = (payload && payload.math) ? payload.math : [];
+        try {
+          c.innerHTML = marked.parse(source);
+        } catch (e) {
+          c.textContent = source;
+          scheduleReport();
+          return;
+        }
+        if (slots.length) {
+          var html = c.innerHTML.replace(/LUSHMATHPH(\d+)PHLUSHMATH/g, function (_, n) {
+            return '<span class="lush-math" data-i="' + n + '"></span>';
+          });
+          c.innerHTML = html;
+        }
+        var nodes = c.querySelectorAll("span.lush-math");
+        for (var i = 0; i < nodes.length; i++) {
+          var el = nodes[i];
+          var idx = parseInt(el.getAttribute("data-i"), 10);
+          if (isNaN(idx) || !slots[idx]) continue;
+          renderSlot(el, slots[idx]);
+        }
+        scheduleReport();
+      };
+
+      window.renderMarkdown = function (markdown) {
+        window.renderPrepared(extractMath(markdown || ""));
+      };
+
+      window.addEventListener("load", scheduleReport);
+      window.addEventListener("resize", scheduleReport);
+    })();
+  </script>
+</body>
+</html>

@@ -215,6 +215,8 @@
     <string name="ai_resource_play">Play</string>
     <string name="ai_exam_section_practice">Section practice</string>
     <string name="ai_exam_past_attempts">Past attempts</string>
+    <string name="ai_exam_one_mark">1 mark</string>
+    <string name="ai_exam_marks">%1$s marks</string>
     <string name="ai_exam_no_history">No quiz attempts yet. Start a practice quiz to prepare.</string>
 
     <string name="menu_title">Menu</string>

@@ -9,7 +9,18 @@ object MarkdownLatexNormalizer {
     private val displayBracket = Regex("""\\\[(.+?)\\\]""", RegexOption.DOT_MATCHES_ALL)
     private val inlineParen = Regex("""\\\((.+?)\\\)""", RegexOption.DOT_MATCHES_ALL)
     private val inlineBacktickMath = Regex("""`(\s*\\\((?:.+?)\\\)\s*)`""", RegexOption.DOT_MATCHES_ALL)
-    private val chemistryCe = Regex("""\\ce\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}""", RegexOption.DOT_MATCHES_ALL)
+    private val markdownChemFormula = Regex(
+        """(?<![\\$])\b((?:[A-Z][a-z]?_?\d*)*[A-Z][a-z]?_\d+(?:[A-Z][a-z]?_?\d*)*)\b""",
+    )
+    private val unicodeSubscripts = mapOf(
+        '₀' to '0', '₁' to '1', '₂' to '2', '₃' to '3', '₄' to '4',
+        '₅' to '5', '₆' to '6', '₇' to '7', '₈' to '8', '₉' to '9',
+    )
+    private val unicodeSuperscripts = mapOf(
+        '⁰' to '0', '¹' to '1', '²' to '2', '³' to '3', '⁴' to '4',
+        '⁵' to '5', '⁶' to '6', '⁷' to '7', '⁸' to '8', '⁹' to '9',
+        '⁺' to '+', '⁻' to '-',
+    )
 
     private val environmentRegex = Regex(
         """\\begin\{(equation\*?|align\*?|gather\*?|split|multline\*?|displaymath|aligned|cases|matrix|pmatrix|bmatrix|vmatrix|Bmatrix|Vmatrix|array)\}(.+?)\\end\{\1\}""",
@@ -33,6 +44,7 @@ object MarkdownLatexNormalizer {
         "uparrow", "downarrow", "rightleftharpoons",
         "degree", "angstrom", "mathrm", "mathbf", "mathit", "mathbb", "mathcal", "mathscr", "mathfrak", "mathsf", "mathtt",
         "text", "mbox", "boldsymbol", "bm", "cancel", "hat", "bar", "vec", "dot", "ddot", "tilde", "overline", "underline",
+        "ce", "cee", "pu",
     )
 
     fun normalize(source: String): String {
@@ -99,11 +111,12 @@ object MarkdownLatexNormalizer {
             "$${prepareLatex(match.groupValues[1].trim())}$"
         }
 
-        // Convert chemical formulas \ce{...}
-        text = chemistryCe.replace(text) { match ->
-            val chem = match.groupValues[1].trim()
-            "$${convertChemistryToLatex(chem)}$"
-        }
+        // Keep \ce{...} for KaTeX mhchem, wrapping it in math if needed
+        text = replaceChemistryCommands(text, wrapUnmath = true)
+
+        // Keep H_2O / H_2SO_4 and CH_{3}COOH from being parsed as markdown italics
+        text = protectMarkdownChemFormulas(text)
+        text = wrapLatexChemFormulas(text)
 
         // Convert degrees and temperatures e.g. 45\degree, 100^\circ C
         text = text.replace(Regex("""(\d+(?:\.\d+)?)\s*(?:\\degree|\^\\circ|\^\{\\circ\})\s*([CFcf])\b""")) { match ->
@@ -129,6 +142,7 @@ object MarkdownLatexNormalizer {
         s = s.replace("\\\\(", "\\(").replace("\\\\)", "\\)")
         // Replace \\[ with \[ and \\] with \]
         s = s.replace("\\\\[", "\\[").replace("\\\\]", "\\]")
+        s = s.replace("\\\\ce{", "\\ce{").replace("\\\\cee{", "\\cee{")
         // Replace triple backslashes with single
         s = s.replace("\\\\\\", "\\")
         return s
@@ -183,6 +197,8 @@ object MarkdownLatexNormalizer {
         var s = latex.trim()
         if (s.isEmpty()) return s
 
+        s = replaceChemistryCommands(s, wrapUnmath = false)
+
         // Normalize text commands for JLatexMath: \text{...} -> \mbox{...}
         s = s.replace(Regex("""\\text\{([^{}]*)\}""")) { match ->
             "\\mbox{${match.groupValues[1]}}"
@@ -221,22 +237,197 @@ object MarkdownLatexNormalizer {
         s = s.replace(Regex("""\\begin\{equation\*?\}"""), "\\begin{aligned}")
         s = s.replace(Regex("""\\end\{equation\*?\}"""), "\\end{aligned}")
 
+        s = wrapChemistryAsMhchem(s)
+
         return s
     }
 
-    private fun convertChemistryToLatex(chem: String): String {
+    private fun replaceChemistryCommands(text: String, wrapUnmath: Boolean): String {
+        if (!text.contains("\\ce") && !text.contains("\\cee")) return text
+        val mathRanges = if (wrapUnmath) findMathRanges(text) else emptyList()
+        val out = StringBuilder(text.length)
+        var i = 0
+        while (i < text.length) {
+            val ce = text.indexOf("\\ce{", i)
+            val cee = text.indexOf("\\cee{", i)
+            val start = when {
+                ce < 0 -> cee
+                cee < 0 -> ce
+                else -> minOf(ce, cee)
+            }
+            if (start < 0) {
+                out.append(text.substring(i))
+                break
+            }
+            out.append(text.substring(i, start))
+            val braceAt = text.indexOf('{', start)
+            val close = findClosingBrace(text, braceAt, '{', '}')
+            if (braceAt < 0 || close < 0) {
+                out.append(text.substring(start))
+                break
+            }
+            val snippet = text.substring(start, close + 1)
+            val alreadyMath = mathRanges.any { start in it }
+            if (wrapUnmath && !alreadyMath) {
+                out.append('$').append(snippet).append('$')
+            } else {
+                out.append(snippet)
+            }
+            i = close + 1
+        }
+        return out.toString()
+    }
+
+    private fun protectMarkdownChemFormulas(text: String): String {
+        val mathRanges = findMathRanges(text)
+        return markdownChemFormula.replace(text) { match ->
+            if (mathRanges.any { match.range.first in it }) {
+                match.value
+            } else {
+                "$${convertChemistryToLatex(match.value.replace("_", ""))}$"
+            }
+        }
+    }
+
+    private fun wrapLatexChemFormulas(text: String): String {
+        val mathRanges = findMathRanges(text)
+        val out = StringBuilder(text.length)
+        var i = 0
+        while (i < text.length) {
+            if (mathRanges.any { i in it }) {
+                out.append(text[i])
+                i++
+                continue
+            }
+            val end = scanLatexChemFormula(text, i)
+            if (end > i) {
+                out.append('$').append(text.substring(i, end)).append('$')
+                i = end
+            } else {
+                out.append(text[i])
+                i++
+            }
+        }
+        return out.toString()
+    }
+
+    private fun scanLatexChemFormula(text: String, start: Int): Int {
+        if (start > 0) {
+            val prev = text[start - 1]
+            if (prev == '$' || prev == '\\' || prev.isLetterOrDigit()) return -1
+        }
+        var i = start
+        var sawSubscript = false
+        var consumed = false
+        if (i < text.length && text[i].isDigit()) {
+            while (i < text.length && text[i].isDigit()) i++
+            if (i >= text.length || text[i] != ' ') return -1
+            i++
+        }
+        while (i < text.length) {
+            if (text[i] == '(') {
+                val close = findClosingBrace(text, i, '(', ')')
+                if (close <= i) break
+                val inner = text.substring(i + 1, close)
+                if (!innerLooksLikeChem(inner)) break
+                if (inner.contains('_')) sawSubscript = true
+                i = close + 1
+                val after = scanLatexSubscript(text, i)
+                if (after > i) {
+                    sawSubscript = true
+                    i = after
+                }
+                consumed = true
+                continue
+            }
+            if (text[i].isUpperCase()) {
+                var j = i + 1
+                if (j < text.length && text[j].isLowerCase()) j++
+                val after = scanLatexSubscript(text, j)
+                if (after > j) {
+                    sawSubscript = true
+                    i = after
+                    consumed = true
+                    continue
+                }
+                i = j
+                consumed = true
+                continue
+            }
+            break
+        }
+        return if (consumed && sawSubscript) i else -1
+    }
+
+    private fun scanLatexSubscript(text: String, start: Int): Int {
+        if (start >= text.length || text[start] != '_') return start
+        if (start + 1 < text.length && text[start + 1] == '{') {
+            val close = findClosingBrace(text, start + 1, '{', '}')
+            if (close > start) return close + 1
+        }
+        if (start + 1 < text.length && text[start + 1].isDigit()) {
+            var j = start + 1
+            while (j < text.length && text[j].isDigit()) j++
+            return j
+        }
+        return start
+    }
+
+    private fun innerLooksLikeChem(inner: String): Boolean {
+        if (inner.none { it.isUpperCase() }) return false
+        return inner.all { c ->
+            c.isLetterOrDigit() || c == '_' || c == '{' || c == '}' || c == '+' || c == '-' || c == '(' || c == ')'
+        }
+    }
+
+    private val notChemistryCommand = Regex(
+        """\\(?:frac|dfrac|tfrac|sqrt|sum|int|lim|sin|cos|tan|log|ln|begin|end|partial|infty)\b""",
+    )
+    private val chemistryHint = Regex(
+        """\\ce\b|COOH|\\(?:right|left)leftharpoons|<=>|(?:[A-Z][a-z]?_\{?\d)|(?:^|[\s(])(?:CH|OH|NH|SO|NO|CO)\d""",
+    )
+
+    internal fun wrapChemistryAsMhchem(latex: String): String {
+        val s = latex.trim()
+        if (s.isEmpty() || s.contains("\\ce")) return s
+        if (notChemistryCommand.containsMatchIn(s)) return s
+        if (!chemistryHint.containsMatchIn(s)) return s
+        val body = s
+            .replace(Regex("""\\mathrm\{([^{}]*)\}"""), "$1")
+            .replace(Regex("""\\mbox\{([^{}]*)\}"""), "$1")
+            .replace(Regex("""_\{(\d+)\}"""), "$1")
+            .replace(Regex("""_(\d+)"""), "$1")
+            .replace(Regex("""\^\{([^{}]+)\}"""), "^$1")
+            .replace("\\rightleftharpoons", "<=>")
+            .replace("\\leftrightharpoons", "<=>")
+            .replace("\\leftrightarrow", "<-->")
+            .replace("\\rightarrow", "->")
+            .replace("\\leftarrow", "<-")
+        return "\\ce{$body}"
+    }
+
+    internal fun convertChemistryToLatex(chem: String): String {
         var s = chem.trim()
-        s = s.replace("->", "\\rightarrow ")
-        s = s.replace("<=>", "\\rightleftharpoons ")
-        s = s.replace("<->", "\\rightleftharpoons ")
-        // Convert chemical formulas like H2O, CaCO3, SO4^2-, Fe^3+
-        s = Regex("""([A-Z][a-z]?)(\d+)""").replace(s) { match ->
-            "${match.groupValues[1]}_{${match.groupValues[2]}}"
+        if (s.isEmpty()) return s
+        unicodeSubscripts.forEach { (uni, ascii) ->
+            s = s.replace(uni.toString(), ascii.toString())
         }
-        s = Regex("""\^([0-9]+[+-]|[+-])""").replace(s) { match ->
-            "^{${match.groupValues[1]}}"
+        unicodeSuperscripts.forEach { (uni, ascii) ->
+            s = s.replace(uni.toString(), "^$ascii")
         }
-        return "\\mathrm{$s}"
+        s = Regex("""\s*->\[([^\]]*)]\s*""").replace(s) { match ->
+            " ->[${match.groupValues[1].trim()}] "
+        }
+        s = Regex("""\s*<-\[([^\]]*)]\s*""").replace(s) { match ->
+            " <-[${match.groupValues[1].trim()}] "
+        }
+        s = Regex("""\s*<=>\s*""").replace(s) { " <=> " }
+        s = Regex("""\s*<->\s*""").replace(s) { " <-> " }
+        s = Regex("""\s*->\s*""").replace(s) { " -> " }
+        s = Regex("""\s*<-\s*""").replace(s) { " <- " }
+        s = s.replace("^\\circ", "^{\\circ}")
+        if (s.startsWith("\\ce{")) return s
+        return "\\ce{$s}"
     }
 
     private fun wrapBareLatexFormulas(text: String): String {

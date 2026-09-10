@@ -61,11 +61,15 @@ import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlin.math.abs
+import kotlin.math.roundToLong
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -605,6 +609,7 @@ object StudentUiMappers {
                 title = cleanQuestionText(hit.question_preview, null),
                 subtitle = boardLabel.ifBlank { null },
                 sectionId = "",
+                marksLabel = formatMarksLabel(hit.marks),
             )
         }
 
@@ -710,6 +715,27 @@ object StudentUiMappers {
             ?: block.figure_ref?.trim()?.takeIf { it.isNotBlank() }
             ?: fallback
         return cleanQuestionText(raw, block.title)
+    }
+
+    internal fun formatMarksLabel(marks: JsonElement?): String? {
+        if (marks == null || marks is JsonNull) return null
+        val primitive = marks as? JsonPrimitive ?: return null
+        primitive.doubleOrNull?.let { return formatMarksAmount(it) }
+        val raw = primitive.contentOrNull?.trim().orEmpty()
+        if (raw.isEmpty() || raw.equals("null", ignoreCase = true)) return null
+        if (raw.contains("mark", ignoreCase = true)) return raw
+        raw.toDoubleOrNull()?.let { return formatMarksAmount(it) }
+        return raw
+    }
+
+    private fun formatMarksAmount(value: Double): String? {
+        if (!value.isFinite() || value <= 0.0) return null
+        val whole = value.roundToLong()
+        return if (abs(value - whole) < 1e-9) {
+            whole.toString()
+        } else {
+            value.toString().trimEnd('0').trimEnd('.')
+        }
     }
 
     private fun metadataText(metadata: JsonElement?, vararg keys: String): String? {

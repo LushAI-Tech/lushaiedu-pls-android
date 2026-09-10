@@ -592,7 +592,7 @@ private fun ChatBubble(
                 .fillMaxWidth()
                 .padding(top = 2.dp, bottom = 6.dp, end = 12.dp),
             fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Normal,
             lineHeightMultiplier = 20f / 14f,
         )
     }
@@ -1285,7 +1285,7 @@ private fun ExamPreparationPageView(
                 AiMenuSectionHeaderSkeleton(titleWidth = 140.dp, trailingWidth = 72.dp)
             }
             items(3) {
-                AiMenuQuestionCardSkeleton()
+                AiMenuQuestionCardSkeleton(showMarks = true)
             }
             item { Spacer(modifier = Modifier.height(24.dp)) }
         }
@@ -1355,7 +1355,10 @@ private fun ExamPreparationPageView(
                             .fillMaxWidth()
                             .padding(14.dp),
                     ) {
-                        AiMenuQuestionNumber(number = index + 1)
+                        AiMenuQuestionNumber(
+                            number = index + 1,
+                            marksLabel = item.marksLabel,
+                        )
                         Spacer(modifier = Modifier.height(8.dp))
                         AiMenuQuestionContent(item = item)
                         Spacer(modifier = Modifier.height(12.dp))
@@ -1744,14 +1747,45 @@ private fun MenuTabChip(
 }
 
 @Composable
-private fun AiMenuQuestionNumber(number: Int) {
-    Text(
-        text = "Q $number",
-        color = BrandOrange,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.Bold,
-        fontFamily = FontFamily.SansSerif,
-    )
+private fun AiMenuQuestionNumber(number: Int, marksLabel: String? = null) {
+    val marksText = when {
+        marksLabel.isNullOrBlank() -> null
+        marksLabel.contains("mark", ignoreCase = true) -> marksLabel
+        marksLabel == "1" -> stringResource(R.string.ai_exam_one_mark)
+        else -> stringResource(R.string.ai_exam_marks, marksLabel)
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Q $number",
+            color = BrandOrange,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.SansSerif,
+        )
+        if (!marksText.isNullOrBlank()) {
+            Box(
+                modifier = Modifier
+                    .clip(ChipShape)
+                    .background(BrandOrange.copy(alpha = 0.10f))
+                    .border(1.dp, BrandOrange.copy(alpha = 0.22f), ChipShape)
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = marksText,
+                    color = BrandOrange,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.SansSerif,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
 }
 
 @Composable

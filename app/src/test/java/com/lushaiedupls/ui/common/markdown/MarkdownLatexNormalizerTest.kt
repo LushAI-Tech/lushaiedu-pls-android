@@ -42,8 +42,48 @@ class MarkdownLatexNormalizerTest {
     fun convertsChemistryEquations() {
         val source = "Combustion: \\ce{2H2 + O2 -> 2H2O} and \\ce{CaCO3 -> CaO + CO2}."
         val out = MarkdownLatexNormalizer.normalize(source)
-        assertTrue(out.contains("\$\\mathrm{2H_{2} + O_{2} \\rightarrow  2H_{2}O}\$"))
-        assertTrue(out.contains("\$\\mathrm{CaCO_{3} \\rightarrow  CaO + CO_{2}}\$"))
+        assertTrue(out.contains("\$\\ce{2H2 + O2 -> 2H2O}\$"))
+        assertTrue(out.contains("\$\\ce{CaCO3 -> CaO + CO2}\$"))
+    }
+
+    @Test
+    fun convertsCeInsideInlineMathWithoutExtraDollars() {
+        val out = MarkdownLatexNormalizer.normalize("Water is \\(\\ce{H2O}\\).")
+        assertEquals("Water is \$\\ce{H2O}\$.", out)
+        assertFalse(out.contains("\$\$"))
+    }
+
+    @Test
+    fun convertsIonsAndStates() {
+        val out = MarkdownLatexNormalizer.convertChemistryToLatex("SO4^2- (aq) + Fe3+")
+        assertEquals("\\ce{SO4^2- (aq) + Fe3+}", out)
+    }
+
+    @Test
+    fun protectsUnderscoreFormulasFromMarkdownItalics() {
+        val out = MarkdownLatexNormalizer.normalize("Sulphuric acid is H_2SO_4 in water.")
+        assertTrue(out.contains("\$\\ce{H2SO4}\$"))
+        assertFalse(out.contains("H_2SO_4"))
+    }
+
+    @Test
+    fun rendersAceticAcidDimerLikeWikipedia() {
+        val source =
+            "The textbook mentions the dimerization of acetic acid: " +
+                "\$2 CH_{3}COOH \\rightleftharpoons (CH_{3}COOH)_{2}\$. " +
+                "Here, the formula \$CH_{3}COOH\$ and the \$(CH_{3}COOH)_{2}\$ dimer."
+        val out = MarkdownLatexNormalizer.normalize(source)
+        assertTrue(out.contains("\$\\ce{2 CH3COOH <=> (CH3COOH)2}\$"))
+        assertTrue(out.contains("\$\\ce{CH3COOH}\$"))
+        assertTrue(out.contains("\$\\ce{(CH3COOH)2}\$"))
+        assertFalse(out.contains("CH_{3}COOH"))
+    }
+
+    @Test
+    fun wrapsBareLatexChemistryFormulas() {
+        val out = MarkdownLatexNormalizer.normalize("Acetic acid is CH_{3}COOH and the dimer is (CH_{3}COOH)_{2}.")
+        assertTrue(out.contains("\$\\ce{CH3COOH}\$"))
+        assertTrue(out.contains("\$\\ce{(CH3COOH)2}\$"))
     }
 
     @Test
@@ -96,6 +136,24 @@ class MarkdownLatexNormalizerTest {
         val out = MarkdownLatexNormalizer.normalize(source)
         assertTrue(out.contains("\\begin{cases}"))
         assertTrue(out.contains("\\end{cases}"))
+    }
+
+    @Test
+    fun preservesCommonMarkdownInAiChat() {
+        val source = """
+            Hello! Today's chapter is **Solutions**. In this chapter we will learn:
+
+            - Different types of solutions
+            - Ways of expressing concentration
+
+            ### Henry's law
+            The mole fraction is important.
+        """.trimIndent()
+        val out = MarkdownLatexNormalizer.normalize(source)
+        assertTrue(out.contains("**Solutions**"))
+        assertTrue(out.contains("- Different types of solutions"))
+        assertTrue(out.contains("- Ways of expressing concentration"))
+        assertTrue(out.contains("### Henry's law"))
     }
 
     @Test

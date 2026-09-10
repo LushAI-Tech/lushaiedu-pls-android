@@ -113,8 +113,10 @@
 # Coil (avatars)
 -dontwarn coil.**
 
-# Markwon (AI chat markdown)
--dontwarn io.noties.markwon.**
+# KaTeX WebView bridge (AI chat / quiz formulas)
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
 
 # ZXing (QR)
 -keep class com.google.zxing.** { *; }

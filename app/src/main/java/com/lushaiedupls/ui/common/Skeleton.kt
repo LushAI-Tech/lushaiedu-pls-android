@@ -314,7 +314,10 @@ fun AiMenuSectionHeaderSkeleton(
 }
 
 @Composable
-fun AiMenuQuestionCardSkeleton(modifier: Modifier = Modifier) {
+fun AiMenuQuestionCardSkeleton(
+    modifier: Modifier = Modifier,
+    showMarks: Boolean = false,
+) {
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -323,7 +326,16 @@ fun AiMenuQuestionCardSkeleton(modifier: Modifier = Modifier) {
             .border(1.dp, BorderGray.copy(alpha = 0.65f), CardShape)
             .padding(14.dp),
     ) {
-        SkeletonLine(modifier = Modifier.width(28.dp), height = 12.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SkeletonLine(modifier = Modifier.width(28.dp), height = 12.dp)
+            if (showMarks) {
+                SkeletonBox(modifier = Modifier.width(58.dp).height(20.dp), shape = PillShape)
+            }
+        }
         Spacer(modifier = Modifier.height(8.dp))
         SkeletonLine(modifier = Modifier.fillMaxWidth(), height = 14.dp)
         Spacer(modifier = Modifier.height(8.dp))
@@ -399,7 +411,7 @@ private fun ExamPreparationSkeleton() {
     ) {
         AiMenuSectionHeaderSkeleton(titleWidth = 140.dp, trailingWidth = 72.dp)
         repeat(3) {
-            AiMenuQuestionCardSkeleton()
+            AiMenuQuestionCardSkeleton(showMarks = true)
         }
     }
 }

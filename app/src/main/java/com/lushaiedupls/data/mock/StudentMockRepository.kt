@@ -237,6 +237,7 @@ data class AiMenuContentItem(
     val subtitle: String? = null,
     val imageUrl: String? = null,
     val videoUrl: String? = null,
+    val marksLabel: String? = null,
 )
 
 data class AiQuizHistoryItem(
@@ -359,18 +360,21 @@ Eng atangin nge i tan duh?""".trimIndent(),
                 sectionId = "1.3",
                 title = "State Henry's law and mention two of its important applications in daily life.",
                 subtitle = "MBSE · 2024",
+                marksLabel = "5",
             ),
             AiMenuContentItem(
                 id = "pyq2",
                 sectionId = "1.2",
                 title = "Define molality and molarity. Why is molality preferred over molarity in expressing concentration?",
                 subtitle = "MBSE · 2023",
+                marksLabel = "3",
             ),
             AiMenuContentItem(
                 id = "pyq3",
                 sectionId = "1.4",
                 title = "What are colligative properties? Write the mathematical expression for relative lowering of vapour pressure.",
                 subtitle = "NEET · 2022",
+                marksLabel = "4",
             ),
         ),
         resources = listOf(
