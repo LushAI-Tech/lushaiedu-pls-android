@@ -213,17 +213,6 @@ private fun GroupCard(
                 color = BrandBlack,
                 fontFamily = FontFamily.SansSerif,
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = stringResource(
-                    R.string.teacher_group_meta,
-                    group.code,
-                    group.status,
-                ),
-                fontSize = 13.sp,
-                color = TextSecondary,
-                fontFamily = FontFamily.SansSerif,
-            )
         }
         Icon(
             imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,

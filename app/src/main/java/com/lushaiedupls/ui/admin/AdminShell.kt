@@ -36,7 +36,10 @@ import com.lushaiedupls.ui.admin.more.AdminMoreScreen
 import com.lushaiedupls.ui.common.AdaptiveRoleScaffold
 import com.lushaiedupls.ui.admin.notifications.AdminNotificationsRoute
 import com.lushaiedupls.ui.admin.periods.AdminPeriodsRoute
+import com.lushaiedupls.ui.admin.roll.AdminRollEditRoute
+import com.lushaiedupls.ui.admin.roll.AdminRollNumbersRoute
 import com.lushaiedupls.ui.admin.users.AdminUsersRoute
+import com.lushaiedupls.data.remote.dto.TeachingUnitOut
 import com.lushaiedupls.ui.navigation.lushEnterTransition
 import com.lushaiedupls.ui.navigation.lushExitTransition
 import com.lushaiedupls.ui.navigation.lushPopEnterTransition
@@ -69,6 +72,7 @@ fun AdminShell(
     var createClassInstitutionId by remember { mutableStateOf<String?>(null) }
     var createSubjectClassId by remember { mutableStateOf<String?>(null) }
     var createSubjectInstitutionId by remember { mutableStateOf<String?>(null) }
+    var rollEditUnit by remember { mutableStateOf<TeachingUnitOut?>(null) }
 
     val inMoreStack = currentRoute in setOf(
         AdminRoutes.MORE,
@@ -81,6 +85,8 @@ fun AdminShell(
         AdminRoutes.PERIODS,
         AdminRoutes.CALENDAR,
         AdminRoutes.ANNOUNCEMENTS,
+        AdminRoutes.ROLL_NUMBERS,
+        AdminRoutes.ROLL_NUMBERS_EDIT,
     )
     val selectedTab = when {
         currentRoute == AdminRoutes.USERS -> AdminTab.Users
@@ -162,6 +168,7 @@ fun AdminShell(
                     onPeriods = { tabNavController.navigate(AdminRoutes.PERIODS) },
                     onCalendar = { tabNavController.navigate(AdminRoutes.CALENDAR) },
                     onAnnouncements = { tabNavController.navigate(AdminRoutes.ANNOUNCEMENTS) },
+                    onRollNumbers = { tabNavController.navigate(AdminRoutes.ROLL_NUMBERS) },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -242,6 +249,32 @@ fun AdminShell(
                     onBack = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),
                 )
+            }
+            composable(AdminRoutes.ROLL_NUMBERS) {
+                AdminRollNumbersRoute(
+                    adminRepository = adminRepository,
+                    onBack = { tabNavController.popBackStack() },
+                    onOpenUnit = { unit ->
+                        rollEditUnit = unit
+                        tabNavController.navigate(AdminRoutes.ROLL_NUMBERS_EDIT)
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            composable(AdminRoutes.ROLL_NUMBERS_EDIT) {
+                val unit = rollEditUnit
+                if (unit == null) {
+                    LaunchedEffect(Unit) { tabNavController.popBackStack() }
+                } else {
+                    AdminRollEditRoute(
+                        adminRepository = adminRepository,
+                        unitId = unit.id,
+                        className = unit.class_name,
+                        subjectName = unit.subject_name,
+                        onBack = { tabNavController.popBackStack() },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
             composable(AdminRoutes.NOTIFICATIONS) {
                 AdminNotificationsRoute(

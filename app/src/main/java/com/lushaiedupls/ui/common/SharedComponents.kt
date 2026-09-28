@@ -282,8 +282,9 @@ fun MetricCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 16.dp),
+                .padding(horizontal = 12.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Icon(
                 imageVector = icon,
@@ -291,20 +292,18 @@ fun MetricCard(
                 tint = fg,
                 modifier = Modifier.size(26.dp),
             )
-            Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 FittedMetricValue(
                     text = value,
                     color = fg,
                     baseSize = valueFontSize,
                 )
-                Text(
+                // Match iOS AdminMetricCard: shrink label to fit (minimumScaleFactor 0.75)
+                // instead of ellipsizing mid-word on narrow 2-column cards.
+                FittedMetricLabel(
                     text = label,
                     color = fg.copy(alpha = 0.9f),
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.SansSerif,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    baseSize = 12.sp,
                 )
             }
         }
@@ -318,22 +317,56 @@ private fun FittedMetricValue(
     color: Color,
     baseSize: TextUnit,
 ) {
+    FittedSingleLineText(
+        text = text,
+        color = color,
+        baseSize = baseSize,
+        minScale = 0.55f,
+        fontWeight = FontWeight.Bold,
+    )
+}
+
+/** Shrinks metric labels so they stay on one line, matching iOS `minimumScaleFactor(0.75)`. */
+@Composable
+private fun FittedMetricLabel(
+    text: String,
+    color: Color,
+    baseSize: TextUnit,
+) {
+    FittedSingleLineText(
+        text = text,
+        color = color,
+        baseSize = baseSize,
+        minScale = 0.75f,
+        fontWeight = FontWeight.Normal,
+    )
+}
+
+@Composable
+private fun FittedSingleLineText(
+    text: String,
+    color: Color,
+    baseSize: TextUnit,
+    minScale: Float,
+    fontWeight: FontWeight,
+) {
     val measurer = rememberTextMeasurer()
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val maxWidth = constraints.maxWidth
-        val fontSize = remember(text, baseSize, maxWidth) {
+        val fontSize = remember(text, baseSize, minScale, fontWeight, maxWidth) {
             fittedSingleLineSize(
                 measurer = measurer,
                 text = text,
                 baseSize = baseSize,
-                minSize = baseSize * 0.55f,
+                minSize = baseSize * minScale,
                 maxWidthPx = maxWidth,
+                fontWeight = fontWeight,
             )
         }
         Text(
             text = text,
             color = color,
-            fontWeight = FontWeight.Bold,
+            fontWeight = fontWeight,
             fontSize = fontSize,
             fontFamily = FontFamily.SansSerif,
             lineHeight = fontSize * 1.1f,
@@ -350,6 +383,7 @@ private fun fittedSingleLineSize(
     baseSize: TextUnit,
     minSize: TextUnit,
     maxWidthPx: Int,
+    fontWeight: FontWeight = FontWeight.Bold,
 ): TextUnit {
     if (maxWidthPx <= 0 || maxWidthPx == Constraints.Infinity) return baseSize
     fun overflows(size: TextUnit): Boolean {
@@ -357,7 +391,7 @@ private fun fittedSingleLineSize(
             text = text,
             style = TextStyle(
                 fontSize = size,
-                fontWeight = FontWeight.Bold,
+                fontWeight = fontWeight,
                 fontFamily = FontFamily.SansSerif,
             ),
             overflow = TextOverflow.Clip,

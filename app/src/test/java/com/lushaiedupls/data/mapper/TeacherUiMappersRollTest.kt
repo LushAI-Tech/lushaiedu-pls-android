@@ -36,13 +36,13 @@ class TeacherUiMappersRollTest {
 
         val students = TeacherUiMappers.students(members)
         assertEquals(3, students.size)
-        // Sorted alphabetically by name when roll_no is null
+        // Sorted alphabetically by name when roll_no is null; drafts stay blank until assigned
         assertEquals("Alice", students[0].name)
-        assertEquals(1, students[0].rollNumber)
+        assertEquals(0, students[0].rollNumber)
         assertEquals("Bob", students[1].name)
-        assertEquals(2, students[1].rollNumber)
+        assertEquals(0, students[1].rollNumber)
         assertEquals("Charlie", students[2].name)
-        assertEquals(3, students[2].rollNumber)
+        assertEquals(0, students[2].rollNumber)
     }
 
     @Test

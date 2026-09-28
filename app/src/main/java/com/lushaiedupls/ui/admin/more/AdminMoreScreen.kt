@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Apartment
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.EventAvailable
+import androidx.compose.material.icons.outlined.FormatListNumbered
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Schedule
@@ -54,6 +55,7 @@ fun AdminMoreScreen(
     onPeriods: () -> Unit,
     onCalendar: () -> Unit,
     onAnnouncements: () -> Unit,
+    onRollNumbers: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val tiles = listOf(
@@ -64,6 +66,7 @@ fun AdminMoreScreen(
         MoreTile(stringResource(R.string.admin_periods_title), Icons.Outlined.Schedule, onPeriods),
         MoreTile(stringResource(R.string.admin_calendar_title), Icons.Outlined.EventAvailable, onCalendar),
         MoreTile(stringResource(R.string.admin_announce_title), Icons.Outlined.Campaign, onAnnouncements),
+        MoreTile(stringResource(R.string.admin_roll_numbers_title), Icons.Outlined.FormatListNumbered, onRollNumbers),
     )
 
     Column(

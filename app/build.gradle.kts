@@ -43,7 +43,8 @@ android {
         applicationId = "com.lushaiedupls"
         minSdk = 24
         targetSdk = 36
-        versionCode = 70
+        versionCode = 71
+
 
 
         versionName = "2.1.2"

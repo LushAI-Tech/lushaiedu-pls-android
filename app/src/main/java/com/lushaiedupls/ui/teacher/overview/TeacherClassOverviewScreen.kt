@@ -24,10 +24,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.DeleteOutline
-import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -84,16 +80,12 @@ import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.LushAIEdu_PLSTheme
 import com.lushaiedupls.ui.theme.TextSecondary
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.ui.text.style.TextDecoration
-
 private val CardShape = RoundedCornerShape(18.dp)
 private val StudentCardShape = RoundedCornerShape(16.dp)
 private val SegmentShape = RoundedCornerShape(14.dp)
 private val ChooseShape = RoundedCornerShape(10.dp)
 private val PillShape = RoundedCornerShape(50)
 private val ExtraCardBg = Color(0xFFE8E8EA)
-private val DangerRed = Color(0xFFF25F5C)
 
 @Composable
 fun TeacherClassOverviewRoute(
@@ -114,6 +106,13 @@ fun TeacherClassOverviewRoute(
             viewModel.clearActionMessage()
         }
     }
+    LaunchedEffect(uiState.errorMessage) {
+        val msg = uiState.errorMessage ?: return@LaunchedEffect
+        if (uiState.overview != null) {
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            viewModel.clearErrorMessage()
+        }
+    }
 
     when {
         uiState.isLoading && uiState.overview == null && uiState.errorMessage == null ->
@@ -129,11 +128,9 @@ fun TeacherClassOverviewRoute(
             uiState = uiState,
             onBack = onBack,
             onSectionSelected = viewModel::onSectionSelected,
-            onToggleEdit = viewModel::toggleEditMode,
             onUpdateStudentRoll = viewModel::updateStudentRoll,
-            onAutoAssignRolls = viewModel::autoAssignSequentialRolls,
-            onApproveRollNumbers = viewModel::approveRollNumbers,
-            onToggleMarkStudentDelete = viewModel::toggleMarkStudentDelete,
+            onToggleAutoFill = viewModel::toggleAutoFill,
+            onSaveRollNumbers = viewModel::saveRollNumbers,
             onParentsLinked = viewModel::markParentsSelected,
             onRefresh = viewModel::refresh,
             modifier = modifier,
@@ -146,11 +143,9 @@ fun TeacherClassOverviewScreen(
     uiState: TeacherClassOverviewUiState,
     onBack: () -> Unit,
     onSectionSelected: (TeacherClassSection) -> Unit,
-    onToggleEdit: () -> Unit = {},
     onUpdateStudentRoll: (String, String) -> Unit = { _, _ -> },
-    onAutoAssignRolls: () -> Unit = {},
-    onApproveRollNumbers: () -> Unit = {},
-    onToggleMarkStudentDelete: (String) -> Unit = {},
+    onToggleAutoFill: () -> Unit = {},
+    onSaveRollNumbers: () -> Unit = {},
     onParentsLinked: (String) -> Unit = {},
     onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -253,15 +248,12 @@ fun TeacherClassOverviewScreen(
             TeacherClassSection.Students -> {
                 StudentsInClassSection(
                     students = uiState.students,
-                    isEditing = uiState.isEditing,
                     isApprovingRolls = uiState.isApprovingRolls,
+                    autoFilled = uiState.autoFilled,
                     rollDrafts = uiState.rollDrafts,
-                    pendingDeleteStudentIds = uiState.pendingDeleteStudentIds,
-                    onToggleEdit = onToggleEdit,
                     onUpdateStudentRoll = onUpdateStudentRoll,
-                    onAutoAssignRolls = onAutoAssignRolls,
-                    onApproveRollNumbers = onApproveRollNumbers,
-                    onToggleMarkStudentDelete = onToggleMarkStudentDelete,
+                    onToggleAutoFill = onToggleAutoFill,
+                    onSaveRollNumbers = onSaveRollNumbers,
                     onAddStudent = { showAddStudent = true },
                 )
             }
@@ -290,15 +282,12 @@ fun TeacherClassOverviewScreen(
 @Composable
 private fun StudentsInClassSection(
     students: List<TeacherStudent>,
-    isEditing: Boolean,
     isApprovingRolls: Boolean,
+    autoFilled: Boolean,
     rollDrafts: Map<String, String>,
-    pendingDeleteStudentIds: Set<String>,
-    onToggleEdit: () -> Unit,
     onUpdateStudentRoll: (String, String) -> Unit,
-    onAutoAssignRolls: () -> Unit,
-    onApproveRollNumbers: () -> Unit,
-    onToggleMarkStudentDelete: (String) -> Unit,
+    onToggleAutoFill: () -> Unit,
+    onSaveRollNumbers: () -> Unit,
     onAddStudent: () -> Unit,
 ) {
     Row(
@@ -313,43 +302,11 @@ private fun StudentsInClassSection(
             fontFamily = FontFamily.SansSerif,
             modifier = Modifier.weight(1f),
         )
-        if (students.isNotEmpty()) {
-            IconButton(onClick = onToggleEdit) {
-                Icon(
-                    imageVector = if (isEditing) Icons.Outlined.Close else Icons.Outlined.Edit,
-                    contentDescription = stringResource(
-                        if (isEditing) R.string.cd_cancel_edit_students else R.string.cd_edit_students,
-                    ),
-                    tint = if (isEditing) BrandOrange else BrandBlack,
-                )
-            }
-        }
         IconButton(onClick = onAddStudent) {
             Icon(
                 imageVector = Icons.Outlined.Add,
                 contentDescription = stringResource(R.string.cd_add_student),
                 tint = BrandBlack,
-            )
-        }
-    }
-    if (isEditing && students.isNotEmpty()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.teacher_auto_assign_rolls),
-                color = BrandOrange,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                fontFamily = FontFamily.SansSerif,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = onAutoAssignRolls)
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
             )
         }
     }
@@ -363,48 +320,63 @@ private fun StudentsInClassSection(
     } else {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             students.forEach { student ->
-                val draft = rollDrafts[student.id] ?: student.rollNumber.toString()
-                val isMarkedForDelete = student.id in pendingDeleteStudentIds
                 StudentRosterCard(
                     student = student,
-                    isEditing = isEditing,
-                    isMarkedForDelete = isMarkedForDelete,
-                    rollDraft = draft,
+                    rollDraft = rollDrafts[student.id].orEmpty(),
                     onUpdateRoll = { onUpdateStudentRoll(student.id, it) },
-                    onToggleMarkDelete = { onToggleMarkStudentDelete(student.id) },
                 )
             }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
-
-        // "Approve roll numbers" button (matching design: black pill button)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp)
-                .clip(PillShape)
-                .background(
-                    if (isApprovingRolls) BrandBlack.copy(alpha = 0.5f) else BrandBlack,
-                )
-                .clickable(
-                    enabled = !isApprovingRolls,
-                    onClick = onApproveRollNumbers,
-                ),
-            contentAlignment = Alignment.Center,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
+            RollActionButton(
+                text = stringResource(
+                    if (autoFilled) R.string.admin_roll_clear else R.string.admin_roll_auto_fill,
+                ),
+                enabled = !isApprovingRolls,
+                onClick = onToggleAutoFill,
+                modifier = Modifier.weight(1f),
+            )
+            RollActionButton(
                 text = if (isApprovingRolls) {
                     stringResource(R.string.teacher_approving)
                 } else {
-                    stringResource(R.string.teacher_approve_roll_numbers)
+                    stringResource(R.string.admin_roll_save)
                 },
-                color = Color.White,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 15.sp,
-                fontFamily = FontFamily.SansSerif,
+                enabled = !isApprovingRolls,
+                onClick = onSaveRollNumbers,
+                modifier = Modifier.weight(1f),
             )
         }
+    }
+}
+
+@Composable
+private fun RollActionButton(
+    text: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .height(50.dp)
+            .clip(PillShape)
+            .background(if (enabled) BrandBlack else BrandBlack.copy(alpha = 0.5f))
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            color = Color.White,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            fontFamily = FontFamily.SansSerif,
+        )
     }
 }
 
@@ -486,87 +458,48 @@ private fun ParentsInClassSection(
 @Composable
 private fun StudentRosterCard(
     student: TeacherStudent,
-    isEditing: Boolean = false,
-    isMarkedForDelete: Boolean = false,
-    rollDraft: String = student.rollNumber.toString(),
-    onUpdateRoll: (String) -> Unit = {},
-    onToggleMarkDelete: () -> Unit = {},
+    rollDraft: String,
+    onUpdateRoll: (String) -> Unit,
 ) {
-    val cardBorder = if (isMarkedForDelete) {
-        BorderStroke(1.dp, DangerRed.copy(alpha = 0.6f))
-    } else {
-        BorderStroke(1.dp, BorderGray.copy(alpha = 0.75f))
-    }
-    val cardBg = if (isMarkedForDelete) Color(0xFFFFF4F4) else BgWhite
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .border(cardBorder.width, cardBorder.brush, StudentCardShape)
-            .background(cardBg, StudentCardShape)
+            .border(1.dp, BorderGray.copy(alpha = 0.75f), StudentCardShape)
+            .background(BgWhite, StudentCardShape)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (isEditing) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(if (isMarkedForDelete) BorderGray else BrandBlack)
-                    .padding(2.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (isMarkedForDelete) {
-                    Text(
-                        text = student.rollNumber.toString(),
-                        color = TextSecondary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        fontFamily = FontFamily.SansSerif,
-                    )
-                } else {
-                    BasicTextField(
-                        value = rollDraft,
-                        onValueChange = onUpdateRoll,
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        cursorBrush = SolidColor(Color.White),
-                        textStyle = TextStyle(
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            textAlign = TextAlign.Center,
-                            fontFamily = FontFamily.SansSerif,
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .keepKeyboardOpen()
-                            .scrollIntoViewOnFocus(),
-                    )
-                }
-            }
-        } else {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(BrandBlack),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = student.rollNumber.toString(),
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(BrandBlack)
+                .padding(2.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            BasicTextField(
+                value = rollDraft,
+                onValueChange = onUpdateRoll,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                cursorBrush = SolidColor(Color.White),
+                textStyle = TextStyle(
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
+                    fontSize = 15.sp,
+                    textAlign = TextAlign.Center,
                     fontFamily = FontFamily.SansSerif,
-                )
-            }
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .keepKeyboardOpen()
+                    .scrollIntoViewOnFocus(),
+            )
         }
         Spacer(modifier = Modifier.width(12.dp))
         Image(
             painter = painterResource(R.drawable.ic_avatar_placeholder),
             contentDescription = null,
-            alpha = if (isMarkedForDelete) 0.45f else 1f,
             modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape),
@@ -577,54 +510,21 @@ private fun StudentRosterCard(
                 text = student.name,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp,
-                color = if (isMarkedForDelete) TextSecondary else BrandBlack,
-                textDecoration = if (isMarkedForDelete) TextDecoration.LineThrough else TextDecoration.None,
+                color = BrandBlack,
                 fontFamily = FontFamily.SansSerif,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = if (isMarkedForDelete) {
-                    stringResource(R.string.teacher_marked_delete_label)
-                } else {
-                    student.email
-                },
-                fontSize = 12.sp,
-                color = if (isMarkedForDelete) DangerRed else TextSecondary,
-                fontFamily = FontFamily.SansSerif,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        if (isEditing) {
-            if (isMarkedForDelete) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .border(1.dp, DangerRed.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                        .background(BgWhite)
-                        .clickable(onClick = onToggleMarkDelete)
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = stringResource(R.string.teacher_undo_delete),
-                        color = DangerRed,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.SansSerif,
-                    )
-                }
-            } else {
-                IconButton(onClick = onToggleMarkDelete) {
-                    Icon(
-                        imageVector = Icons.Outlined.DeleteOutline,
-                        contentDescription = stringResource(R.string.cd_mark_delete),
-                        tint = DangerRed,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
+            if (student.email.isNotBlank()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = student.email,
+                    fontSize = 12.sp,
+                    color = TextSecondary,
+                    fontFamily = FontFamily.SansSerif,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

@@ -14,6 +14,8 @@ object AdminRoutes {
     const val PERIODS = "admin_periods"
     const val CALENDAR = "admin_calendar"
     const val ANNOUNCEMENTS = "admin_announcements"
+    const val ROLL_NUMBERS = "admin_roll_numbers"
+    const val ROLL_NUMBERS_EDIT = "admin_roll_numbers_edit"
     const val NOTIFICATIONS = "admin_notifications"
     const val ACCOUNT = "admin_account"
     const val PRIVACY = "admin_privacy"

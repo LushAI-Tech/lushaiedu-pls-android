@@ -348,7 +348,6 @@
     <string name="teacher_my_classes_title">MY CLASSES</string>
     <string name="teacher_my_classes_empty">No classes yet. Complete class and subject selection to see your groups here.</string>
     <string name="teacher_class_students_empty">No students in this class yet.</string>
-    <string name="teacher_group_meta">Code %1$s · %2$s</string>
     <string name="teacher_tab_overview">Overview</string>
     <string name="teacher_overview_title">Attendance</string>
     <string name="teacher_overview_subtitle">Teacher workspace</string>
@@ -725,6 +724,17 @@
     <string name="admin_calendar_exam">Exam</string>
     <string name="admin_calendar_event">Event</string>
     <string name="admin_announce_title">Announcements</string>
+    <string name="admin_roll_numbers_title">Roll numbers</string>
+    <string name="admin_roll_no_classes">Add a class before setting roll numbers.</string>
+    <string name="admin_roll_no_subjects">Subjects in this class will show here.</string>
+    <string name="admin_roll_student_count">%d students</string>
+    <string name="admin_roll_roster_empty">No one is enrolled in this subject yet.</string>
+    <string name="admin_roll_field_label">Roll no.</string>
+    <string name="admin_roll_auto_fill">Auto fill</string>
+    <string name="admin_roll_clear">Clear rolls</string>
+    <string name="admin_roll_save">Save rolls</string>
+    <string name="admin_roll_saved_title">Saved</string>
+    <string name="admin_roll_error_title">Could not save</string>
     <string name="admin_announce_empty">No announcements yet.</string>
     <string name="admin_announce_new">New announcement</string>
     <string name="admin_edit_announcement">Edit announcement</string>

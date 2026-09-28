@@ -4,7 +4,6 @@ import com.lushaiedupls.data.remote.dto.AddMemberRequest
 import com.lushaiedupls.data.remote.dto.ApproveRollNumbersRequest
 import com.lushaiedupls.data.remote.dto.MemberOut
 import com.lushaiedupls.data.remote.dto.MessageResponse
-import com.lushaiedupls.data.remote.dto.SetRollNumbersRequest
 import com.lushaiedupls.data.remote.dto.TeachingUnitOut
 import com.lushaiedupls.data.remote.dto.TeachingUnitUpdate
 import com.lushaiedupls.data.remote.dto.UserSummary
@@ -13,7 +12,6 @@ import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.PATCH
 import retrofit2.http.POST
-import retrofit2.http.PUT
 import retrofit2.http.Path
 
 interface TeachingUnitsApi {
@@ -47,12 +45,7 @@ interface TeachingUnitsApi {
     @GET("api/v1/teaching-units/{unit_id}/parents")
     suspend fun parents(@Path("unit_id") unitId: String): List<UserSummary>
 
-    @PUT("api/v1/teaching-units/{unit_id}/roll-numbers")
-    suspend fun setRollNumbers(
-        @Path("unit_id") unitId: String,
-        @Body body: SetRollNumbersRequest,
-    ): List<MemberOut>
-
+    /** Assign + approve in one call. There is no separate propose/set endpoint. */
     @POST("api/v1/teaching-units/{unit_id}/roll-numbers/approve")
     suspend fun approveRollNumbers(
         @Path("unit_id") unitId: String,

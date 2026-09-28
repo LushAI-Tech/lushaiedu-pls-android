@@ -278,7 +278,7 @@ object TeacherUiMappers {
                 id = member.student.id,
                 name = member.student.name,
                 email = member.student.email.orEmpty(),
-                rollNumber = member.roll_no?.takeIf { it > 0 } ?: (index + 1),
+                rollNumber = member.roll_no?.takeIf { it > 0 } ?: 0,
                 hasParentsSelected = member.student.id in parentIds,
             )
         }

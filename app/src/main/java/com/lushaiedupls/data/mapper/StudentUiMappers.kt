@@ -61,6 +61,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.YearMonth
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -79,7 +80,8 @@ import kotlinx.serialization.json.jsonPrimitive
 object StudentUiMappers {
     private val monthDayFmt = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.ENGLISH)
     private val sessionDateFmt = DateTimeFormatter.ofPattern("EEE, d MMM yyyy", Locale.ENGLISH)
-    private val deviceFmt = DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.ENGLISH)
+    private val istZone = ZoneId.of("Asia/Kolkata")
+    private val deviceFmt = DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a", Locale.ENGLISH)
     private val attemptDateFmt = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH)
     private val QUESTION_TYPE_MARKERS = listOf(
         "question",
@@ -889,7 +891,7 @@ object StudentUiMappers {
 
     private fun formatDateTimeLabel(value: String): String {
         val odt = parseDateTime(value) ?: return value
-        return odt.format(deviceFmt)
+        return odt.atZoneSameInstant(istZone).format(deviceFmt) + " IST"
     }
 
     private fun formatRelativeTime(value: String): String {

@@ -5,13 +5,13 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lushaiedupls.data.mapper.TeacherUiMappers
 import com.lushaiedupls.data.remote.NetworkResult
+import com.lushaiedupls.data.remote.dto.MemberOut
 import com.lushaiedupls.data.remote.dto.RollNumberAssignment
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.viewModelFactory
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,7 +26,6 @@ class TeacherClassOverviewViewModel(
 
     private val _uiState = MutableStateFlow(TeacherClassOverviewUiState(isLoading = true))
     val uiState: StateFlow<TeacherClassOverviewUiState> = _uiState.asStateFlow()
-    private var originalStudents: List<com.lushaiedupls.data.mock.TeacherStudent> = emptyList()
 
     init {
         refresh()
@@ -36,138 +35,105 @@ class TeacherClassOverviewViewModel(
         _uiState.update { it.copy(section = section) }
     }
 
-    fun toggleEditMode() {
-        _uiState.update { state ->
-            val nextEditing = !state.isEditing
-            if (nextEditing) {
-                originalStudents = state.students
-                state.copy(
-                    isEditing = true,
-                    rollDrafts = state.students.associate { it.id to it.rollNumber.toString() },
-                    pendingDeleteStudentIds = emptySet(),
-                )
-            } else {
-                state.copy(
-                    isEditing = false,
-                    students = if (originalStudents.isNotEmpty()) originalStudents else state.students,
-                    rollDrafts = emptyMap(),
-                    pendingDeleteStudentIds = emptySet(),
-                )
-            }
-        }
-    }
-
     fun updateStudentRoll(studentId: String, rollStr: String) {
         val digitsOnly = rollStr.filter { it.isDigit() }.take(4)
         _uiState.update { state ->
-            val updatedDrafts = state.rollDrafts.toMutableMap().apply {
-                put(studentId, digitsOnly)
-            }
-            val parsedRoll = digitsOnly.toIntOrNull()
-            val updatedStudents = if (parsedRoll != null && parsedRoll > 0) {
-                state.students.map { student ->
-                    if (student.id == studentId) student.copy(rollNumber = parsedRoll) else student
-                }
-            } else {
-                state.students
-            }
-            state.copy(rollDrafts = updatedDrafts, students = updatedStudents)
+            state.copy(
+                rollDrafts = state.rollDrafts + (studentId to digitsOnly),
+                autoFilled = false,
+                errorMessage = null,
+            )
         }
     }
 
-    fun toggleMarkStudentDelete(studentId: String) {
-        _uiState.update { state ->
-            val current = state.pendingDeleteStudentIds
-            val updated = if (studentId in current) {
-                current - studentId
-            } else {
-                current + studentId
-            }
-            state.copy(pendingDeleteStudentIds = updated)
-        }
-    }
-
-    fun autoAssignSequentialRolls() {
-        _uiState.update { state ->
-            var roll = 1
-            val updatedStudents = state.students.map { student ->
-                if (student.id in state.pendingDeleteStudentIds) {
-                    student
-                } else {
-                    student.copy(rollNumber = roll++)
-                }
-            }
-            val drafts = updatedStudents.associate { it.id to it.rollNumber.toString() }
-            state.copy(students = updatedStudents, rollDrafts = drafts)
-        }
-    }
-
-    fun approveRollNumbers() {
+    fun toggleAutoFill() {
         val state = _uiState.value
-        val pendingDeletes = state.pendingDeleteStudentIds
-        val remainingStudents = state.students.filter { it.id !in pendingDeletes }
-        val assignments = remainingStudents.mapIndexed { index, student ->
-            val draftVal = state.rollDrafts[student.id]?.toIntOrNull()
-            val roll = draftVal?.takeIf { it > 0 } ?: student.rollNumber.takeIf { it > 0 } ?: (index + 1)
-            RollNumberAssignment(student_id = student.id, roll_no = roll)
+        if (state.students.isEmpty()) return
+        if (state.autoFilled) {
+            _uiState.update {
+                it.copy(
+                    rollDrafts = state.students.associate { s -> s.id to "" },
+                    autoFilled = false,
+                    errorMessage = null,
+                )
+            }
+        } else {
+            val drafts = state.students.mapIndexed { index, student ->
+                student.id to (index + 1).toString()
+            }.toMap()
+            _uiState.update {
+                it.copy(
+                    rollDrafts = drafts,
+                    autoFilled = true,
+                    errorMessage = null,
+                )
+            }
         }
-        val studentIdsToApprove = remainingStudents.map { it.id }
+    }
+
+    fun saveRollNumbers() {
+        val state = _uiState.value
+        val parsed = state.students.mapNotNull { student ->
+            val text = state.rollDrafts[student.id].orEmpty().trim()
+            if (text.isEmpty()) return@mapNotNull null
+            val roll = text.toIntOrNull()
+            if (roll == null || roll !in 1..9999) return@mapNotNull null
+            student.id to roll
+        }
+
+        if (parsed.isEmpty()) {
+            _uiState.update {
+                it.copy(errorMessage = "Enter at least one roll number.", actionMessage = null)
+            }
+            return
+        }
+
+        val duplicates = parsed.groupBy { it.second }.filter { it.value.size > 1 }.keys
+        if (duplicates.isNotEmpty()) {
+            val n = duplicates.minOrNull() ?: return
+            _uiState.update {
+                it.copy(
+                    errorMessage = "Roll number $n is used more than once.",
+                    actionMessage = null,
+                )
+            }
+            return
+        }
+
+        val assignments = parsed.map { (studentId, roll) ->
+            RollNumberAssignment(student_id = studentId, roll_no = roll)
+        }
 
         viewModelScope.launch {
             _uiState.update { it.copy(isApprovingRolls = true, errorMessage = null) }
-
-            // 1. Delete all marked students from the group in parallel
-            if (pendingDeletes.isNotEmpty()) {
-                coroutineScope {
-                    pendingDeletes.map { studentId ->
-                        async { teacherRepository.removeMember(groupId, studentId) }
-                    }.awaitAll()
-                }
-            }
-
-            // 2. Set roll numbers
-            val setResult = teacherRepository.setRollNumbers(groupId, assignments)
-            if (setResult !is NetworkResult.Success) {
-                _uiState.update {
-                    it.copy(
-                        isApprovingRolls = false,
-                        errorMessage = setResult.userMessage(),
-                    )
-                }
-                return@launch
-            }
-
-            // 3. Approve roll numbers
-            when (val approveResult = teacherRepository.approveRollNumbers(groupId, studentIdsToApprove)) {
+            when (val result = teacherRepository.approveRollNumbers(groupId, assignments)) {
                 is NetworkResult.Success -> {
-                    val updatedStudents = TeacherUiMappers.students(approveResult.data)
-                    originalStudents = updatedStudents
+                    applyMembers(result.data, keepDrafts = false)
                     _uiState.update {
                         it.copy(
                             isApprovingRolls = false,
-                            isEditing = false,
-                            students = updatedStudents,
-                            rollDrafts = emptyMap(),
-                            pendingDeleteStudentIds = emptySet(),
-                            actionMessage = "Roll numbers approved successfully",
+                            autoFilled = false,
+                            actionMessage = "Roll numbers saved",
                         )
                     }
                     refreshSilently()
                 }
                 else -> {
+                    val detail = result.userMessage()
+                    val mapped = when {
+                        detail.contains("Not members of this unit", ignoreCase = true) -> {
+                            refresh()
+                            "Reload the roster"
+                        }
+                        detail.isNotBlank() -> detail
+                        else -> "Could not save roll numbers."
+                    }
                     _uiState.update {
-                        it.copy(
-                            isApprovingRolls = false,
-                            errorMessage = approveResult.userMessage(),
-                        )
+                        it.copy(isApprovingRolls = false, errorMessage = mapped)
                     }
                 }
             }
         }
-    }
-
-    fun removeStudent(studentId: String) {
-        toggleMarkStudentDelete(studentId)
     }
 
     fun markParentsSelected(studentId: String) {
@@ -188,6 +154,10 @@ class TeacherClassOverviewViewModel(
         _uiState.update { it.copy(actionMessage = null) }
     }
 
+    fun clearErrorMessage() {
+        _uiState.update { it.copy(errorMessage = null) }
+    }
+
     fun refresh() {
         viewModelScope.launch {
             val hasContent = _uiState.value.overview != null
@@ -201,6 +171,24 @@ class TeacherClassOverviewViewModel(
             }
             refreshSilently()
             _uiState.update { it.copy(isLoading = false, isRefreshing = false) }
+        }
+    }
+
+    private fun applyMembers(members: List<MemberOut>, keepDrafts: Boolean) {
+        val parentIds = _uiState.value.students
+            .filter { it.hasParentsSelected }
+            .map { it.id }
+            .toSet()
+        val students = TeacherUiMappers.students(members, parentIds)
+        val drafts = if (keepDrafts) {
+            _uiState.value.rollDrafts
+        } else {
+            members.associate { member ->
+                member.student.id to (member.roll_no?.takeIf { it in 1..9999 }?.toString().orEmpty())
+            }
+        }
+        _uiState.update {
+            it.copy(students = students, rollDrafts = drafts)
         }
     }
 
@@ -221,6 +209,11 @@ class TeacherClassOverviewViewModel(
                     val parentIds = (parentsResult as? NetworkResult.Success)?.data?.let {
                         TeacherUiMappers.parentIds(it)
                     }.orEmpty()
+                    val students = TeacherUiMappers.students(members, parentIds)
+                    val drafts = members.associate { member ->
+                        member.student.id to
+                            (member.roll_no?.takeIf { it in 1..9999 }?.toString().orEmpty())
+                    }
                     _uiState.update {
                         it.copy(
                             overview = TeacherUiMappers.classOverview(
@@ -228,7 +221,9 @@ class TeacherClassOverviewViewModel(
                                 summary = summary,
                                 memberCount = members.size,
                             ),
-                            students = TeacherUiMappers.students(members, parentIds),
+                            students = students,
+                            rollDrafts = drafts,
+                            autoFilled = false,
                         )
                     }
                 }

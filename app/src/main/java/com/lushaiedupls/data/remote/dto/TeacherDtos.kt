@@ -184,13 +184,8 @@ data class RollNumberAssignment(
 )
 
 @Serializable
-data class SetRollNumbersRequest(
-    val assignments: List<RollNumberAssignment>,
-)
-
-@Serializable
 data class ApproveRollNumbersRequest(
-    val student_ids: List<String>? = null,
+    val assignments: List<RollNumberAssignment>,
 )
 
 @Serializable

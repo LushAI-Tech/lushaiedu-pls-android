@@ -19,6 +19,7 @@ import com.lushaiedupls.data.remote.dto.AdminParentLinkCreateRequest
 import com.lushaiedupls.data.remote.dto.AdminUserCreateRequest
 import com.lushaiedupls.data.remote.dto.AdminUserCreateResponse
 import com.lushaiedupls.data.remote.dto.AdminUserEditRequest
+import com.lushaiedupls.data.remote.dto.ApproveRollNumbersRequest
 import com.lushaiedupls.data.remote.dto.CalendarEventCreate
 import com.lushaiedupls.data.remote.dto.CalendarEventOut
 import com.lushaiedupls.data.remote.dto.CalendarEventUpdate
@@ -51,6 +52,7 @@ import com.lushaiedupls.data.remote.dto.ParentRelationship
 import com.lushaiedupls.data.remote.dto.PeriodCreate
 import com.lushaiedupls.data.remote.dto.PeriodOut
 import com.lushaiedupls.data.remote.dto.PeriodUpdate
+import com.lushaiedupls.data.remote.dto.RollNumberAssignment
 import com.lushaiedupls.data.remote.dto.SetSlotsRequest
 import com.lushaiedupls.data.remote.dto.SlotInput
 import com.lushaiedupls.data.remote.dto.SlotOut
@@ -695,6 +697,18 @@ class AdminRepository(
 
     suspend fun members(unitId: String): NetworkResult<List<MemberOut>> =
         safeApiCall { teachingUnitsApi.members(unitId) }
+
+    /** Assign + approve roll numbers in one call. Blank fields are omitted by the caller. */
+    suspend fun approveRollNumbers(
+        unitId: String,
+        assignments: List<RollNumberAssignment>,
+    ): NetworkResult<List<MemberOut>> {
+        val result = safeApiCall {
+            teachingUnitsApi.approveRollNumbers(unitId, ApproveRollNumbersRequest(assignments))
+        }
+        if (result is NetworkResult.Success) catalogCache.remove("units")
+        return result
+    }
 
     suspend fun timetableInstitutions(forceRefresh: Boolean = false): NetworkResult<List<InstitutionOut>> =
         cachedCall(catalogCache, coalescer, "tt_institutions", forceRefresh, INSTITUTION_TTL_MS) {

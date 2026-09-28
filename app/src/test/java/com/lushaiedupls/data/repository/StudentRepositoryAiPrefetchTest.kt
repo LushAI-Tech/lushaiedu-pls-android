@@ -38,7 +38,6 @@ import com.lushaiedupls.data.remote.dto.QuizSubmitRequest
 import com.lushaiedupls.data.remote.dto.QuizSubmitResponse
 import com.lushaiedupls.data.remote.dto.ResumeResponse
 import com.lushaiedupls.data.remote.dto.SectionOut
-import com.lushaiedupls.data.remote.dto.SetRollNumbersRequest
 import com.lushaiedupls.data.remote.dto.SubjectPracticeQuestionsResponse
 import com.lushaiedupls.data.remote.dto.TeachingUnitOut
 import com.lushaiedupls.data.remote.dto.TeachingUnitUpdate
@@ -328,8 +327,6 @@ class StudentRepositoryAiPrefetchTest {
             throw UnsupportedOperationException()
         override suspend fun removeMember(unitId: String, studentId: String): MessageResponse =
             throw UnsupportedOperationException()
-        override suspend fun setRollNumbers(unitId: String, body: SetRollNumbersRequest): List<MemberOut> =
-            emptyList()
         override suspend fun approveRollNumbers(unitId: String, body: ApproveRollNumbersRequest): List<MemberOut> =
             emptyList()
         override suspend fun parents(unitId: String): List<UserSummary> =

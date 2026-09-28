@@ -34,7 +34,6 @@ import com.lushaiedupls.data.remote.dto.PeriodUpdate
 import com.lushaiedupls.data.remote.dto.RollNumberAssignment
 import com.lushaiedupls.data.remote.dto.RollOut
 import com.lushaiedupls.data.remote.dto.RosterResponse
-import com.lushaiedupls.data.remote.dto.SetRollNumbersRequest
 import com.lushaiedupls.data.remote.dto.SubjectOut
 import com.lushaiedupls.data.remote.dto.TeacherOverview
 import com.lushaiedupls.data.remote.dto.TeachingUnitOut
@@ -119,23 +118,13 @@ class TeacherRepository(
         return result
     }
 
-    suspend fun setRollNumbers(
+    /** Assign + approve roll numbers in one call. */
+    suspend fun approveRollNumbers(
         unitId: String,
         assignments: List<RollNumberAssignment>,
     ): NetworkResult<List<MemberOut>> {
         val result = safeApiCall {
-            teachingUnitsApi.setRollNumbers(unitId, SetRollNumbersRequest(assignments))
-        }
-        if (result is NetworkResult.Success) catalogCache.remove("units")
-        return result
-    }
-
-    suspend fun approveRollNumbers(
-        unitId: String,
-        studentIds: List<String>? = null,
-    ): NetworkResult<List<MemberOut>> {
-        val result = safeApiCall {
-            teachingUnitsApi.approveRollNumbers(unitId, ApproveRollNumbersRequest(studentIds))
+            teachingUnitsApi.approveRollNumbers(unitId, ApproveRollNumbersRequest(assignments))
         }
         if (result is NetworkResult.Success) catalogCache.remove("units")
         return result
