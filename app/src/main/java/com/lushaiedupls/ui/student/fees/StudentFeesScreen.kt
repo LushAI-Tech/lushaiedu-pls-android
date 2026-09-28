@@ -35,6 +35,7 @@ import com.lushaiedupls.ui.common.AppBackNav
 import com.lushaiedupls.ui.common.CenteredEmptyState
 import com.lushaiedupls.ui.common.LoadErrorPanel
 import com.lushaiedupls.ui.common.LushPullToRefreshBox
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.common.viewModelFactory
@@ -69,10 +70,11 @@ class StudentFeesViewModel(
     fun refresh() {
         viewModelScope.launch {
             val hasContent = _uiState.value.history != null
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoading, hasContent)
             _uiState.update {
                 it.copy(
-                    isLoading = !hasContent,
-                    isRefreshing = hasContent,
+                    isLoading = loading,
+                    isRefreshing = refreshing,
                     errorMessage = null,
                 )
             }

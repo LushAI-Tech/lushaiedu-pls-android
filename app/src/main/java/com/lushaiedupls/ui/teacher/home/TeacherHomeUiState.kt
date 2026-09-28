@@ -6,6 +6,8 @@ import com.lushaiedupls.data.mock.TeacherPerformance
 
 data class TeacherHomeUiState(
     val displayName: String = "",
+    val avatarUrl: String? = null,
+    val avatarCacheKey: Long = 0L,
     val notificationCount: Int = 0,
     val institutions: List<String> = emptyList(),
     val institutionIds: List<String> = emptyList(),

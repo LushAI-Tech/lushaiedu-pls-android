@@ -1,10 +1,17 @@
 package com.lushaiedupls.ui.teacher
 
 import com.lushaiedupls.data.mapper.TeacherUiMappers
+import com.lushaiedupls.data.remote.dto.AttendanceTotals
 import com.lushaiedupls.data.remote.dto.DayOfWeek
+import com.lushaiedupls.data.remote.dto.InstitutionOut
 import com.lushaiedupls.data.remote.dto.PeriodOut
+import com.lushaiedupls.data.remote.dto.TeachingUnitOut
+import com.lushaiedupls.data.remote.dto.TeachingUnitStatus
+import com.lushaiedupls.data.remote.dto.UnitMonthAttendance
+import com.lushaiedupls.data.remote.dto.UnitMonthDay
 import com.lushaiedupls.data.remote.dto.WeekSlot
 import com.lushaiedupls.data.remote.dto.WeekView
+import java.time.YearMonth
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -87,5 +94,91 @@ class TeacherTimetableSlotTest {
         assertEquals("Physics", cell!!.subject)
         assertEquals("sub-physics", cell.subjectId)
         assertEquals("Lab 2", cell.detail)
+    }
+
+    @Test
+    fun assignedInstitutions_keepsOnlyTeacherUnits() {
+        val catalog = listOf(
+            InstitutionOut(id = "a", name = "Alpha", sort_order = 1),
+            InstitutionOut(id = "b", name = "Beta", sort_order = 2),
+            InstitutionOut(id = "c", name = "Gamma", sort_order = 3),
+        )
+        val units = listOf(
+            TeachingUnitOut(
+                id = "u1",
+                class_id = "c1",
+                subject_id = "s1",
+                class_name = "XII",
+                subject_name = "Chemistry",
+                status = TeachingUnitStatus.ACTIVE,
+                institution_id = "b",
+                institution_name = "Beta",
+            ),
+        )
+        val institutions = TeacherUiMappers.assignedInstitutions(units, catalog)
+        assertEquals(listOf("b"), institutions.map { it.id })
+        assertEquals("Beta", institutions.single().name)
+    }
+
+    @Test
+    fun assignedClasses_keepsOnlyTeacherClassesForInstitution() {
+        val units = listOf(
+            TeachingUnitOut(
+                id = "u1",
+                class_id = "c1",
+                subject_id = "s1",
+                class_name = "XII",
+                subject_name = "Chemistry",
+                status = TeachingUnitStatus.ACTIVE,
+                institution_id = "inst-1",
+            ),
+            TeachingUnitOut(
+                id = "u2",
+                class_id = "c2",
+                subject_id = "s2",
+                class_name = "XI",
+                subject_name = "Physics",
+                status = TeachingUnitStatus.ACTIVE,
+                institution_id = "inst-2",
+            ),
+            TeachingUnitOut(
+                id = "u3",
+                class_id = "c1",
+                subject_id = "s3",
+                class_name = "XII",
+                subject_name = "Math",
+                status = TeachingUnitStatus.ACTIVE,
+                institution_id = "inst-1",
+            ),
+        )
+        val classes = TeacherUiMappers.assignedClasses(units, "inst-1")
+        assertEquals(listOf("c1"), classes.map { it.id })
+        assertEquals("Class XII", classes.single().name)
+    }
+
+    @Test
+    fun markedRollDays_usesSparseMonthDays() {
+        val monthView = UnitMonthAttendance(
+            teaching_unit_id = "unit-chem",
+            class_name = "Class XII",
+            subject_name = "Chemistry",
+            month = "2026-09",
+            days = listOf(
+                UnitMonthDay(
+                    day = "2026-09-08",
+                    totals = AttendanceTotals(present = 2, absent = 1, sessions = 3),
+                ),
+                UnitMonthDay(
+                    day = "2026-09-18",
+                    has_extra_class = true,
+                    totals = AttendanceTotals(present = 1, sessions = 1),
+                ),
+            ),
+        )
+        val days = TeacherUiMappers.markedRollDays(
+            monthView = monthView,
+            month = YearMonth.of(2026, 9),
+        )
+        assertEquals(setOf(8, 18), days)
     }
 }

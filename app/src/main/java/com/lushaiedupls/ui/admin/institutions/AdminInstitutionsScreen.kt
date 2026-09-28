@@ -65,6 +65,7 @@ import com.lushaiedupls.ui.auth.components.OutlinedAuthField
 import com.lushaiedupls.ui.auth.components.PrimaryButton
 import com.lushaiedupls.ui.common.LoadErrorPanel
 import com.lushaiedupls.ui.common.LushPullToRefreshBox
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.common.viewModelFactory
@@ -103,10 +104,11 @@ class AdminInstitutionsViewModel(
     fun refresh() {
         viewModelScope.launch {
             val hasContent = _uiState.value.items.isNotEmpty()
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoading, hasContent)
             _uiState.update {
                 it.copy(
-                    isLoading = !hasContent,
-                    isRefreshing = hasContent,
+                    isLoading = loading,
+                    isRefreshing = refreshing,
                     errorMessage = null,
                 )
             }
@@ -302,7 +304,7 @@ fun AdminInstitutionsScreen(
                             else -> stringResource(R.string.admin_institutions_title)
                         },
                         onBack = onBack,
-                        actions = if (!uiState.composing) {
+                        actions = if (!uiState.composing && uiState.items.isNotEmpty()) {
                             {
                                 IconButton(
                                     onClick = { managing = !managing },

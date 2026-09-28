@@ -22,6 +22,7 @@ import com.lushaiedupls.data.remote.dto.AnswerSubmission
 import com.lushaiedupls.data.remote.dto.AttendanceCalendar
 import com.lushaiedupls.data.remote.dto.AvatarCommitRequest
 import com.lushaiedupls.data.remote.dto.AvatarPresignRequest
+import com.lushaiedupls.data.remote.dto.AvatarPresignResponse
 import com.lushaiedupls.data.remote.dto.CalendarEventOut
 import com.lushaiedupls.data.remote.dto.ChapterAttachmentOut
 import com.lushaiedupls.data.remote.dto.ChapterListItem
@@ -41,7 +42,10 @@ import com.lushaiedupls.data.remote.dto.MessageResponse
 import com.lushaiedupls.data.remote.dto.NotificationOut
 import com.lushaiedupls.data.remote.dto.ParentLinkOut
 import com.lushaiedupls.data.remote.dto.ProfileUpdate
-import com.lushaiedupls.data.remote.dto.ProgressDashboardResponse
+import com.lushaiedupls.data.remote.dto.ProgressOverviewResponse
+import com.lushaiedupls.data.remote.dto.ProgressUpdateRequest
+import com.lushaiedupls.data.remote.dto.scopedToSubject
+import com.lushaiedupls.data.remote.dto.QuickCheckAttemptRequest
 import com.lushaiedupls.data.remote.dto.QuizAttemptSummary
 import com.lushaiedupls.data.remote.dto.QuizStartResponse
 import com.lushaiedupls.data.remote.dto.QuizSubmitRequest
@@ -62,15 +66,18 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.serialization.json.JsonElement
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -140,21 +147,63 @@ class StudentRepository(
     private val examPrepPyqsCache = ConcurrentHashMap<String, ExamPrepPyqsResponse>()
     private val chapterAttachmentsCache = ConcurrentHashMap<String, List<ChapterAttachmentOut>>()
     private val aiSubjectsCache = AtomicReference<List<AiSubjectOut>?>()
+    private val aiSubjectsByInstitution = ConcurrentHashMap<String, List<AiSubjectOut>>()
     private val teachingUnitsCache = AtomicReference<List<TeachingUnitOut>?>()
-    private val progressDashboardCache = AtomicReference<ProgressDashboardResponse?>()
-    private val progressResumeCache = AtomicReference<ResumeResponse?>()
-    private val hasCachedResume = AtomicBoolean(false)
+    private val progressOverviewCache = AtomicReference<ProgressOverviewResponse?>()
+    private val progressOverviewBySubject = ConcurrentHashMap<String, ProgressOverviewResponse>()
+    private val progressOverviewByQuery = ConcurrentHashMap<String, ProgressOverviewResponse>()
+    private val progressResumeCache = ConcurrentHashMap<String, ResumeResponse>()
+    private val fetchedResumeTextbookIds = ConcurrentHashMap.newKeySet<String>()
     private val quizHistoryCache = AtomicReference<List<QuizAttemptSummary>?>()
     private val isPrefetchingAiLearn = AtomicBoolean(false)
     private val isPrefetchingAiChat = AtomicBoolean(false)
     private val aiPrefetchSemaphore = Semaphore(permits = AI_PREFETCH_CONCURRENCY)
 
     fun getCachedOverview(month: String? = null): StudentOverview? = overviewCache[month.orEmpty()]
-    fun getCachedAiSubjects(): List<AiSubjectOut>? = aiSubjectsCache.get()
+
+    fun invalidateOverviewCache() {
+        overviewCache.clear()
+    }
+    fun getCachedAiSubjects(institutionId: String? = null): List<AiSubjectOut>? {
+        val key = institutionCacheKey(institutionId)
+        if (key.isEmpty()) return aiSubjectsCache.get()
+        aiSubjectsByInstitution[key]?.let { return it }
+        val all = aiSubjectsCache.get() ?: return null
+        return if (all.any { !it.institution_id.isNullOrBlank() }) {
+            all.filter { it.institution_id == key }
+        } else {
+            null
+        }
+    }
     fun getCachedTeachingUnits(): List<TeachingUnitOut>? = teachingUnitsCache.get()
-    fun getCachedProgressDashboard(): ProgressDashboardResponse? = progressDashboardCache.get()
-    fun getCachedProgressResume(): ResumeResponse? =
-        if (hasCachedResume.get()) progressResumeCache.get() else null
+    fun getCachedProgressOverview(
+        subjectId: String? = null,
+        textbookId: String? = null,
+        institutionId: String? = null,
+    ): ProgressOverviewResponse? {
+        val scopedInstitutionId = institutionCacheKey(institutionId).takeIf { it.isNotEmpty() }
+        val scopedSubjectId = subjectId?.takeIf { it.isNotBlank() }
+        if (scopedInstitutionId != null) {
+            return progressOverviewByQuery[
+                progressOverviewCacheKey("self", scopedSubjectId, scopedInstitutionId),
+            ]
+        }
+        if (scopedSubjectId != null) {
+            progressOverviewBySubject[scopedSubjectId]?.let { return it }
+        }
+        val full = progressOverviewCache.get() ?: return null
+        return if (!subjectId.isNullOrBlank() || !textbookId.isNullOrBlank()) {
+            full.scopedToSubject(subjectId = subjectId, textbookId = textbookId)
+        } else {
+            full
+        }
+    }
+    fun getCachedProgressResume(textbookId: String? = null): ResumeResponse? =
+        if (textbookId.isNullOrBlank()) {
+            progressResumeCache.values.firstOrNull()
+        } else {
+            progressResumeCache[textbookId]
+        }
     fun getCachedChapters(subjectId: String): List<ChapterListItem>? = chaptersCache[subjectId]
     fun getCachedChapter(chapterId: String): ChapterOut? = chapterCache[chapterId]
     fun getCachedChatHistory(chapterId: String): ChatHistoryResponse? = chatHistoryCache[chapterId]
@@ -220,10 +269,11 @@ class StudentRepository(
         examPrepPyqsCache.clear()
         chapterAttachmentsCache.clear()
         aiSubjectsCache.set(null)
+        aiSubjectsByInstitution.clear()
         teachingUnitsCache.set(null)
-        progressDashboardCache.set(null)
-        progressResumeCache.set(null)
-        hasCachedResume.set(false)
+        clearProgressOverviewCaches()
+        progressResumeCache.clear()
+        fetchedResumeTextbookIds.clear()
         quizHistoryCache.set(null)
     }
 
@@ -310,6 +360,7 @@ class StudentRepository(
         phone: String? = null,
         gender: Gender? = null,
         address: String? = null,
+        avatarUrl: String? = null,
     ): NetworkResult<UserOut> = safeApiCall {
         meApi.updateProfile(
             ProfileUpdate(
@@ -317,6 +368,7 @@ class StudentRepository(
                 phone = phone,
                 gender = gender,
                 address = address,
+                avatar_url = avatarUrl,
             ),
         )
     }
@@ -324,16 +376,19 @@ class StudentRepository(
     suspend fun devices(): NetworkResult<List<DeviceOut>> =
         safeApiCall { meApi.devices(deviceIdProvider.deviceId()) }
 
+    suspend fun signOutDevice(deviceRowId: String): NetworkResult<MessageResponse> =
+        safeApiCall { meApi.deleteDevice(deviceRowId) }
+
     suspend fun signOutAllDevices(): NetworkResult<MessageResponse> =
         safeApiCall { meApi.signOutAllDevices() }
 
     /**
-     * Upload a photo to the avatar storage:
-     * 1. Presign → get a PUT URL + required headers
-     * 2. PUT the raw bytes directly to S3/R2 (no auth header — the URL is already signed)
-     * 3. Commit the object_key to the backend so UserOut.avatar_url is updated
+     * Upload a photo to avatar storage:
+     * 1. Presign → get a PUT URL, object_key, and public_url
+     * 2. PUT the raw bytes directly to R2 (no auth header — the URL is already signed)
+     * 3. Commit the object_key; callers PATCH /me with [AvatarUploadResult.publicUrl]
      */
-    suspend fun uploadAvatar(uri: Uri, context: Context): NetworkResult<UserOut> {
+    suspend fun uploadAvatar(uri: Uri, context: Context): NetworkResult<AvatarUploadResult> {
         val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: return NetworkResult.Exception(Exception("Cannot read image"))
 
@@ -349,23 +404,66 @@ class StudentRepository(
         }
         if (presignResult !is NetworkResult.Success) {
             @Suppress("UNCHECKED_CAST")
-            return presignResult as NetworkResult<UserOut>
+            return presignResult as NetworkResult<AvatarUploadResult>
         }
         val presign = presignResult.data
+        val putResult = putBytesToPresignedUrl(presign, bytes, mimeType)
+        if (putResult !is NetworkResult.Success) {
+            @Suppress("UNCHECKED_CAST")
+            return putResult as NetworkResult<AvatarUploadResult>
+        }
 
-        // PUT to storage directly — no Authorization header here (URL is pre-signed)
-        val putRequestBuilder = Request.Builder().url(presign.upload_url)
-        presign.required_headers.forEach { (k, v) -> putRequestBuilder.addHeader(k, v) }
-        val body = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
-        putRequestBuilder.put(body)
+        val committedUser = when (
+            val commit = safeApiCall {
+                meApi.avatarCommit(AvatarCommitRequest(object_key = presign.object_key))
+            }
+        ) {
+            is NetworkResult.Success -> commit.data
+            else -> null
+        }
 
-        val putOk = runCatching {
-            OkHttpClient().newCall(putRequestBuilder.build()).execute().use { it.isSuccessful }
-        }.getOrElse { return NetworkResult.Exception(it) }
+        return NetworkResult.Success(
+            AvatarUploadResult(
+                publicUrl = presign.public_url,
+                objectKey = presign.object_key,
+                user = committedUser,
+            ),
+        )
+    }
 
-        if (!putOk) return NetworkResult.Exception(Exception("Failed to upload image to storage"))
+    private val storageUploadClient: OkHttpClient by lazy { OkHttpClient() }
 
-        return safeApiCall { meApi.avatarCommit(AvatarCommitRequest(object_key = presign.object_key)) }
+    private suspend fun putBytesToPresignedUrl(
+        presign: AvatarPresignResponse,
+        bytes: ByteArray,
+        fallbackMimeType: String,
+    ): NetworkResult<Unit> {
+        val contentType = presign.required_headers.entries
+            .firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }
+            ?.value
+            ?: fallbackMimeType
+        val body = bytes.toRequestBody(contentType.toMediaTypeOrNull())
+        val requestBuilder = Request.Builder()
+            .url(presign.upload_url)
+            .put(body)
+        presign.required_headers.forEach { (key, value) ->
+            if (key.equals("Content-Length", ignoreCase = true)) return@forEach
+            if (key.equals("Host", ignoreCase = true)) return@forEach
+            requestBuilder.header(key, value)
+        }
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                storageUploadClient.newCall(requestBuilder.build()).execute().use { response ->
+                    if (response.isSuccessful) {
+                        NetworkResult.Success(Unit)
+                    } else {
+                        NetworkResult.Exception(
+                            Exception("Failed to upload image to storage (${response.code})"),
+                        )
+                    }
+                }
+            }.getOrElse { NetworkResult.Exception(it) }
+        }
     }
 
     suspend fun institutions(): NetworkResult<List<InstitutionOut>> =
@@ -475,14 +573,20 @@ class StudentRepository(
         return safeApiCall { feesApi.myHistory(FeeMonth.listFilterOrNull(month)) }
     }
 
-    suspend fun aiSubjects(forceRefresh: Boolean = false): NetworkResult<List<AiSubjectOut>> {
+    suspend fun aiSubjects(
+        forceRefresh: Boolean = false,
+        institutionId: String? = null,
+    ): NetworkResult<List<AiSubjectOut>> {
+        val key = institutionCacheKey(institutionId)
         if (!forceRefresh) {
-            aiSubjectsCache.get()?.let { return NetworkResult.Success(it) }
+            getCachedAiSubjects(key.takeIf { it.isNotEmpty() })?.let { return NetworkResult.Success(it) }
         }
-        return singleFlight("ai_subjects") {
-            val result = safeApiCall { aiApi.subjects() }
+        return singleFlight("ai_subjects_$key") {
+            val result = safeApiCall {
+                aiApi.subjects(institutionId = key.takeIf { it.isNotEmpty() })
+            }
             if (result is NetworkResult.Success) {
-                aiSubjectsCache.set(result.data)
+                rememberAiSubjects(key.takeIf { it.isNotEmpty() }, result.data)
             }
             result
         }
@@ -501,30 +605,120 @@ class StudentRepository(
         }
     }
 
-    suspend fun progressDashboard(forceRefresh: Boolean = false): NetworkResult<ProgressDashboardResponse> {
-        if (!forceRefresh) {
-            progressDashboardCache.get()?.let { return NetworkResult.Success(it) }
+    fun textbookIdForSubject(subjectId: String): String? =
+        chaptersCache[subjectId]
+            ?.firstOrNull { it.textbook_id.isNotBlank() }
+            ?.textbook_id
+            ?: chapterCache.values.firstOrNull { it.textbook_id.isNotBlank() }?.textbook_id
+
+    suspend fun progressOverview(
+        forceRefresh: Boolean = false,
+        subjectId: String? = null,
+        scope: String = "self",
+        institutionId: String? = null,
+    ): NetworkResult<ProgressOverviewResponse> {
+        val scopedSubjectId = subjectId?.takeIf { it.isNotBlank() }
+        val scopedInstitutionId = institutionCacheKey(institutionId).takeIf { it.isNotEmpty() }
+        val cacheable = scope == "self"
+        val queryKey = progressOverviewCacheKey(scope, scopedSubjectId, scopedInstitutionId)
+        if (!forceRefresh && cacheable) {
+            if (scopedInstitutionId != null) {
+                progressOverviewByQuery[queryKey]?.let { return NetworkResult.Success(it) }
+            } else if (scopedSubjectId == null) {
+                progressOverviewCache.get()?.let { return NetworkResult.Success(it) }
+            } else {
+                progressOverviewBySubject[scopedSubjectId]?.let { return NetworkResult.Success(it) }
+            }
         }
-        return singleFlight("progress_dashboard") {
-            val result = safeApiCall { aiApi.progressDashboard() }
-            if (result is NetworkResult.Success) {
-                progressDashboardCache.set(result.data)
+        return singleFlight("progress_overview_$queryKey") {
+            val result = safeApiCall {
+                aiApi.progressOverview(
+                    scope = scope,
+                    subjectId = scopedSubjectId,
+                    institutionId = scopedInstitutionId,
+                )
+            }
+            if (cacheable && result is NetworkResult.Success) {
+                rememberProgressOverview(scopedSubjectId, scopedInstitutionId, result.data)
             }
             result
         }
     }
 
-    suspend fun progressResume(forceRefresh: Boolean = false): NetworkResult<ResumeResponse?> {
-        if (!forceRefresh && hasCachedResume.get()) {
-            return NetworkResult.Success(progressResumeCache.get())
+    suspend fun progressResume(
+        textbookId: String,
+        forceRefresh: Boolean = false,
+    ): NetworkResult<ResumeResponse?> {
+        if (textbookId.isBlank()) {
+            return NetworkResult.Exception(IllegalArgumentException("textbook_id is required"))
         }
-        return singleFlight("progress_resume") {
-            val result = safeApiCall { aiApi.progressResume() }
+        if (!forceRefresh && textbookId in fetchedResumeTextbookIds) {
+            return NetworkResult.Success(progressResumeCache[textbookId])
+        }
+        return singleFlight("progress_resume_$textbookId") {
+            val result = safeApiCall { aiApi.progressResume(textbookId) }
             if (result is NetworkResult.Success) {
-                progressResumeCache.set(result.data)
-                hasCachedResume.set(true)
+                fetchedResumeTextbookIds.add(textbookId)
+                val data = result.data
+                if (data == null) {
+                    progressResumeCache.remove(textbookId)
+                } else {
+                    progressResumeCache[textbookId] = data
+                }
             }
             result
+        }
+    }
+
+    suspend fun updateProgress(
+        textbookId: String,
+        chapterId: String,
+        sectionId: String? = null,
+        contentBlockId: String? = null,
+    ): NetworkResult<JsonElement> {
+        if (textbookId.isBlank() || chapterId.isBlank()) {
+            return NetworkResult.Exception(
+                IllegalArgumentException("textbook_id and chapter_id are required"),
+            )
+        }
+        clearProgressOverviewCaches()
+        return safeApiCall {
+            aiApi.progressUpdate(
+                ProgressUpdateRequest(
+                    textbook_id = textbookId,
+                    chapter_id = chapterId,
+                    section_id = sectionId?.takeIf { it.isNotBlank() },
+                    content_block_id = contentBlockId?.takeIf { it.isNotBlank() },
+                ),
+            )
+        }
+    }
+
+    suspend fun reportQuickCheckAttempt(
+        chatMessageId: String,
+        textbookId: String,
+        chapterId: String,
+        selectedIndex: Int,
+        isCorrect: Boolean,
+        contentBlockId: String? = null,
+    ): NetworkResult<JsonElement> {
+        if (chatMessageId.isBlank() || textbookId.isBlank() || chapterId.isBlank()) {
+            return NetworkResult.Exception(
+                IllegalArgumentException("chat_message_id, textbook_id and chapter_id are required"),
+            )
+        }
+        clearProgressOverviewCaches()
+        return safeApiCall {
+            aiApi.quickCheckAttempt(
+                QuickCheckAttemptRequest(
+                    chat_message_id = chatMessageId,
+                    textbook_id = textbookId,
+                    chapter_id = chapterId,
+                    selected_index = selectedIndex,
+                    is_correct = isCorrect,
+                    content_block_id = contentBlockId?.takeIf { it.isNotBlank() },
+                ),
+            )
         }
     }
 
@@ -630,8 +824,9 @@ class StudentRepository(
     }
 
     /**
-     * Prefetches AI Learn hub metadata only (dashboard, subjects, teaching units, resume, quiz).
-     * Chapter lists load on demand when a subject is opened, to avoid a DB fan-out.
+     * Prefetches AI Learn hub metadata (overview, subjects, teaching units, quiz).
+     * Resume still needs textbook_id, so the first subject's chapter list is loaded
+     * only to resolve that id — other chapter lists still load on demand.
      */
     suspend fun prefetchAiLearn(language: String = "en") {
         if (!isPrefetchingAiLearn.compareAndSet(false, true)) {
@@ -641,9 +836,16 @@ class StudentRepository(
             supervisorScope {
                 aiPrefetchSemaphore.withPermit { aiSubjects() }
                 aiPrefetchSemaphore.withPermit { teachingUnits() }
-                aiPrefetchSemaphore.withPermit { progressDashboard() }
-                aiPrefetchSemaphore.withPermit { progressResume() }
+                aiPrefetchSemaphore.withPermit { progressOverview() }
                 aiPrefetchSemaphore.withPermit { quizHistory() }
+                val subjectId = getCachedAiSubjects()?.firstOrNull()?.subject_id
+                if (!subjectId.isNullOrBlank()) {
+                    aiPrefetchSemaphore.withPermit { chapters(subjectId) }
+                    val textbookId = textbookIdForSubject(subjectId)
+                    if (!textbookId.isNullOrBlank()) {
+                        aiPrefetchSemaphore.withPermit { progressResume(textbookId) }
+                    }
+                }
             }
         } catch (_: Exception) {
             // Best effort background prefetch
@@ -699,7 +901,7 @@ class StudentRepository(
         timeTakenSeconds: Int? = null,
     ): NetworkResult<QuizSubmitResponse> {
         quizHistoryCache.set(null)
-        progressDashboardCache.set(null)
+        clearProgressOverviewCaches()
         return safeApiCall {
             aiApi.quizSubmit(
                 QuizSubmitRequest(
@@ -719,6 +921,51 @@ class StudentRepository(
 
     suspend fun revokeParentLink(linkId: String): NetworkResult<MessageResponse> =
         safeApiCall { parentApi.revokeLink(linkId) }
+
+    private fun institutionCacheKey(institutionId: String?): String =
+        institutionId?.takeIf { it.isNotBlank() }.orEmpty()
+
+    private fun progressOverviewCacheKey(
+        scope: String,
+        subjectId: String?,
+        institutionId: String?,
+    ): String = "${scope}|${subjectId.orEmpty()}|${institutionCacheKey(institutionId)}"
+
+    private fun rememberAiSubjects(institutionId: String?, subjects: List<AiSubjectOut>) {
+        val key = institutionCacheKey(institutionId)
+        if (key.isEmpty()) {
+            aiSubjectsCache.set(subjects)
+            subjects.groupBy { it.institution_id.orEmpty() }
+                .filterKeys { it.isNotBlank() }
+                .forEach { (id, rows) -> aiSubjectsByInstitution[id] = rows }
+        } else {
+            aiSubjectsByInstitution[key] = subjects
+        }
+    }
+
+    private fun rememberProgressOverview(
+        subjectId: String?,
+        institutionId: String?,
+        overview: ProgressOverviewResponse,
+    ) {
+        if (!institutionId.isNullOrBlank()) {
+            progressOverviewByQuery[
+                progressOverviewCacheKey("self", subjectId, institutionId),
+            ] = overview
+            return
+        }
+        if (subjectId.isNullOrBlank()) {
+            progressOverviewCache.set(overview)
+        } else {
+            progressOverviewBySubject[subjectId] = overview
+        }
+    }
+
+    private fun clearProgressOverviewCaches() {
+        progressOverviewCache.set(null)
+        progressOverviewBySubject.clear()
+        progressOverviewByQuery.clear()
+    }
 
     companion object {
         /** Keeps concurrent AI prefetch calls low to respect backend DB pool limits. */
@@ -748,3 +995,9 @@ class StudentRepository(
         ).joinToString("_")
     }
 }
+
+data class AvatarUploadResult(
+    val publicUrl: String,
+    val objectKey: String,
+    val user: UserOut? = null,
+)

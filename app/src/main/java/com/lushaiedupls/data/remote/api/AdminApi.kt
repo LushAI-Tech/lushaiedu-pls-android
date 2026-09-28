@@ -33,6 +33,7 @@ import com.lushaiedupls.data.remote.dto.SubjectMonthlyFeeUpsertRequest
 import com.lushaiedupls.data.remote.dto.SubjectOut
 import com.lushaiedupls.data.remote.dto.SubjectUpdate
 import com.lushaiedupls.data.remote.dto.TeacherInstitutionAssignmentRequest
+import com.lushaiedupls.data.remote.dto.TeacherInstitutionAssignmentsResponse
 import com.lushaiedupls.data.remote.dto.UserOut
 import com.lushaiedupls.data.remote.dto.UserStatusUpdate
 import retrofit2.http.Body
@@ -173,7 +174,7 @@ interface AdminApi {
     suspend fun assignTeacherInstitution(
         @Path("teacher_id") teacherId: String,
         @Body body: TeacherInstitutionAssignmentRequest,
-    ): UserOut
+    ): TeacherInstitutionAssignmentsResponse
 
     @POST("api/v1/admin/parent-links")
     suspend fun createParentLink(@Body body: AdminParentLinkCreateRequest): ParentLinkOut

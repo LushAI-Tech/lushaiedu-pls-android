@@ -35,26 +35,8 @@ class StudentAiChatViewModel(
 
     private val cachedHint = chapterIdHint?.takeIf { it.isNotBlank() }
     private val initialChapter = cachedHint?.let { studentRepository.getCachedChapter(it) }
-    private val initialHistory = cachedHint?.let { studentRepository.getCachedChatHistory(it) }
-    private val initialIntro = cachedHint?.let { studentRepository.getCachedChatIntro(it, "en") }
-    private val initialMessages = when {
-        initialHistory != null && initialHistory.messages.isNotEmpty() ->
-            StudentUiMappers.chatMessages(initialHistory.messages)
-        initialIntro != null ->
-            listOf(StudentUiMappers.chatResponseMessage(initialIntro))
-        else -> emptyList()
-    }
-    private val initialSuggestions = when {
-        initialHistory != null && initialHistory.messages.isNotEmpty() ->
-            initialHistory.messages.lastOrNull { !it.role.equals("user", true) }?.suggestions.orEmpty()
-        initialIntro != null -> initialIntro.suggestions
-        else -> emptyList()
-    }
-    private val initialQuickCheck = when {
-        initialHistory != null && initialHistory.messages.isNotEmpty() ->
-            initialHistory.messages.lastOrNull { !it.role.equals("user", true) }?.concept_check?.let(StudentUiMappers::quickCheck)
-        initialIntro != null -> initialIntro.concept_check?.let(StudentUiMappers::quickCheck)
-        else -> null
+    private val initialListChapter = cachedHint?.let { id ->
+        studentRepository.getCachedChapters(subjectId)?.firstOrNull { it.id == id }
     }
     private val initialSyllabus = initialChapter?.sections?.let(StudentUiMappers::syllabus).orEmpty()
     private val initialAtt = cachedHint?.let { studentRepository.getCachedAttachments(it) }
@@ -66,13 +48,13 @@ class StudentAiChatViewModel(
     private val _uiState = MutableStateFlow(
         StudentAiChatUiState(
             chapterId = cachedHint.orEmpty(),
-            chapterTitle = initialChapter?.chapter_number?.let(::chapterHeading).orEmpty(),
-            isLoading = initialMessages.isEmpty(),
+            chapterTitle = (initialChapter?.chapter_number ?: initialListChapter?.chapter_number)
+                ?.let(::chapterHeading)
+                .orEmpty(),
+            textbookId = initialChapter?.textbook_id?.takeIf { it.isNotBlank() }
+                ?: initialListChapter?.textbook_id.orEmpty(),
+            isLoading = true,
             isMenuContentLoading = initialPyqs.isEmpty() || initialAtt.isEmpty(),
-            messages = initialMessages,
-            suggestions = initialSuggestions,
-            quickCheck = initialQuickCheck,
-            showQuickCheck = initialQuickCheck != null,
             syllabus = initialSyllabus,
             resources = initialAtt,
             examPrepPyqs = initialPyqs,
@@ -188,6 +170,8 @@ class StudentAiChatViewModel(
                 is NetworkResult.Success -> {
                     _uiState.update {
                         it.copy(
+                            isLoading = true,
+                            errorMessage = null,
                             messages = emptyList(),
                             selectedQuickOption = null,
                             quickCheckAnswered = false,
@@ -196,6 +180,7 @@ class StudentAiChatViewModel(
                             showQuickCheck = false,
                             suggestions = emptyList(),
                             quickCheck = null,
+                            quickCheckMessageId = null,
                             pendingAsk = null,
                             scrollToQuestionId = null,
                             scrollToQuestionNonce = 0,
@@ -249,6 +234,25 @@ class StudentAiChatViewModel(
                 quickCheckExplanation = check.explanation,
             )
         }
+        val textbookId = _uiState.value.textbookId
+        val chapterId = _uiState.value.chapterId
+        val chatMessageId = _uiState.value.quickCheckMessageId
+        if (
+            !chatMessageId.isNullOrBlank() &&
+            textbookId.isNotBlank() &&
+            chapterId.isNotBlank() &&
+            selectedIndex >= 0
+        ) {
+            viewModelScope.launch {
+                studentRepository.reportQuickCheckAttempt(
+                    chatMessageId = chatMessageId,
+                    textbookId = textbookId,
+                    chapterId = chapterId,
+                    selectedIndex = selectedIndex,
+                    isCorrect = isCorrect == true,
+                )
+            }
+        }
     }
 
     fun setLanguage(language: String) {
@@ -265,19 +269,37 @@ class StudentAiChatViewModel(
     }
 
     private fun bootstrap() {
+        viewModelScope.launch {
+            studentRepository.progressOverview(
+                subjectId = subjectId.takeIf { it.isNotBlank() },
+            )
+        }
         val hint = chapterIdHint?.takeIf { it.isNotBlank() }
         if (hint != null) {
-            _uiState.update { it.copy(chapterId = hint, isLoading = it.messages.isEmpty(), errorMessage = null) }
+            _uiState.update { it.copy(chapterId = hint, isLoading = true, errorMessage = null) }
             loadSyllabus(hint)
             reloadConversation(hint, _uiState.value.language)
 
-            // Resolve chapter title in background without blocking chat UI
+            // Resolve chapter title / textbook in background without blocking chat UI
             viewModelScope.launch {
                 val chaptersResult = studentRepository.chapters(subjectId)
                 if (chaptersResult is NetworkResult.Success) {
                     val chapter = chaptersResult.data.find { it.id == hint }
+                    val textbookId = chapter?.textbook_id
+                        ?.takeIf { it.isNotBlank() }
+                        ?: studentRepository.textbookIdForSubject(subjectId).orEmpty()
                     if (chapter != null) {
-                        _uiState.update { it.copy(chapterTitle = chapterHeading(chapter.chapter_number)) }
+                        _uiState.update {
+                            it.copy(
+                                chapterTitle = chapterHeading(chapter.chapter_number),
+                                textbookId = textbookId.ifBlank { it.textbookId },
+                            )
+                        }
+                    } else if (textbookId.isNotBlank()) {
+                        _uiState.update { it.copy(textbookId = textbookId) }
+                    }
+                    if (textbookId.isNotBlank()) {
+                        studentRepository.progressResume(textbookId)
                     }
                 }
             }
@@ -289,14 +311,18 @@ class StudentAiChatViewModel(
                 _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             }
             supervisorScope {
-                val resumeDeferred = async { studentRepository.progressResume() }
                 val chaptersDeferred = async { studentRepository.chapters(subjectId) }
-
-                val resume = resumeDeferred.await()
                 val chaptersResult = chaptersDeferred.await()
                 val activeChapters = (chaptersResult as? NetworkResult.Success)?.data
                     ?.filter { it.is_active }
                     .orEmpty()
+                val textbookId = activeChapters.firstOrNull { it.textbook_id.isNotBlank() }?.textbook_id
+                    ?: studentRepository.textbookIdForSubject(subjectId)
+                val resume = if (!textbookId.isNullOrBlank()) {
+                    studentRepository.progressResume(textbookId)
+                } else {
+                    null
+                }
                 val chapterId = when {
                     resume is NetworkResult.Success &&
                         activeChapters.any { it.id == resume.data?.chapter_id } ->
@@ -328,7 +354,11 @@ class StudentAiChatViewModel(
                     return@supervisorScope
                 }
                 _uiState.update {
-                    it.copy(chapterId = chapterId, chapterTitle = chapterTitle.orEmpty())
+                    it.copy(
+                        chapterId = chapterId,
+                        chapterTitle = chapterTitle.orEmpty(),
+                        textbookId = textbookId.orEmpty(),
+                    )
                 }
                 loadSyllabus(chapterId)
                 reloadConversation(chapterId, _uiState.value.language)
@@ -338,6 +368,21 @@ class StudentAiChatViewModel(
 
     private fun reloadConversation(chapterId: String, language: String) {
         viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    errorMessage = null,
+                    messages = emptyList(),
+                    suggestions = emptyList(),
+                    quickCheck = null,
+                    quickCheckMessageId = null,
+                    showQuickCheck = false,
+                    selectedQuickOption = null,
+                    quickCheckAnswered = false,
+                    quickCheckCorrect = null,
+                    quickCheckExplanation = null,
+                )
+            }
             when (val history = studentRepository.chatHistory(chapterId)) {
                 is NetworkResult.Success -> {
                     val messages = StudentUiMappers.chatMessages(history.data.messages)
@@ -353,6 +398,9 @@ class StudentAiChatViewModel(
                                 messages = messages,
                                 suggestions = lastAssistant?.suggestions.orEmpty(),
                                 quickCheck = StudentUiMappers.quickCheck(lastAssistant?.concept_check),
+                                quickCheckMessageId = lastAssistant?.id?.takeIf {
+                                    lastAssistant.concept_check != null && it.isNotBlank()
+                                },
                                 selectedQuickOption = null,
                                 quickCheckAnswered = false,
                                 quickCheckCorrect = null,
@@ -383,6 +431,9 @@ class StudentAiChatViewModel(
                         messages = listOf(StudentUiMappers.chatResponseMessage(intro.data)),
                         suggestions = intro.data.suggestions,
                         quickCheck = StudentUiMappers.quickCheck(intro.data.concept_check),
+                        quickCheckMessageId = intro.data.message_id?.takeIf {
+                            intro.data.concept_check != null && it.isNotBlank()
+                        },
                         selectedQuickOption = null,
                         quickCheckAnswered = false,
                         quickCheckCorrect = null,
@@ -597,15 +648,32 @@ class StudentAiChatViewModel(
                     when (val result = studentRepository.chapter(chapterId)) {
                         is NetworkResult.Success -> {
                             val sections = result.data.sections
+                            val textbookId = result.data.textbook_id.takeIf { it.isNotBlank() }
+                                ?: _uiState.value.textbookId
                             _uiState.update {
                                 it.copy(
                                     chapterTitle = it.chapterTitle.ifBlank {
                                         chapterHeading(result.data.chapter_number)
                                     },
                                     syllabus = StudentUiMappers.syllabus(sections),
+                                    textbookId = textbookId.ifBlank { it.textbookId },
                                 )
                             }
+                            val resume = textbookId.takeIf { it.isNotBlank() }
+                                ?.let { studentRepository.getCachedProgressResume(it) }
+                            val resumeBlockId = resume?.content_block_id
+                                ?.takeIf { resume.chapter_id == chapterId && it.isNotBlank() }
                             val filled = fillSectionBlocks(sections)
+                            val firstBlock = StudentUiMappers.firstContentBlock(filled)
+                                ?: StudentUiMappers.firstContentBlock(sections)
+                            syncReadingProgress(
+                                textbookId = textbookId,
+                                chapterId = chapterId,
+                                sectionId = resume?.section_id
+                                    ?.takeIf { resume.chapter_id == chapterId && it.isNotBlank() }
+                                    ?: firstBlock?.section_id,
+                                contentBlockId = resumeBlockId ?: firstBlock?.id,
+                            )
                             if (lastQuestionsKey != questionsKey) return@launch
                             val sectionQuestions = StudentUiMappers.textbookQuestions(filled)
                             if (sectionQuestions.isNotEmpty()) {
@@ -723,17 +791,30 @@ class StudentAiChatViewModel(
                 )
             ) {
                 is NetworkResult.Success -> {
+                    val referencedBlockId = result.data.referenced_blocks.firstOrNull { it.isNotBlank() }
                     _uiState.update {
                         it.copy(
                             isSending = false,
                             messages = it.messages + StudentUiMappers.chatResponseMessage(result.data),
                             suggestions = result.data.suggestions,
                             quickCheck = StudentUiMappers.quickCheck(result.data.concept_check),
+                            quickCheckMessageId = result.data.message_id?.takeIf {
+                                result.data.concept_check != null && it.isNotBlank()
+                            },
                             selectedQuickOption = null,
                             quickCheckAnswered = false,
                             quickCheckCorrect = null,
                             quickCheckExplanation = null,
                             showQuickCheck = result.data.concept_check != null,
+                        )
+                    }
+                    val progressBlockId = contentBlockId?.takeIf { it.isNotBlank() } ?: referencedBlockId
+                    if (!progressBlockId.isNullOrBlank()) {
+                        syncReadingProgress(
+                            textbookId = _uiState.value.textbookId,
+                            chapterId = chapterId,
+                            sectionId = sectionId,
+                            contentBlockId = progressBlockId,
                         )
                     }
                 }
@@ -774,6 +855,23 @@ class StudentAiChatViewModel(
             it.copy(
                 isMenuContentLoading = false,
                 errorMessage = result.aiScopeUserMessage(),
+            )
+        }
+    }
+
+    private fun syncReadingProgress(
+        textbookId: String,
+        chapterId: String,
+        sectionId: String? = null,
+        contentBlockId: String? = null,
+    ) {
+        if (textbookId.isBlank() || chapterId.isBlank()) return
+        viewModelScope.launch {
+            studentRepository.updateProgress(
+                textbookId = textbookId,
+                chapterId = chapterId,
+                sectionId = sectionId,
+                contentBlockId = contentBlockId,
             )
         }
     }

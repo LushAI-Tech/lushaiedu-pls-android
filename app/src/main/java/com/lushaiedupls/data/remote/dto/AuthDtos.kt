@@ -39,6 +39,7 @@ data class CompleteOnboardingRequest(
     val gender: Gender? = null,
     val address: String? = null,
     val institution_id: String? = null,
+    val institution_ids: List<String>? = null,
     val class_id: String? = null,
     val subject_ids: List<String>? = null,
     val assignments: List<TeacherAssignment>? = null,
@@ -80,6 +81,12 @@ data class EnrolledUnit(
 @Serializable
 data class ForgotPasswordRequest(
     val identifier: String,
+)
+
+@Serializable
+data class DeviceConflictResolveRequest(
+    val conflict_token: String,
+    val device: DeviceInfo,
 )
 
 @Serializable
@@ -138,6 +145,7 @@ data class ProfileUpdate(
     val phone: String? = null,
     val gender: Gender? = null,
     val address: String? = null,
+    val avatar_url: String? = null,
 )
 
 @Serializable
@@ -184,6 +192,22 @@ data class TeacherAssignment(
 )
 
 @Serializable
+data class TeacherInstitutionAssignment(
+    val teaching_unit_id: String,
+    val class_id: String,
+    val class_name: String = "",
+    val subject_id: String,
+    val subject_name: String = "",
+)
+
+@Serializable
+data class TeacherInstitutionGroup(
+    val institution_id: String,
+    val institution_name: String = "",
+    val assignments: List<TeacherInstitutionAssignment> = emptyList(),
+)
+
+@Serializable
 data class TokenPair(
     val access_token: String,
     val refresh_token: String,
@@ -211,6 +235,7 @@ data class UserOut(
     val subjects: List<String> = emptyList(),
     val institution_id: String? = null,
     val institution_name: String? = null,
+    val teaching_institutions: List<TeacherInstitutionGroup> = emptyList(),
     val created_at: String,
     val has_password: Boolean = false,
     val email_verified: Boolean = false,

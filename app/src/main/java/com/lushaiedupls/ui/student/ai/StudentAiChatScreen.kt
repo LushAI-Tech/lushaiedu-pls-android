@@ -11,6 +11,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -35,7 +38,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -43,6 +45,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Assignment
@@ -62,7 +66,6 @@ import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,12 +74,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
@@ -85,14 +90,19 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -105,6 +115,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.lushaiedupls.R
+import kotlinx.coroutines.delay
 import com.lushaiedupls.data.mock.AiChatMessage
 import com.lushaiedupls.data.mock.AiMenuContentItem
 import com.lushaiedupls.data.mock.AiMenuTab
@@ -114,13 +125,13 @@ import com.lushaiedupls.data.mock.StudentMockRepository
 import com.lushaiedupls.data.mock.isQuestionAskMessage
 import com.lushaiedupls.data.mock.isResourceAskMessage
 import com.lushaiedupls.data.repository.StudentRepository
-import com.lushaiedupls.ui.common.AiChatIntroSkeleton
+import com.lushaiedupls.ui.common.AiChatLoadingPane
 import com.lushaiedupls.ui.common.AiMenuQuestionCardSkeleton
 import com.lushaiedupls.ui.common.AiMenuSectionHeaderSkeleton
 import com.lushaiedupls.ui.common.CenteredEmptyState
-import com.lushaiedupls.ui.common.SkeletonBox
-import com.lushaiedupls.ui.common.SkeletonLine
 import com.lushaiedupls.ui.common.SlideFromRightOverlay
+import com.lushaiedupls.ui.common.keepKeyboardOpen
+import com.lushaiedupls.ui.common.markdown.KatexRenderer
 import com.lushaiedupls.ui.common.markdown.MarkdownLatexText
 import com.lushaiedupls.data.remote.friendlyStemBindingMessage
 import com.lushaiedupls.ui.theme.BgLight
@@ -141,13 +152,6 @@ private val SyllabusText = Color(0xFF3A4256)
 private val QuickCheckGreen = Color(0xFF16A34A)
 private val QuickCheckRed = Color(0xFFDC2626)
 
-private suspend fun LazyListState.animateScrollToLastItem() {
-    val lastIndex = (layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
-    if (layoutInfo.totalItemsCount > 0) {
-        animateScrollToItem(lastIndex)
-    }
-}
-
 @Composable
 fun StudentAiChatRoute(
     subjectId: String,
@@ -166,6 +170,8 @@ fun StudentAiChatRoute(
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { KatexRenderer.prewarm(context) }
     StudentAiChatScreen(
         uiState = uiState,
         onBack = onBack,
@@ -233,6 +239,9 @@ fun StudentAiChatScreen(
             val blockingEmptyError = !uiState.isLoading &&
                 uiState.messages.isEmpty() &&
                 !uiState.errorMessage.isNullOrBlank()
+            var renderedMessageIds by remember { mutableStateOf(emptySet<String>()) }
+            var initialPaintDone by remember { mutableStateOf(false) }
+            var paintTimedOut by remember { mutableStateOf(false) }
 
             if (blockingEmptyError) {
                 CenteredEmptyState(
@@ -244,6 +253,7 @@ fun StudentAiChatScreen(
                     fillMaxSize = true,
                 )
             } else {
+            if (!uiState.isLoading) {
             uiState.errorMessage?.takeIf { it.isNotBlank() }?.let { message ->
                 Text(
                     text = message,
@@ -255,142 +265,66 @@ fun StudentAiChatScreen(
                     fontFamily = FontFamily.SansSerif,
                 )
             }
+            }
 
             when (uiState.menuTab) {
                 AiMenuTab.Chats -> {
-                    val listState = rememberLazyListState()
-                    val composerFocusRequester = remember { FocusRequester() }
-                    val keyboardController = LocalSoftwareKeyboardController.current
-                    val density = LocalDensity.current
-                    var composerFocused by remember { mutableStateOf(false) }
-                    val imeBottom = WindowInsets.ime.getBottom(density)
-
-                    LaunchedEffect(uiState.messages.size, uiState.isSending, uiState.suggestions.size) {
-                        if (uiState.messages.isNotEmpty() || uiState.isSending) {
-                            listState.animateScrollToLastItem()
+                    val messageSignature = uiState.messages.joinToString { it.id }
+                    LaunchedEffect(uiState.chapterId, uiState.isLoading) {
+                        if (uiState.isLoading) {
+                            renderedMessageIds = emptySet()
+                            initialPaintDone = false
+                            paintTimedOut = false
                         }
                     }
-                    LaunchedEffect(composerFocused, imeBottom) {
-                        if (!composerFocused && imeBottom <= 0) return@LaunchedEffect
-                        withFrameNanos { }
-                        listState.animateScrollToLastItem()
+                    LaunchedEffect(messageSignature, uiState.isLoading) {
+                        if (uiState.isLoading || uiState.messages.isEmpty()) return@LaunchedEffect
+                        paintTimedOut = false
+                        delay(1_800)
+                        paintTimedOut = true
                     }
-                    LaunchedEffect(uiState.composerFocusNonce) {
-                        if (uiState.composerFocusNonce <= 0) return@LaunchedEffect
-                        withFrameNanos { }
-                        runCatching { composerFocusRequester.requestFocus() }
-                        keyboardController?.show()
+                    val assistantIds = uiState.messages.mapNotNull { message ->
+                        message.id.takeIf { it.isNotBlank() && !message.fromUser }
                     }
+                    val markdownReady = paintTimedOut ||
+                        assistantIds.isEmpty() ||
+                        assistantIds.all { it in renderedMessageIds }
+                    LaunchedEffect(uiState.isLoading, uiState.messages.isNotEmpty(), markdownReady) {
+                        if (!uiState.isLoading && uiState.messages.isNotEmpty() && markdownReady) {
+                            initialPaintDone = true
+                        }
+                    }
+                    val showLoader = !initialPaintDone &&
+                        (uiState.isLoading || (uiState.messages.isNotEmpty() && !markdownReady))
 
-                    Column(
+                    Box(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
                             .imePadding(),
                     ) {
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(14.dp),
-                        ) {
-                            item { Spacer(modifier = Modifier.height(4.dp)) }
-                            if (uiState.isLoading && uiState.messages.isEmpty()) {
-                                item(key = "chat_intro_skeleton") {
-                                    AiChatIntroSkeleton()
-                                }
-                            } else {
-                                items(uiState.messages, key = { it.id }) { message ->
-                                    ChatBubble(
-                                        message = message,
-                                        onBackToQuestion = if (message.isQuestionAskMessage()) {
-                                            { onBackToQuestion(message) }
-                                        } else {
-                                            null
-                                        },
-                                        onBackToResource = if (message.isResourceAskMessage()) {
-                                            { onBackToResource(message) }
-                                        } else {
-                                            null
-                                        },
-                                    )
-                                }
-                                if (uiState.isSending) {
-                                    item(key = "ai_thinking") {
-                                        AiThinkingBubble()
-                                    }
-                                }
-                                if (!uiState.isSending && uiState.suggestions.isNotEmpty()) {
-                                    item {
-                                        FlowRow(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                                        ) {
-                                            uiState.suggestions.forEach { suggestion ->
-                                                SuggestionChip(
-                                                    text = suggestion,
-                                                    onClick = { onSuggestion(suggestion) },
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                                if (!uiState.isSending && uiState.showQuickCheck && uiState.quickCheck != null) {
-                                    item {
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        QuickCheckCard(
-                                            quickCheck = uiState.quickCheck,
-                                            selectedOption = uiState.selectedQuickOption,
-                                            isAnswered = uiState.quickCheckAnswered,
-                                            explanation = uiState.quickCheckExplanation,
-                                            onOption = onQuickOption,
-                                        )
-                                    }
-                                }
-                            }
-                            item {
-                                Spacer(modifier = Modifier.height(12.dp))
-                            }
-                        }
-
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(BgWhite),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            HorizontalDivider(color = BorderGray.copy(alpha = 0.4f))
-                            uiState.pendingAsk?.let { pending ->
-                                PendingAskComposerChip(
-                                    pending = pending,
-                                    onClear = onClearPendingAsk,
-                                    modifier = Modifier
-                                        .fillMaxWidth(0.94f)
-                                        .padding(top = 10.dp),
-                                )
-                            }
-                            ChatInputBar(
-                                language = uiState.language,
-                                draft = uiState.draft,
-                                placeholder = when (uiState.pendingAsk?.tab) {
-                                    AiMenuTab.Resources -> stringResource(R.string.ai_ask_about_resource)
-                                    AiMenuTab.TextbookQuestions,
-                                    AiMenuTab.ExamPreparation,
-                                    -> stringResource(R.string.ai_ask_about_question)
-                                    else -> stringResource(R.string.ai_send_messages)
-                                },
+                        if (uiState.messages.isNotEmpty() || uiState.isSending) {
+                            ChatConversationPane(
+                                uiState = uiState,
+                                visible = !showLoader,
                                 onDraftChange = onDraftChange,
                                 onSend = onSend,
+                                onSuggestion = onSuggestion,
+                                onQuickOption = onQuickOption,
                                 onLanguageSelected = onLanguageSelected,
-                                focusRequester = composerFocusRequester,
-                                onComposerFocusChange = { composerFocused = it },
-                                modifier = Modifier
-                                    .fillMaxWidth(0.94f)
-                                    .padding(top = 8.dp, bottom = 8.dp),
+                                onClearPendingAsk = onClearPendingAsk,
+                                onBackToQuestion = onBackToQuestion,
+                                onBackToResource = onBackToResource,
+                                onMessageReady = { id ->
+                                    if (id.isNotBlank()) {
+                                        renderedMessageIds = renderedMessageIds + id
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize(),
                             )
+                        }
+                        if (showLoader) {
+                            AiChatLoadingPane(modifier = Modifier.fillMaxSize())
                         }
                     }
                 }
@@ -464,6 +398,172 @@ fun StudentAiChatScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ChatConversationPane(
+    uiState: StudentAiChatUiState,
+    visible: Boolean,
+    onDraftChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onSuggestion: (String) -> Unit,
+    onQuickOption: (String) -> Unit,
+    onLanguageSelected: (String) -> Unit,
+    onClearPendingAsk: () -> Unit,
+    onBackToQuestion: (AiChatMessage) -> Unit,
+    onBackToResource: (AiChatMessage) -> Unit,
+    onMessageReady: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scrollState = rememberScrollState()
+    val composerFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val density = LocalDensity.current
+    var composerFocused by remember { mutableStateOf(false) }
+    val imeBottom = WindowInsets.ime.getBottom(density)
+    val hideKeyboard = {
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+    }
+
+    LaunchedEffect(uiState.messages.size, uiState.isSending, uiState.suggestions.size, scrollState.maxValue) {
+        if (uiState.messages.isNotEmpty() || uiState.isSending) {
+            scrollState.scrollTo(scrollState.maxValue)
+        }
+    }
+    LaunchedEffect(composerFocused, imeBottom) {
+        if (!composerFocused && imeBottom <= 0) return@LaunchedEffect
+        withFrameNanos { }
+        scrollState.scrollTo(scrollState.maxValue)
+    }
+    LaunchedEffect(uiState.composerFocusNonce, visible) {
+        if (!visible || uiState.composerFocusNonce <= 0) return@LaunchedEffect
+        withFrameNanos { }
+        runCatching { composerFocusRequester.requestFocus() }
+        keyboardController?.show()
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .alpha(if (visible) 1f else 0f),
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        awaitFirstDown(pass = PointerEventPass.Initial)
+                        val up = waitForUpOrCancellation(pass = PointerEventPass.Initial)
+                        if (up != null) {
+                            hideKeyboard()
+                        }
+                    }
+                },
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Spacer(modifier = Modifier.height(4.dp))
+                uiState.messages.forEach { message ->
+                    key(message.id) {
+                        ChatBubble(
+                            message = message,
+                            onBackToQuestion = if (message.isQuestionAskMessage()) {
+                                { onBackToQuestion(message) }
+                            } else {
+                                null
+                            },
+                            onBackToResource = if (message.isResourceAskMessage()) {
+                                { onBackToResource(message) }
+                            } else {
+                                null
+                            },
+                            onReady = { onMessageReady(message.id) },
+                        )
+                    }
+                }
+                if (uiState.isSending) {
+                    AiThinkingBubble()
+                }
+                if (!uiState.isSending && uiState.suggestions.isNotEmpty()) {
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        uiState.suggestions.forEach { suggestion ->
+                            SuggestionChip(
+                                text = suggestion,
+                                onClick = {
+                                    hideKeyboard()
+                                    onSuggestion(suggestion)
+                                },
+                            )
+                        }
+                    }
+                }
+                if (!uiState.isSending && uiState.showQuickCheck && uiState.quickCheck != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    QuickCheckCard(
+                        quickCheck = uiState.quickCheck,
+                        selectedOption = uiState.selectedQuickOption,
+                        isAnswered = uiState.quickCheckAnswered,
+                        explanation = uiState.quickCheckExplanation,
+                        onOption = onQuickOption,
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(BgWhite),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            HorizontalDivider(color = BorderGray.copy(alpha = 0.4f))
+            uiState.pendingAsk?.let { pending ->
+                PendingAskComposerChip(
+                    pending = pending,
+                    onClear = onClearPendingAsk,
+                    modifier = Modifier
+                        .fillMaxWidth(0.94f)
+                        .padding(top = 10.dp),
+                )
+            }
+            ChatInputBar(
+                language = uiState.language,
+                draft = uiState.draft,
+                placeholder = when (uiState.pendingAsk?.tab) {
+                    AiMenuTab.Resources -> stringResource(R.string.ai_ask_about_resource)
+                    AiMenuTab.TextbookQuestions,
+                    AiMenuTab.ExamPreparation,
+                    -> stringResource(R.string.ai_ask_about_question)
+                    else -> stringResource(R.string.ai_send_messages)
+                },
+                onDraftChange = onDraftChange,
+                onSend = {
+                    hideKeyboard()
+                    onSend()
+                },
+                onLanguageSelected = onLanguageSelected,
+                focusRequester = composerFocusRequester,
+                onComposerFocusChange = { composerFocused = it },
+                modifier = Modifier
+                    .fillMaxWidth(0.94f)
+                    .padding(top = 8.dp, bottom = 8.dp),
+            )
+        }
+    }
+}
+
 @Composable
 private fun ChatTopBar(
     title: String,
@@ -523,8 +623,10 @@ private fun ChatBubble(
     message: AiChatMessage,
     onBackToQuestion: (() -> Unit)? = null,
     onBackToResource: (() -> Unit)? = null,
+    onReady: (() -> Unit)? = null,
 ) {
     if (message.fromUser) {
+        LaunchedEffect(message.id) { onReady?.invoke() }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -594,6 +696,8 @@ private fun ChatBubble(
             fontSize = 14.sp,
             fontWeight = FontWeight.Normal,
             lineHeightMultiplier = 20f / 14f,
+            placeholderUntilReady = true,
+            onReady = onReady,
         )
     }
 }
@@ -932,6 +1036,13 @@ private fun ChatInputBar(
     var expanded by remember { mutableStateOf(false) }
     var languageButtonWidthPx by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val sendMessage = {
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+        onSend()
+    }
 
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -1080,6 +1191,7 @@ private fun ChatInputBar(
                 onValueChange = onDraftChange,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .keepKeyboardOpen()
                     .then(
                         if (focusRequester != null) {
                             Modifier
@@ -1096,11 +1208,13 @@ private fun ChatInputBar(
                     fontFamily = FontFamily.SansSerif,
                 ),
                 cursorBrush = SolidColor(BrandBlack),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { sendMessage() }),
             )
         }
 
         IconButton(
-            onClick = onSend,
+            onClick = sendMessage,
             modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape)
@@ -1125,7 +1239,7 @@ private fun TextbookQuestionsPageView(
     scrollToQuestionNonce: Int = 0,
     modifier: Modifier = Modifier,
 ) {
-    if (isLoading && questions.isEmpty()) {
+    if (isLoading) {
         LazyColumn(
             modifier = modifier
                 .fillMaxSize()
@@ -1274,7 +1388,7 @@ private fun ExamPreparationPageView(
     scrollToQuestionNonce: Int = 0,
     modifier: Modifier = Modifier,
 ) {
-    if (isLoading && examPrepPyqs.isEmpty()) {
+    if (isLoading) {
         LazyColumn(
             modifier = modifier
                 .fillMaxSize()
@@ -1419,7 +1533,7 @@ private fun ResourcesPageView(
     scrollToResourceNonce: Int = 0,
     modifier: Modifier = Modifier,
 ) {
-    if (isLoading && resources.isEmpty()) {
+    if (isLoading) {
         ResourceVideosPage(
             resources = emptyList(),
             isLoading = true,

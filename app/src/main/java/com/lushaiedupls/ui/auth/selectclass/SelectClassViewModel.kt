@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 class SelectClassViewModel(
     private val userSessionStore: UserSessionStore,
     private val studentRepository: StudentRepository,
+    private val institutionId: String,
 ) : ViewModel() {
 
     private val allowMultiSelect = userSessionStore.getRole() == UserRole.Teacher
@@ -26,7 +27,18 @@ class SelectClassViewModel(
         SelectClassUiState(
             allowMultiSelect = allowMultiSelect,
             isLoading = true,
-            selectedClassIds = userSessionStore.getClassIds().toSet(),
+            selectedClassIds = userSessionStore.getClassInstitutionIds()
+                .filter { it.value == institutionId }
+                .keys
+                .ifEmpty {
+                    if (userSessionStore.getInstitutionIds().size <= 1) {
+                        userSessionStore.getClassIds().toSet()
+                    } else {
+                        emptySet()
+                    }
+                },
+            showInstitutionContext = userSessionStore.getRole() == UserRole.Teacher &&
+                userSessionStore.getInstitutionIds().size > 1,
         ),
     )
     val uiState: StateFlow<SelectClassUiState> = _uiState.asStateFlow()
@@ -36,8 +48,7 @@ class SelectClassViewModel(
     }
 
     fun loadClasses() {
-        val institutionId = userSessionStore.getInstitutionId()
-        if (institutionId.isNullOrBlank()) {
+        if (institutionId.isBlank()) {
             _uiState.update {
                 it.copy(isLoading = false, errorMessage = "Please select an institution first.")
             }
@@ -45,12 +56,26 @@ class SelectClassViewModel(
         }
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val institutionName = when (val institutions = studentRepository.institutions()) {
+                is NetworkResult.Success ->
+                    institutions.data.firstOrNull { it.id == institutionId }?.name.orEmpty()
+                else -> ""
+            }
             when (val result = studentRepository.classes(institutionId)) {
                 is NetworkResult.Success -> {
                     val options = result.data
                         .filter { it.is_active }
                         .sortedBy { it.sort_order }
-                        .map { ClassOption(it.id, it.name) }
+                        .map { item ->
+                            ClassOption(
+                                id = item.id,
+                                name = item.name,
+                                institutionId = item.institution_id.ifBlank { institutionId },
+                                institutionName = item.institution_name
+                                    ?.takeIf { it.isNotBlank() }
+                                    ?: institutionName,
+                            )
+                        }
                     val selected = _uiState.value.selectedClassIds.ifEmpty {
                         if (!allowMultiSelect && options.isNotEmpty()) setOf(options.first().id) else emptySet()
                     }
@@ -58,12 +83,24 @@ class SelectClassViewModel(
                         it.copy(
                             isLoading = false,
                             classes = options,
+                            institutionName = institutionName.ifBlank {
+                                options.firstOrNull()?.institutionName.orEmpty()
+                            },
                             selectedClassIds = selected.filter { id -> options.any { o -> o.id == id } }.toSet(),
+                            errorMessage = if (options.isEmpty()) {
+                                "No classes are available yet."
+                            } else {
+                                null
+                            },
                         )
                     }
                 }
                 else -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = result.userMessage())
+                    it.copy(
+                        isLoading = false,
+                        institutionName = institutionName,
+                        errorMessage = result.userMessage(),
+                    )
                 }
             }
         }
@@ -83,6 +120,7 @@ class SelectClassViewModel(
 
     fun validateAndSave(): Boolean {
         val selected = _uiState.value.selectedClassIds
+        val selectedOptions = _uiState.value.classes.filter { it.id in selected }
         return if (selected.isEmpty()) {
             _uiState.update {
                 it.copy(
@@ -95,7 +133,19 @@ class SelectClassViewModel(
             }
             false
         } else {
-            userSessionStore.setClassIds(selected.toList())
+            val map = userSessionStore.getClassInstitutionIds().toMutableMap()
+            map.entries.removeIf { it.value == institutionId }
+            selectedOptions.forEach { option ->
+                map[option.id] = option.institutionId.ifBlank { institutionId }
+            }
+            userSessionStore.setClassIds(map.keys.toList())
+            userSessionStore.setClassInstitutionIds(map)
+            val keepClasses = selected.toSet()
+            userSessionStore.setPendingTeacherAssignments(
+                userSessionStore.getPendingTeacherAssignments().filter { item ->
+                    item.institutionId != institutionId || item.classId in keepClasses
+                },
+            )
             true
         }
     }
@@ -104,8 +154,9 @@ class SelectClassViewModel(
         fun provideFactory(
             userSessionStore: UserSessionStore,
             studentRepository: StudentRepository,
+            institutionId: String,
         ): ViewModelProvider.Factory = viewModelFactory {
-            SelectClassViewModel(userSessionStore, studentRepository)
+            SelectClassViewModel(userSessionStore, studentRepository, institutionId)
         }
     }
 }

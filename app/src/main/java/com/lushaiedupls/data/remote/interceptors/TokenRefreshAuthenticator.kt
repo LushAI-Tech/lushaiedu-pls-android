@@ -111,7 +111,7 @@ class TokenRefreshAuthenticator(
                 }
                 tokenProvider.saveTokens(tokens.first, tokens.second)
                 sessionExpired.set(false)
-                Log.d(ApiHttpLogger.TAG, "Token refresh succeeded; retrying original request")
+                ApiHttpLogger.log("Token refresh succeeded; retrying original request")
                 tokens.first
             }
         } catch (e: Exception) {

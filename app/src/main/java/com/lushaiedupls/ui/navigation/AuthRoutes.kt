@@ -8,8 +8,11 @@ object AppRoutes {
     const val SELECT_ROLE = "select_role"
     const val SELECT_INVITE_CODE = "select_invite_code"
     const val SELECT_INSTITUTION = "select_institution"
-    const val SELECT_CLASS = "select_class"
-    const val SELECT_SUBJECT = "select_subject"
+    const val SELECT_CLASS = "select_class/{institutionId}"
+    const val SELECT_SUBJECT = "select_subject/{institutionId}"
+
+    fun selectClass(institutionId: String) = "select_class/$institutionId"
+    fun selectSubject(institutionId: String) = "select_subject/$institutionId"
 
     const val STUDENT_SHELL = "student_shell"
     const val TEACHER_SHELL = "teacher_shell"

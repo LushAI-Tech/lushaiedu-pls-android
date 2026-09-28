@@ -8,5 +8,6 @@ object AuthPaths {
         encodedPath.endsWith("/auth/login") ||
             encodedPath.endsWith("/auth/register") ||
             encodedPath.endsWith("/auth/google") ||
+            encodedPath.endsWith("/auth/device-conflict/resolve") ||
             isRefresh(encodedPath)
 }

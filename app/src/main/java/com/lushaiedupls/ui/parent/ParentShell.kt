@@ -1,10 +1,6 @@
 package com.lushaiedupls.ui.parent
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -15,7 +11,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -25,14 +20,15 @@ import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.data.repository.ParentRepository
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.session.UserSessionStore
+import com.lushaiedupls.ui.common.AdaptiveRoleScaffold
 import com.lushaiedupls.ui.common.LegalDocumentScreen
-import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.navigation.lushEnterTransition
 import com.lushaiedupls.ui.navigation.lushExitTransition
 import com.lushaiedupls.ui.navigation.lushPopEnterTransition
 import com.lushaiedupls.ui.navigation.lushPopExitTransition
+import com.lushaiedupls.ui.navigation.navigateToRoleTab
 import com.lushaiedupls.ui.parent.attendance.ParentChildAttendanceRoute
 import com.lushaiedupls.ui.parent.fees.ParentFeesRoute
 import com.lushaiedupls.ui.parent.feedback.ParentFeedbackRoute
@@ -45,7 +41,6 @@ import com.lushaiedupls.ui.parent.timetable.ParentChildTimetableRoute
 import com.lushaiedupls.ui.student.calendar.StudentCalendarRoute
 import com.lushaiedupls.ui.student.menu.StudentAccountRoute
 import com.lushaiedupls.ui.student.secondary.NotificationsScreen
-import com.lushaiedupls.ui.theme.BgWhite
 
 private val ParentTabRoutes = setOf(
     ParentRoutes.HOME,
@@ -83,13 +78,7 @@ fun ParentShell(
     }
 
     fun navigateTab(route: String) {
-        tabNavController.navigate(route) {
-            popUpTo(tabNavController.graph.findStartDestination().id) {
-                saveState = true
-            }
-            launchSingleTop = true
-            restoreState = true
-        }
+        tabNavController.navigateToRoleTab(route, moreRoute = ParentRoutes.MORE)
     }
 
     val launchQrScanner = rememberParentQrScanLauncher(
@@ -97,25 +86,20 @@ fun ParentShell(
         onLinked = { navigateTab(ParentRoutes.HOME) },
     )
 
-    Scaffold(
-        modifier = modifier
-            .fillMaxSize()
-            .background(BgWhite)
-            .systemBarsPadding(),
-        containerColor = BgWhite,
+    AdaptiveRoleScaffold(
+        showNav = true,
         bottomBar = {
             ParentBottomBar(
                 selectedTab = selectedTab,
                 onTabSelected = { tab -> navigateTab(tab.route) },
             )
         },
-    ) { innerPadding ->
+        modifier = modifier,
+    ) {
         NavHost(
             navController = tabNavController,
             startDestination = ParentRoutes.HOME,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
+            modifier = Modifier.fillMaxSize(),
             enterTransition = { lushEnterTransition(tabRoutes = ParentTabRoutes) },
             exitTransition = { lushExitTransition(tabRoutes = ParentTabRoutes) },
             popEnterTransition = { lushPopEnterTransition(tabRoutes = ParentTabRoutes) },
@@ -196,23 +180,20 @@ fun ParentShell(
                 )
                 val state by vm.uiState.collectAsStateWithLifecycle()
                 when {
-                    state.isLoading && state.notifications.isEmpty() -> StudentPageSkeleton(
-                        kind = StudentSkeletonKind.Notifications,
-                        title = stringResource(R.string.parent_notifications_title),
-                    )
-                    else -> LushPullToRefreshBox(
-                        isRefreshing = state.isRefreshing,
-                        onRefresh = { vm.refresh(asPullRefresh = true) },
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        NotificationsScreen(
-                            notifications = state.notifications,
-                            onBack = { tabNavController.popBackStack() },
-                            onMarkAllRead = vm::markAllRead,
-                            onOpenNotification = { vm.markRead(it.id) },
-                            modifier = Modifier.fillMaxSize(),
+                    state.isLoading && state.notifications.isEmpty() && !state.isRefreshing ->
+                        StudentPageSkeleton(
+                            kind = StudentSkeletonKind.Notifications,
+                            title = stringResource(R.string.parent_notifications_title),
                         )
-                    }
+                    else -> NotificationsScreen(
+                        notifications = state.notifications,
+                        onBack = { tabNavController.popBackStack() },
+                        onMarkAllRead = vm::markAllRead,
+                        onOpenNotification = { vm.markRead(it.id) },
+                        onRefresh = { vm.refresh(asPullRefresh = true) },
+                        isRefreshing = state.isRefreshing,
+                        modifier = Modifier.fillMaxSize(),
+                    )
                 }
             }
             composable(ParentRoutes.ACCOUNT) {

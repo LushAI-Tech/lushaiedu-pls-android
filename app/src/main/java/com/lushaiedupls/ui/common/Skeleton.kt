@@ -8,6 +8,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,6 +40,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
@@ -241,55 +245,173 @@ fun AiChatIntroSkeleton(modifier: Modifier = Modifier) {
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 2.dp, bottom = 6.dp, end = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            SkeletonLine(modifier = Modifier.fillMaxWidth(), height = 14.dp)
-            SkeletonLine(modifier = Modifier.fillMaxWidth(0.94f), height = 14.dp)
-            SkeletonLine(modifier = Modifier.fillMaxWidth(0.88f), height = 14.dp)
-            SkeletonLine(modifier = Modifier.fillMaxWidth(0.62f), height = 14.dp)
-        }
+        AssistantMessageSkeleton()
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            SkeletonBox(modifier = Modifier.width(108.dp).height(34.dp), shape = PillShape)
-            SkeletonBox(modifier = Modifier.width(132.dp).height(34.dp), shape = PillShape)
-            SkeletonBox(modifier = Modifier.width(96.dp).height(34.dp), shape = PillShape)
+            SuggestionChipSkeleton(width = 168.dp)
+            SuggestionChipSkeleton(width = 132.dp)
         }
         Spacer(modifier = Modifier.height(8.dp))
-        AiQuickCheckCardSkeleton()
+        AiQuickCheckCardSkeleton(corner = 22.dp)
     }
 }
 
 @Composable
-fun AiQuickCheckCardSkeleton(modifier: Modifier = Modifier) {
+private fun AssistantMessageSkeleton(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(CardShape)
+            .padding(top = 2.dp, bottom = 6.dp, end = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        ParagraphSkeleton(lineFractions = listOf(1f, 1f, 0.78f))
+        ParagraphSkeleton(lineFractions = listOf(1f, 0.96f, 1f, 0.62f))
+        ParagraphSkeleton(lineFractions = listOf(1f, 0.88f, 0.54f))
+    }
+}
+
+@Composable
+private fun ParagraphSkeleton(lineFractions: List<Float>) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        lineFractions.forEach { fraction ->
+            SkeletonLine(modifier = Modifier.fillMaxWidth(fraction), height = 14.dp)
+        }
+    }
+}
+
+@Composable
+private fun SuggestionChipSkeleton(width: Dp) {
+    Box(
+        modifier = Modifier
+            .width(width)
+            .height(34.dp)
+            .border(1.dp, BrandBlack, PillShape)
+            .clip(PillShape)
+            .background(BgLight)
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        SkeletonLine(modifier = Modifier.fillMaxWidth(0.78f), height = 10.dp)
+    }
+}
+
+@Composable
+fun AiChatComposerSkeleton(modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .width(88.dp)
+                .height(36.dp)
+                .clip(PillShape)
+                .background(BrandBlack),
+        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(44.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(BgLight)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            SkeletonLine(modifier = Modifier.width(110.dp), height = 12.dp)
+        }
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(BrandBlack),
+        )
+    }
+}
+
+@Composable
+fun AiChatPageSkeleton(modifier: Modifier = Modifier) {
+    AiChatLoadingPane(modifier = modifier)
+}
+
+@Composable
+fun AiChatLoadingPane(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
             .background(BgWhite)
-            .border(1.dp, BorderGray.copy(alpha = 0.5f), CardShape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {},
+            ),
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Spacer(modifier = Modifier.height(4.dp))
+            AiChatIntroSkeleton()
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(BorderGray.copy(alpha = 0.4f)),
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(BgWhite),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            AiChatComposerSkeleton(
+                modifier = Modifier
+                    .fillMaxWidth(0.94f)
+                    .padding(top = 8.dp, bottom = 8.dp),
+            )
+        }
+    }
+}
+
+@Composable
+fun AiQuickCheckCardSkeleton(
+    modifier: Modifier = Modifier,
+    corner: Dp = 16.dp,
+) {
+    val shape = RoundedCornerShape(corner)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(BgWhite)
+            .border(1.dp, BorderGray.copy(alpha = 0.5f), shape)
             .padding(16.dp),
     ) {
         SkeletonLine(modifier = Modifier.width(92.dp), height = 12.dp)
         Spacer(modifier = Modifier.height(10.dp))
-        SkeletonLine(modifier = Modifier.fillMaxWidth(0.96f), height = 14.dp)
-        SkeletonLine(modifier = Modifier.fillMaxWidth(0.72f), height = 14.dp)
+        SkeletonLine(modifier = Modifier.fillMaxWidth(0.96f), height = 15.dp)
+        Spacer(modifier = Modifier.height(8.dp))
+        SkeletonLine(modifier = Modifier.fillMaxWidth(0.72f), height = 15.dp)
         Spacer(modifier = Modifier.height(14.dp))
         repeat(4) {
-            SkeletonBox(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(44.dp),
-                shape = PillShape,
-            )
-            if (it != 3) {
-                Spacer(modifier = Modifier.height(8.dp))
+                    .padding(vertical = 4.dp)
+                    .height(44.dp)
+                    .clip(PillShape)
+                    .background(BgLight),
+                contentAlignment = Alignment.Center,
+            ) {
+                SkeletonLine(modifier = Modifier.fillMaxWidth(0.55f), height = 12.dp)
             }
         }
     }

@@ -62,7 +62,7 @@ class AppContainer(context: Context) {
         tokenProvider = tokenProvider,
         deviceIdProvider = deviceIdProvider,
         appVersion = BuildConfig.VERSION_NAME,
-        isDebug = BuildConfig.DEBUG,
+        isDebug = BuildConfig.ENABLE_API_LOGS,
         onUnauthorized = sessionRepository::onUnauthorized,
     )
 

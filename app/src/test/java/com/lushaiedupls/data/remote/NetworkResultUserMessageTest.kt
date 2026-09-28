@@ -96,6 +96,76 @@ class NetworkResultUserMessageTest {
     }
 
     @Test
+    fun error409_objectDetailWithConflictToken_showsNestedMessage() {
+        val result = NetworkResult.Error(
+            code = 409,
+            message = "Conflict",
+            body = """{"detail":{"message":"No login is allowed while another device is still active. Please sign out on that device first.","conflict_token":"ctok_1"}}""",
+        )
+        assertEquals(
+            "No login is allowed while another device is still active. Please sign out on that device first.",
+            result.loginUserMessage(),
+        )
+        assertEquals(true, result.isDeviceSessionConflict())
+        assertEquals(false, result.isAccountAlreadyExists())
+    }
+
+    @Test
+    fun error409_alreadySignedInOnAnotherDevice_showsDetailAndSignOutHint() {
+        val result = NetworkResult.Error(
+            code = 409,
+            message = "Conflict",
+            body = """{"detail":"This account is already signed in on another device."}""",
+        )
+        val expected =
+            "This account is already signed in on another device.\n\n$DEVICE_SESSION_HINT"
+        assertEquals(expected, result.userMessage())
+        assertEquals(expected, result.loginUserMessage())
+        assertEquals(true, result.isDeviceSessionConflict())
+        assertEquals(false, result.isAccountAlreadyExists())
+    }
+
+    @Test
+    fun error409_deviceLimit_showsApiDetailAndSignOutHint() {
+        val result = NetworkResult.Error(
+            code = 409,
+            message = "Conflict",
+            body = """{"detail":"Maximum number of devices reached for this account."}""",
+        )
+        val expected =
+            "Maximum number of devices reached for this account.\n\n$DEVICE_SESSION_HINT"
+        assertEquals(expected, result.loginUserMessage())
+        assertEquals(true, result.isDeviceSessionConflict())
+        assertEquals(false, result.isAccountAlreadyExists())
+    }
+
+    @Test
+    fun error409_deviceLimitDetailAlreadyMentionsSignOut_doesNotDuplicateHint() {
+        val detail =
+            "Device limit reached. Open the other device → Account → Sign out."
+        val result = NetworkResult.Error(
+            code = 409,
+            message = "Conflict",
+            body = """{"detail":"$detail"}""",
+        )
+        assertEquals(detail, result.loginUserMessage())
+        assertEquals(true, result.isDeviceSessionConflict())
+    }
+
+    @Test
+    fun loginUserMessage_unknown409_showsDetailAndSignOutHint() {
+        val result = NetworkResult.Error(
+            code = 409,
+            message = "Conflict",
+            body = """{"detail":"Cannot complete sign-in right now."}""",
+        )
+        val expected = "Cannot complete sign-in right now.\n\n$DEVICE_SESSION_HINT"
+        assertEquals(expected, result.loginUserMessage())
+        assertEquals(false, result.isDeviceSessionConflict())
+        assertEquals("Cannot complete sign-in right now.", result.userMessage())
+    }
+
+    @Test
     fun error400_userAlreadyExists_usesAccountExistsCopy() {
         val result = NetworkResult.Error(
             code = 400,

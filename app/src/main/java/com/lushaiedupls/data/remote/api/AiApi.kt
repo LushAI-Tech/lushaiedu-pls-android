@@ -9,8 +9,9 @@ import com.lushaiedupls.data.remote.dto.ChatRequest
 import com.lushaiedupls.data.remote.dto.ChatResponse
 import com.lushaiedupls.data.remote.dto.ClearChatHistoryResponse
 import com.lushaiedupls.data.remote.dto.ExamPrepPyqsResponse
-import com.lushaiedupls.data.remote.dto.ProgressDashboardResponse
+import com.lushaiedupls.data.remote.dto.ProgressOverviewResponse
 import com.lushaiedupls.data.remote.dto.ProgressUpdateRequest
+import com.lushaiedupls.data.remote.dto.QuickCheckAttemptRequest
 import com.lushaiedupls.data.remote.dto.QuizAttemptSummary
 import com.lushaiedupls.data.remote.dto.QuizStartResponse
 import com.lushaiedupls.data.remote.dto.QuizSubmitRequest
@@ -28,7 +29,9 @@ import retrofit2.http.Query
 
 interface AiApi {
     @GET("api/v1/ai/subjects")
-    suspend fun subjects(): List<AiSubjectOut>
+    suspend fun subjects(
+        @Query("institution_id") institutionId: String? = null,
+    ): List<AiSubjectOut>
 
     @GET("api/v1/ai/subjects/{subject_id}/chapters")
     suspend fun chapters(@Path("subject_id") subjectId: String): List<ChapterListItem>
@@ -91,12 +94,20 @@ interface AiApi {
     @GET("api/v1/ai/quiz/history")
     suspend fun quizHistory(): List<QuizAttemptSummary>
 
-    @GET("api/v1/ai/progress/dashboard")
-    suspend fun progressDashboard(): ProgressDashboardResponse
+    @GET("api/v1/ai/progress/overview")
+    suspend fun progressOverview(
+        @Query("scope") scope: String = "self",
+        @Query("subject_id") subjectId: String? = null,
+        @Query("class_id") classId: String? = null,
+        @Query("institution_id") institutionId: String? = null,
+    ): ProgressOverviewResponse
 
     @GET("api/v1/ai/progress/resume")
-    suspend fun progressResume(): ResumeResponse?
+    suspend fun progressResume(@Query("textbook_id") textbookId: String): ResumeResponse?
 
     @PUT("api/v1/ai/progress/update")
     suspend fun progressUpdate(@Body body: ProgressUpdateRequest): kotlinx.serialization.json.JsonElement
+
+    @POST("api/v1/ai/passthrough/progress/quick-check-attempt")
+    suspend fun quickCheckAttempt(@Body body: QuickCheckAttemptRequest): kotlinx.serialization.json.JsonElement
 }

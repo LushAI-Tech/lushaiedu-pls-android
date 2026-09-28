@@ -8,9 +8,11 @@ import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.dto.InstitutionOut
 import com.lushaiedupls.data.remote.dto.TeachingUnitOut
 import com.lushaiedupls.data.remote.userMessage
+import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.data.session.UserSessionStore
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.viewModelFactory
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -29,6 +31,8 @@ class TeacherHomeViewModel(
     private val _uiState = MutableStateFlow(
         TeacherHomeUiState(
             displayName = userSessionStore.getDisplayName(),
+            avatarUrl = AuthRepository.normalizeAvatarUrl(userSessionStore.getAvatarUrl()),
+            avatarCacheKey = userSessionStore.getAvatarRevision(),
             isLoading = true,
         ),
     )
@@ -81,12 +85,13 @@ class TeacherHomeViewModel(
         viewModelScope.launch {
             val hasContent = _uiState.value.classes.isNotEmpty() ||
                 _uiState.value.institutions.isNotEmpty()
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoading, hasContent)
             _uiState.update {
-                if (hasContent) {
-                    it.copy(isRefreshing = true, isLoading = false, errorMessage = null)
-                } else {
-                    it.copy(isLoading = true, isRefreshing = false, errorMessage = null)
-                }
+                it.copy(
+                    isRefreshing = refreshing,
+                    isLoading = loading,
+                    errorMessage = null,
+                )
             }
             coroutineScope {
                 val unitsDeferred = async { teacherRepository.teachingUnits(forceNetwork) }
@@ -135,6 +140,8 @@ class TeacherHomeViewModel(
                                 displayName = overview.teacher.name.ifBlank {
                                     userSessionStore.getDisplayName()
                                 },
+                                avatarUrl = resolveAvatarUrl(overview.teacher.avatar_url),
+                                avatarCacheKey = userSessionStore.getAvatarRevision(),
                                 notificationCount = overview.unread_notifications,
                                 institutions = institutionNames,
                                 institutionIds = institutionIds,
@@ -200,6 +207,17 @@ class TeacherHomeViewModel(
             }
             else -> cachedInstitutions.orEmpty()
         }
+    }
+
+    private fun resolveAvatarUrl(remote: String?): String? {
+        val sessionUrl = AuthRepository.normalizeAvatarUrl(userSessionStore.getAvatarUrl())
+        val remoteUrl = AuthRepository.normalizeAvatarUrl(remote)
+        if (sessionUrl != null && remoteUrl != null && sessionUrl != remoteUrl) {
+            return sessionUrl
+        }
+        val url = remoteUrl ?: sessionUrl
+        url?.let { userSessionStore.setAvatarUrl(it) }
+        return url
     }
 
     companion object {

@@ -20,7 +20,9 @@ import com.lushaiedupls.data.mock.TeacherTimetableCell
 import com.lushaiedupls.data.mock.TeacherVolumeRow
 import com.lushaiedupls.data.remote.dto.AttendanceStatus
 import com.lushaiedupls.data.remote.dto.AttendanceTotals
+import com.lushaiedupls.data.remote.dto.ClassOut
 import com.lushaiedupls.data.remote.dto.DayOfWeek
+import com.lushaiedupls.data.remote.dto.InstitutionOut
 import com.lushaiedupls.data.remote.dto.MemberOut
 import com.lushaiedupls.data.remote.dto.NotificationAudience
 import com.lushaiedupls.data.remote.dto.NotificationOut
@@ -30,9 +32,11 @@ import com.lushaiedupls.data.remote.dto.TeacherOverview
 import com.lushaiedupls.data.remote.dto.TeachingUnitOut
 import com.lushaiedupls.data.remote.dto.TeachingUnitStatus
 import com.lushaiedupls.data.remote.dto.UnitAttendanceSummary
+import com.lushaiedupls.data.remote.dto.UnitMonthAttendance
 import com.lushaiedupls.data.remote.dto.UserSummary
 import com.lushaiedupls.data.remote.dto.WeekSlot
 import com.lushaiedupls.data.remote.dto.WeekView
+import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
@@ -55,6 +59,7 @@ object TeacherUiMappers {
                 },
                 subjectIconRes = subjectIcon(unit.subject_name),
                 subjectName = unit.subject_name,
+                institutionId = unit.institution_id.orEmpty(),
             )
         }
 
@@ -84,6 +89,59 @@ object TeacherUiMappers {
             }
         }
     }
+
+    /** Institutions this teacher is assigned to, using catalog names/order when available. */
+    fun assignedInstitutions(
+        units: List<TeachingUnitOut>,
+        catalog: List<InstitutionOut>,
+    ): List<InstitutionOut> {
+        val assigned = units.filter { it.status == TeachingUnitStatus.ACTIVE }.ifEmpty { units }
+        val chips = institutionChips(assigned)
+        if (chips.isEmpty()) return emptyList()
+        val byId = catalog.associateBy { it.id }
+        return chips.map { chip ->
+            byId[chip.id]?.takeIf { it.is_active } ?: InstitutionOut(
+                id = chip.id,
+                name = chip.name,
+            )
+        }.sortedWith(compareBy({ it.sort_order }, { it.name }))
+    }
+
+    /** Classes this teacher is assigned to in [institutionId]. */
+    fun assignedClasses(
+        units: List<TeachingUnitOut>,
+        institutionId: String,
+    ): List<ClassOut> {
+        val assigned = units.filter { it.status == TeachingUnitStatus.ACTIVE }.ifEmpty { units }
+        val scoped = unitsForInstitution(assigned, institutionId)
+        val seen = linkedSetOf<String>()
+        var order = 0
+        return scoped.mapNotNull { unit ->
+            if (!seen.add(unit.class_id)) return@mapNotNull null
+            order += 1
+            ClassOut(
+                id = unit.class_id,
+                name = classLabel(unit.class_name),
+                sort_order = order,
+                is_active = true,
+                institution_id = unit.institution_id.orEmpty().ifBlank { institutionId },
+                institution_name = unit.institution_name,
+            )
+        }
+    }
+
+    /** Days present in the sparse month payload — missing dates were not marked. */
+    fun markedRollDays(
+        monthView: UnitMonthAttendance,
+        month: YearMonth,
+    ): Set<Int> = monthView.days.mapNotNull { status ->
+        val date = runCatching {
+            val value = status.day
+            if (value.length >= 10) LocalDate.parse(value.take(10)) else LocalDate.parse(value)
+        }.getOrNull() ?: return@mapNotNull null
+        if (YearMonth.from(date) != month) return@mapNotNull null
+        date.dayOfMonth
+    }.toSet()
 
     fun unitsForInstitution(
         units: List<TeachingUnitOut>,

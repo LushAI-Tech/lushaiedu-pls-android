@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material.icons.automirrored.outlined.FactCheck
 import androidx.compose.material.icons.automirrored.outlined.StickyNote2
+import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Class
@@ -41,6 +43,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,19 +53,30 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.lushaiedupls.BuildConfig
 import com.lushaiedupls.R
 import com.lushaiedupls.data.mock.AttendanceRecord
 import com.lushaiedupls.data.mock.AttendanceStatus
 import com.lushaiedupls.data.mock.OverviewIcon
+import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
@@ -114,16 +128,25 @@ fun UserAvatar(
     size: Dp,
     modifier: Modifier = Modifier,
     contentDescription: String? = null,
+    cacheKey: Long = 0L,
 ) {
+    val context = LocalContext.current
     val imageModifier = modifier
         .size(size)
         .clip(CircleShape)
-    val imageUrl = url?.takeIf { it.isNotBlank() }
+    val imageUrl = AuthRepository.normalizeAvatarUrl(url)
     if (imageUrl != null) {
         AsyncImage(
-            model = imageUrl,
+            model = ImageRequest.Builder(context)
+                .data(imageUrl)
+                .memoryCacheKey("$imageUrl#$cacheKey")
+                .diskCacheKey("$imageUrl#$cacheKey")
+                .crossfade(true)
+                .build(),
             contentDescription = contentDescription,
+            contentScale = ContentScale.Crop,
             modifier = imageModifier,
+            placeholder = painterResource(R.drawable.ic_avatar_placeholder),
             error = painterResource(R.drawable.ic_avatar_placeholder),
         )
     } else {
@@ -139,6 +162,8 @@ fun UserAvatar(
 fun AppTopBar(
     displayName: String,
     notificationCount: Int = 0,
+    avatarUrl: String? = null,
+    avatarCacheKey: Long = 0L,
     onNotificationClick: () -> Unit = {},
     onProfileClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -147,19 +172,16 @@ fun AppTopBar(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Image(
-            painter = painterResource(R.drawable.ic_avatar_placeholder),
+        UserAvatar(
+            url = avatarUrl,
+            size = 48.dp,
             contentDescription = stringResource(R.string.cd_avatar),
-            modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .then(
-                    if (onProfileClick != null) {
-                        Modifier.clickable(onClick = onProfileClick)
-                    } else {
-                        Modifier
-                    },
-                ),
+            cacheKey = avatarCacheKey,
+            modifier = if (onProfileClick != null) {
+                Modifier.clickable(onClick = onProfileClick)
+            } else {
+                Modifier
+            },
         )
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -236,6 +258,7 @@ fun MetricCard(
     iconKind: OverviewIcon,
     modifier: Modifier = Modifier,
     cardHeight: Dp = 88.dp,
+    valueFontSize: TextUnit = 26.sp,
 ) {
     val bg = if (emphasized) BrandBlack else BgLight
     val fg = if (emphasized) Color.White else BrandBlack
@@ -269,24 +292,95 @@ fun MetricCard(
                 modifier = Modifier.size(26.dp),
             )
             Spacer(modifier = Modifier.width(12.dp))
-            Column {
-                Text(
+            Column(modifier = Modifier.weight(1f)) {
+                FittedMetricValue(
                     text = value,
                     color = fg,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 26.sp,
-                    fontFamily = FontFamily.SansSerif,
-                    lineHeight = 28.sp,
+                    baseSize = valueFontSize,
                 )
                 Text(
                     text = label,
                     color = fg.copy(alpha = 0.9f),
                     fontSize = 12.sp,
                     fontFamily = FontFamily.SansSerif,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
     }
+}
+
+/** Shrinks currency amounts so they stay on one line, matching iOS `minimumScaleFactor(0.55)`. */
+@Composable
+private fun FittedMetricValue(
+    text: String,
+    color: Color,
+    baseSize: TextUnit,
+) {
+    val measurer = rememberTextMeasurer()
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val maxWidth = constraints.maxWidth
+        val fontSize = remember(text, baseSize, maxWidth) {
+            fittedSingleLineSize(
+                measurer = measurer,
+                text = text,
+                baseSize = baseSize,
+                minSize = baseSize * 0.55f,
+                maxWidthPx = maxWidth,
+            )
+        }
+        Text(
+            text = text,
+            color = color,
+            fontWeight = FontWeight.Bold,
+            fontSize = fontSize,
+            fontFamily = FontFamily.SansSerif,
+            lineHeight = fontSize * 1.1f,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Clip,
+        )
+    }
+}
+
+private fun fittedSingleLineSize(
+    measurer: TextMeasurer,
+    text: String,
+    baseSize: TextUnit,
+    minSize: TextUnit,
+    maxWidthPx: Int,
+): TextUnit {
+    if (maxWidthPx <= 0 || maxWidthPx == Constraints.Infinity) return baseSize
+    fun overflows(size: TextUnit): Boolean {
+        val layout = measurer.measure(
+            text = text,
+            style = TextStyle(
+                fontSize = size,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.SansSerif,
+            ),
+            overflow = TextOverflow.Clip,
+            softWrap = false,
+            maxLines = 1,
+            constraints = Constraints(maxWidth = maxWidthPx),
+        )
+        return layout.didOverflowWidth || layout.lineCount > 1
+    }
+    if (!overflows(baseSize)) return baseSize
+    var low = minSize.value
+    var high = baseSize.value
+    var best = minSize
+    repeat(8) {
+        val mid = ((low + high) / 2f).sp
+        if (overflows(mid)) {
+            high = mid.value
+        } else {
+            best = mid
+            low = mid.value
+        }
+    }
+    return best
 }
 
 @Composable
@@ -344,6 +438,7 @@ private fun iconFor(kind: OverviewIcon): ImageVector = when (kind) {
     OverviewIcon.Staff -> Icons.Outlined.Person
     OverviewIcon.Classes -> Icons.Outlined.Class
     OverviewIcon.Attendance -> Icons.AutoMirrored.Outlined.FactCheck
+    OverviewIcon.Sessions -> Icons.Outlined.AccessTime
 }
 
 @Composable
@@ -554,6 +649,24 @@ fun LogoutButton(
             fontSize = 16.sp,
         )
     }
+}
+
+@Composable
+fun MenuVersionFooter(
+    modifier: Modifier = Modifier,
+    versionName: String = BuildConfig.VERSION_NAME,
+) {
+    val label = versionName.ifBlank { "—" }
+    Text(
+        text = stringResource(R.string.menu_version, label),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp),
+        textAlign = TextAlign.Center,
+        color = TextSecondary,
+        fontSize = 13.sp,
+        fontFamily = FontFamily.SansSerif,
+    )
 }
 
 @Composable

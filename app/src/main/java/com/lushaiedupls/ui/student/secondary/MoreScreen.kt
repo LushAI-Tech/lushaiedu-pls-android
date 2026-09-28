@@ -5,7 +5,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lushaiedupls.R
 import com.lushaiedupls.data.repository.StudentRepository
+import com.lushaiedupls.ui.common.AdaptiveChunkedGrid
 import com.lushaiedupls.ui.common.ApprovalNeededPanel
 import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
@@ -123,6 +123,8 @@ private fun MoreTilesContent(
             filled = true,
             onClick = onFees,
         ),
+        // Placeholders for future More actions.
+        MoreTile(label = null, icon = null, filled = false, onClick = {}),
         MoreTile(label = null, icon = null, filled = false, onClick = {}),
         MoreTile(label = null, icon = null, filled = false, onClick = {}),
     )
@@ -137,17 +139,15 @@ private fun MoreTilesContent(
     ) {
         MoreTitle()
         Spacer(modifier = Modifier.height(12.dp))
-        tiles.chunked(2).forEach { row ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                row.forEach { tile ->
-                    MoreTileCard(tile = tile, modifier = Modifier.weight(1f))
-                }
-                if (row.size == 1) Spacer(modifier = Modifier.weight(1f))
-            }
-            Spacer(modifier = Modifier.height(14.dp))
+        AdaptiveChunkedGrid(
+            items = tiles,
+            compactColumns = 2,
+            mediumColumns = 3,
+            expandedColumns = 4,
+            horizontalSpacing = 14.dp,
+            verticalSpacing = 14.dp,
+        ) { tile, _ ->
+            MoreTileCard(tile = tile, modifier = Modifier.fillMaxWidth())
         }
     }
 }

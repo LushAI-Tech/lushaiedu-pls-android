@@ -24,16 +24,18 @@
 -keepattributes Signature, InnerClasses, EnclosingMethod, Exceptions
 -keepattributes RuntimeVisibleAnnotations, RuntimeVisibleParameterAnnotations, AnnotationDefault
 
--keep,allowobfuscation,allowshrinking interface com.lushaiedupls.data.remote.api.** { *; }
+# Keep API interfaces; do not shrink — R8 would erase suspend return types to Object.
+-keep,allowobfuscation interface com.lushaiedupls.data.remote.api.** { *; }
 
--keepclasseswithmembers,allowobfuscation,allowshrinking class * {
+-keepclasseswithmembers,allowobfuscation class * {
     @retrofit2.http.* <methods>;
 }
 
+# Suspend functions wrap the return type in Continuation<T>; keep the signature.
 -keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation
 
 -if interface * { @retrofit2.http.* public *** *(...); }
--keep,allowoptimization,allowshrinking,allowobfuscation class <3>
+-keep,allowoptimization,allowobfuscation class <3>
 
 -keep,allowobfuscation,allowshrinking interface retrofit2.Call
 -keep,allowobfuscation,allowshrinking class retrofit2.Response
@@ -81,12 +83,15 @@
     public static ** serializer(...);
 }
 
--keep,allowobfuscation,allowshrinking @kotlinx.serialization.Serializable class com.lushaiedupls.data.remote.dto.** {
+# Do not allowshrinking: Retrofit only sees these types via reflection on API
+# method signatures. Shrinking replaces unused return types with Object and
+# yields "Unable to create converter for class java.lang.Object".
+-keep,allowobfuscation @kotlinx.serialization.Serializable class com.lushaiedupls.data.remote.dto.** {
     <fields>;
     <init>(...);
 }
 
--keep,allowobfuscation,allowshrinking class com.lushaiedupls.data.remote.dto.**$$serializer {
+-keep,allowobfuscation class com.lushaiedupls.data.remote.dto.**$$serializer {
     <init>(...);
     public kotlinx.serialization.KSerializer serializer(...);
 }
@@ -109,6 +114,8 @@
 # Google Sign-In / Identity
 -keep class com.google.android.libraries.identity.** { *; }
 -dontwarn com.google.android.libraries.identity.**
+-keep class androidx.credentials.** { *; }
+-dontwarn androidx.credentials.**
 
 # Coil (avatars)
 -dontwarn coil.**

@@ -29,9 +29,11 @@ import androidx.compose.ui.unit.sp
 import com.lushaiedupls.R
 import com.lushaiedupls.data.mapper.FeeHistoryMappers
 import com.lushaiedupls.data.mapper.FeeMonthGroup
+import com.lushaiedupls.data.mock.OverviewIcon
 import com.lushaiedupls.data.remote.dto.FeeHistoryResponse
 import com.lushaiedupls.data.remote.dto.FeeLedgerOut
 import com.lushaiedupls.data.remote.dto.FeePaymentStatus
+import com.lushaiedupls.ui.common.MetricCard
 import com.lushaiedupls.ui.parent.formatInrFromPaise
 import com.lushaiedupls.ui.parent.formatIsoDate
 import com.lushaiedupls.ui.theme.BgWhite
@@ -51,23 +53,32 @@ fun FeeHistorySections(
     history: FeeHistoryResponse,
     modifier: Modifier = Modifier,
     showOverallTotals: Boolean = true,
-    showMonthTotals: Boolean = true,
+    showMonthTotals: Boolean = false,
 ) {
     val groups = FeeHistoryMappers.monthGroups(history.rows)
     Column(modifier = modifier.fillMaxWidth()) {
         if (showOverallTotals) {
-            Text(
-                text = stringResource(
-                    R.string.parent_fees_totals,
-                    formatInrFromPaise(history.total_amount_paise),
-                    formatInrFromPaise(history.paid_amount_paise),
-                    formatInrFromPaise(history.pending_amount_paise),
-                ),
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 14.sp,
-                color = BrandBlack,
-                fontFamily = FontFamily.SansSerif,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                MetricCard(
+                    label = stringResource(R.string.parent_fee_paid),
+                    value = formatInrFromPaise(history.paid_amount_paise),
+                    emphasized = true,
+                    iconKind = OverviewIcon.Fees,
+                    modifier = Modifier.weight(1f),
+                    valueFontSize = 18.sp,
+                )
+                MetricCard(
+                    label = stringResource(R.string.parent_fee_pending),
+                    value = formatInrFromPaise(history.pending_amount_paise),
+                    emphasized = false,
+                    iconKind = OverviewIcon.Fees,
+                    modifier = Modifier.weight(1f),
+                    valueFontSize = 18.sp,
+                )
+            }
             Spacer(modifier = Modifier.height(16.dp))
         }
         groups.forEachIndexed { index, group ->

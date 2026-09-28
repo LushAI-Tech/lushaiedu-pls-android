@@ -22,8 +22,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,17 +38,21 @@ import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BrandBlack
 import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.LushAIEdu_PLSTheme
-import com.lushaiedupls.ui.theme.TextSecondary
 
 @Composable
 fun SelectClassRoute(
     userSessionStore: UserSessionStore,
     studentRepository: StudentRepository,
+    institutionId: String,
     onBack: () -> Unit,
     onContinue: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SelectClassViewModel = viewModel(
-        factory = SelectClassViewModel.provideFactory(userSessionStore, studentRepository),
+        factory = SelectClassViewModel.provideFactory(
+            userSessionStore,
+            studentRepository,
+            institutionId,
+        ),
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -83,12 +85,17 @@ fun SelectClassScreen(
     ) {
         LushAiEduBrandHeader(logoSize = 104.dp)
         Spacer(modifier = Modifier.height(28.dp))
+        val institutionName = uiState.institutionName.takeIf { it.isNotBlank() }
         OnboardingStepHeader(
             title = stringResource(
                 if (uiState.allowMultiSelect) R.string.select_classes else R.string.select_class,
             ),
             step = 2,
             totalSteps = 3,
+            subtitle = institutionName,
+            highlightSubtitle = institutionName != null,
+            emphasizeSubtitle = institutionName != null,
+            bridgeText = if (institutionName != null) stringResource(R.string.select_classes_bridge_for) else null,
         )
         Spacer(modifier = Modifier.height(24.dp))
 

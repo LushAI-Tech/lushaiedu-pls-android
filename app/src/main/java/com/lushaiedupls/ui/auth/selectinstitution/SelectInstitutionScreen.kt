@@ -22,8 +22,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -83,7 +81,9 @@ fun SelectInstitutionScreen(
         LushAiEduBrandHeader(logoSize = 104.dp)
         Spacer(modifier = Modifier.height(28.dp))
         OnboardingStepHeader(
-            title = stringResource(R.string.select_institution),
+            title = stringResource(
+                if (uiState.isTeacher) R.string.select_institutions else R.string.select_institution,
+            ),
             step = 1,
             totalSteps = 3,
         )
@@ -116,7 +116,7 @@ fun SelectInstitutionScreen(
                             row.forEach { option ->
                                 SelectionTile(
                                     label = option.name,
-                                    selected = option.id == uiState.selectedInstitutionId,
+                                    selected = option.id in uiState.selectedInstitutionIds,
                                     onClick = { onInstitutionSelected(option.id) },
                                     icon = Icons.Outlined.Apartment,
                                     modifier = Modifier.weight(1f),
@@ -138,7 +138,7 @@ fun SelectInstitutionScreen(
         SelectionNavButtons(
             onBack = onBack,
             onContinue = onContinue,
-            continueEnabled = !uiState.isLoading && !uiState.selectedInstitutionId.isNullOrBlank(),
+            continueEnabled = !uiState.isLoading && uiState.selectedInstitutionIds.isNotEmpty(),
         )
     }
 }
@@ -153,7 +153,8 @@ private fun SelectInstitutionPreview() {
                     InstitutionOption("1", "Main Institution"),
                     InstitutionOption("2", "North Campus"),
                 ),
-                selectedInstitutionId = "1",
+                selectedInstitutionIds = setOf("1"),
+                isTeacher = true,
             ),
             onInstitutionSelected = {},
             onBack = {},

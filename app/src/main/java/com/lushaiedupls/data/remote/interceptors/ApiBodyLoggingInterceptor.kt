@@ -1,6 +1,5 @@
 package com.lushaiedupls.data.remote.interceptors
 
-import android.util.Log
 import com.lushaiedupls.data.remote.ApiHttpLogger
 import okhttp3.Interceptor
 import okhttp3.MediaType
@@ -94,20 +93,10 @@ class ApiBodyLoggingInterceptor : Interceptor {
     }
 
     private fun chunkLog(message: String) {
-        if (message.length <= MAX_LOG_CHUNK) {
-            Log.d(ApiHttpLogger.TAG, message)
-            return
-        }
-        var start = 0
-        while (start < message.length) {
-            val end = minOf(start + MAX_LOG_CHUNK, message.length)
-            Log.d(ApiHttpLogger.TAG, message.substring(start, end))
-            start = end
-        }
+        ApiHttpLogger.log(message)
     }
 
     private companion object {
-        const val MAX_LOG_CHUNK = 3500
         const val MAX_PRETTY_PRINT_LENGTH = 1500
     }
 }

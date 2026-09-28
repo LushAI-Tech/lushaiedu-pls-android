@@ -37,9 +37,11 @@ import com.lushaiedupls.data.mock.AttendanceRecord
 import com.lushaiedupls.data.mock.OverviewMetric
 import com.lushaiedupls.data.mock.SessionSummary
 import com.lushaiedupls.data.mock.StudentMockRepository
+import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.session.UserSessionStore
 import com.lushaiedupls.ui.common.AppTopBar
+import com.lushaiedupls.ui.common.AdaptiveChunkedGrid
 import com.lushaiedupls.ui.common.ApprovalNeededPanel
 import com.lushaiedupls.ui.common.AttendanceDonut
 import com.lushaiedupls.ui.common.AttendanceRecordCard
@@ -65,11 +67,16 @@ private val LegendGray = Color(0xFF8B93A7)
 fun StudentHomeRoute(
     userSessionStore: UserSessionStore,
     studentRepository: StudentRepository,
+    authRepository: AuthRepository? = null,
     onNotificationsClick: () -> Unit = {},
     onProfileClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: StudentHomeViewModel = viewModel(
-        factory = StudentHomeViewModel.provideFactory(userSessionStore, studentRepository),
+        factory = StudentHomeViewModel.provideFactory(
+            userSessionStore,
+            studentRepository,
+            authRepository,
+        ),
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -81,7 +88,7 @@ fun StudentHomeRoute(
         uiState = uiState,
         onNotificationsClick = onNotificationsClick,
         onProfileClick = onProfileClick,
-        onRefresh = viewModel::refresh,
+        onRefresh = { viewModel.refresh(forceRefresh = true) },
         modifier = modifier,
     )
 }
@@ -108,6 +115,8 @@ fun StudentHomeScreen(
         ) {
             AppTopBar(
                 displayName = uiState.displayName,
+                avatarUrl = uiState.avatarUrl,
+                avatarCacheKey = uiState.avatarCacheKey,
                 notificationCount = uiState.notificationCount,
                 onNotificationClick = onNotificationsClick,
                 onProfileClick = onProfileClick,
@@ -164,6 +173,8 @@ private fun HomeDashboardContent(
     ) {
         AppTopBar(
             displayName = uiState.displayName,
+            avatarUrl = uiState.avatarUrl,
+            avatarCacheKey = uiState.avatarCacheKey,
             notificationCount = uiState.notificationCount,
             onNotificationClick = onNotificationsClick,
             onProfileClick = onProfileClick,
@@ -188,25 +199,20 @@ private fun HomeDashboardContent(
 
 @Composable
 private fun OverviewGrid(metrics: List<OverviewMetric>) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        metrics.chunked(2).forEachIndexed { rowIndex, row ->
-            val darkTheme = rowIndex == 0
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                row.forEach { metric ->
-                    MetricCard(
-                        label = metric.label,
-                        value = metric.value,
-                        emphasized = darkTheme,
-                        iconKind = metric.iconKind,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                if (row.size == 1) Spacer(modifier = Modifier.weight(1f))
-            }
-        }
+    // Always 2 columns so black (emphasized) stay on top and white below.
+    AdaptiveChunkedGrid(
+        items = metrics,
+        compactColumns = 2,
+        mediumColumns = 2,
+        expandedColumns = 2,
+    ) { metric, _ ->
+        MetricCard(
+            label = metric.label,
+            value = metric.value,
+            emphasized = metric.emphasized,
+            iconKind = metric.iconKind,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 

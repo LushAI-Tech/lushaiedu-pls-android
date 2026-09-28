@@ -65,9 +65,14 @@ fun AnimatedFilterChipRow(
     modifier: Modifier = Modifier,
     label: String? = null,
     enabled: Boolean = true,
+    allowUnselected: Boolean = false,
 ) {
     if (options.isEmpty()) return
-    val safeIndex = selectedIndex.coerceIn(0, options.lastIndex)
+    val safeIndex = if (allowUnselected) {
+        selectedIndex.takeIf { it in options.indices } ?: -1
+    } else {
+        selectedIndex.coerceIn(0, options.lastIndex)
+    }
     val positions = remember { mutableStateMapOf<Int, ChipRect>() }
     var measured by remember { mutableStateOf(false) }
     SideEffect {
@@ -107,7 +112,7 @@ fun AnimatedFilterChipRow(
                 .horizontalScroll(rememberScrollState())
                 .padding(4.dp)
                 .drawBehind {
-                    if (animatedW > 0f) {
+                    if (safeIndex >= 0 && animatedW > 0f) {
                         drawRoundRect(
                             color = BrandBlack,
                             topLeft = Offset(animatedX, 0f),

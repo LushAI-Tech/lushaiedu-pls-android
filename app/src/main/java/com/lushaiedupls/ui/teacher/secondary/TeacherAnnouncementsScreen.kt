@@ -1,11 +1,6 @@
 package com.lushaiedupls.ui.teacher.secondary
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -101,13 +97,13 @@ fun TeacherAnnouncementsScreen(
     modifier: Modifier = Modifier,
 ) {
     var managing by rememberSaveable { mutableStateOf(false) }
-    var selected by rememberSaveable { mutableStateOf<AppNotification?>(null) }
+    var detailItem by remember { mutableStateOf<AppNotification?>(null) }
 
-    BackHandler(enabled = uiState.composing || selected != null) {
-        when {
-            uiState.composing -> onBack()
-            else -> selected = null
-        }
+    BackHandler(enabled = detailItem != null) {
+        detailItem = null
+    }
+    BackHandler(enabled = uiState.composing && detailItem == null) {
+        onBack()
     }
 
     Box(
@@ -116,7 +112,18 @@ fun TeacherAnnouncementsScreen(
             .background(BgWhite)
             .imePadding(),
     ) {
-        if (uiState.composing) {
+        val detail = detailItem
+        when {
+            detail != null && !uiState.composing -> {
+                NotificationDetailScreen(
+                    notification = detail,
+                    onBack = { detailItem = null },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(BgWhite),
+                )
+            }
+            uiState.composing -> {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -161,7 +168,8 @@ fun TeacherAnnouncementsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-        } else {
+            }
+            else -> {
             LushPullToRefreshBox(
                 isRefreshing = uiState.isRefreshing,
                 onRefresh = onRefresh,
@@ -178,7 +186,7 @@ fun TeacherAnnouncementsScreen(
                         title = stringResource(R.string.teacher_announcements_title),
                         onBack = onBack,
                         managing = managing,
-                        showManage = true,
+                        showManage = uiState.announcements.isNotEmpty(),
                         onToggleManage = { managing = !managing },
                     )
                     Spacer(modifier = Modifier.height(20.dp))
@@ -190,13 +198,13 @@ fun TeacherAnnouncementsScreen(
                         uiState.announcements.forEach { item ->
                             NotificationListCard(
                                 item = item,
-                                onClick = { selected = item },
+                                onClick = { detailItem = item },
                                 showUnreadDot = false,
                                 trailingContent = if (managing) {
                                     {
                                         AdminEditDeleteIcons(
                                             onEdit = {
-                                                selected = null
+                                                detailItem = null
                                                 onStartEdit(item)
                                             },
                                             onDelete = { onDelete(item.id) },
@@ -235,18 +243,6 @@ fun TeacherAnnouncementsScreen(
                     modifier = Modifier.size(28.dp),
                 )
             }
-        }
-
-        AnimatedVisibility(
-            visible = selected != null && !uiState.composing,
-            enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
-            exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
-        ) {
-            selected?.let { announcement ->
-                NotificationDetailScreen(
-                    notification = announcement,
-                    onBack = { selected = null },
-                )
             }
         }
     }

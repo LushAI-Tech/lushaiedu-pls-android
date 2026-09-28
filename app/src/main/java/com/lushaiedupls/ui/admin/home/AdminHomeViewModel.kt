@@ -7,7 +7,9 @@ import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.dto.AttendanceTotals
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.AdminRepository
+import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.data.session.UserSessionStore
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.viewModelFactory
 import java.time.YearMonth
 import kotlin.math.roundToInt
@@ -21,6 +23,8 @@ import kotlinx.coroutines.launch
 
 data class AdminHomeUiState(
     val displayName: String = "",
+    val avatarUrl: String? = null,
+    val avatarCacheKey: Long = 0L,
     val monthLabel: String = "",
     val notificationCount: Int = 0,
     val institutions: List<String> = emptyList(),
@@ -45,6 +49,8 @@ class AdminHomeViewModel(
     private val _uiState = MutableStateFlow(
         AdminHomeUiState(
             displayName = userSessionStore.getDisplayName(),
+            avatarUrl = AuthRepository.normalizeAvatarUrl(userSessionStore.getAvatarUrl()),
+            avatarCacheKey = userSessionStore.getAvatarRevision(),
             isLoading = true,
         ),
     )
@@ -78,14 +84,9 @@ class AdminHomeViewModel(
             val showSkeleton = _uiState.value.institutions.isEmpty() &&
                 _uiState.value.totalStudents == 0 &&
                 _uiState.value.totalTeachers == 0
-            if (showSkeleton) {
-                _uiState.update {
-                    it.copy(isLoading = true, isRefreshing = false, errorMessage = null)
-                }
-            } else {
-                _uiState.update {
-                    it.copy(isRefreshing = true, isLoading = false, errorMessage = null)
-                }
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoading, !showSkeleton)
+            _uiState.update {
+                it.copy(isLoading = loading, isRefreshing = refreshing, errorMessage = null)
             }
             val month = YearMonth.now().toString()
             coroutineScope {
@@ -110,15 +111,22 @@ class AdminHomeViewModel(
                 if (selectedInstitutionId != null) {
                     userSessionStore.setInstitutionId(selectedInstitutionId)
                 }
-                when (val result = adminRepository.overview(month, selectedInstitutionId)) {
+                when (val result = adminRepository.overview(
+                    month,
+                    selectedInstitutionId,
+                    forceRefresh = refreshing,
+                )) {
                     is NetworkResult.Success -> {
                         val overview = result.data
-                        unreadDeferred.await()
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
                                 isRefreshing = false,
                                 displayName = userSessionStore.getDisplayName(),
+                                avatarUrl = AuthRepository.normalizeAvatarUrl(
+                                    userSessionStore.getAvatarUrl(),
+                                ),
+                                avatarCacheKey = userSessionStore.getAvatarRevision(),
                                 monthLabel = overview.month,
                                 institutions = institutionNames,
                                 institutionIds = institutionIds,
@@ -132,6 +140,7 @@ class AdminHomeViewModel(
                                 errorMessage = null,
                             )
                         }
+                        unreadDeferred.await()
                         prefetchClasses(selectedInstitutionId)
                     }
                     else -> _uiState.update {

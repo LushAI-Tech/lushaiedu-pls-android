@@ -1,6 +1,7 @@
 package com.lushaiedupls
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -25,11 +26,15 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.lushaiedupls.push.PushAction
 import com.lushaiedupls.push.PushActions
 import com.lushaiedupls.ui.auth.selectrole.UserRole
+import com.lushaiedupls.ui.common.KeyboardDismissState
+import com.lushaiedupls.ui.common.LocalKeyboardDismiss
+import com.lushaiedupls.ui.common.dismissKeyboardOnOutsideTap
 import com.lushaiedupls.ui.navigation.AppNavGraph
 import com.lushaiedupls.ui.splash.BrandAnchorState
 import com.lushaiedupls.ui.splash.LocalBrandAnchors
 import com.lushaiedupls.ui.splash.LushSplashScreen
 import com.lushaiedupls.ui.theme.LushAIEdu_PLSTheme
+import com.lushaiedupls.ui.theme.withForcedLightMode
 import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : ComponentActivity() {
@@ -39,6 +44,10 @@ class MainActivity : ComponentActivity() {
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { }
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(newBase.withForcedLightMode())
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
@@ -56,8 +65,16 @@ class MainActivity : ComponentActivity() {
                 val brandAnchors = remember { BrandAnchorState() }
                 var showSplash by rememberSaveable { mutableStateOf(true) }
 
-                CompositionLocalProvider(LocalBrandAnchors provides brandAnchors) {
-                    Box(modifier = Modifier.fillMaxSize()) {
+                val keyboardDismiss = remember { KeyboardDismissState() }
+                CompositionLocalProvider(
+                    LocalBrandAnchors provides brandAnchors,
+                    LocalKeyboardDismiss provides keyboardDismiss,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .dismissKeyboardOnOutsideTap(keyboardDismiss),
+                    ) {
                         AppNavGraph(
                             userSessionStore = container.userSessionStore,
                             authRepository = container.authRepository,

@@ -48,7 +48,9 @@ fun SelectSubjectRoute(
     userSessionStore: UserSessionStore,
     studentRepository: StudentRepository,
     authRepository: AuthRepository,
+    institutionId: String,
     onBack: () -> Unit,
+    onContinueToNextInstitution: (String) -> Unit,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SelectSubjectViewModel = viewModel(
@@ -56,14 +58,16 @@ fun SelectSubjectRoute(
             userSessionStore,
             studentRepository,
             authRepository,
+            institutionId,
         ),
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    LaunchedEffect(uiState.done) {
+    LaunchedEffect(uiState.done, uiState.nextInstitutionId) {
         if (uiState.done) {
+            val nextId = uiState.nextInstitutionId
             viewModel.clearDone()
-            onDone()
+            if (nextId != null) onContinueToNextInstitution(nextId) else onDone()
         }
     }
     SelectSubjectScreen(
@@ -112,6 +116,8 @@ fun SelectSubjectScreen(
             title = stringResource(R.string.select_subjects),
             step = 3,
             totalSteps = 3,
+            subtitle = uiState.institutionName.takeIf { uiState.showInstitutionContext },
+            highlightSubtitle = uiState.showInstitutionContext,
         )
         Spacer(modifier = Modifier.height(24.dp))
 

@@ -148,6 +148,22 @@ data class TeacherInstitutionAssignmentRequest(
 )
 
 @Serializable
+data class TeacherAssignedUnitOut(
+    val teaching_unit_id: String,
+    val class_id: String,
+    val class_name: String,
+    val subject_id: String,
+    val subject_name: String,
+)
+
+@Serializable
+data class TeacherInstitutionAssignmentsResponse(
+    val teacher_id: String,
+    val institution_id: String,
+    val assignments: List<TeacherAssignedUnitOut> = emptyList(),
+)
+
+@Serializable
 data class ClassReassignRequest(
     val class_id: String,
 )

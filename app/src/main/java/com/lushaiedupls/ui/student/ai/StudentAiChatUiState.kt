@@ -15,9 +15,11 @@ data class PendingAsk(
 data class StudentAiChatUiState(
     val chapterId: String = "",
     val chapterTitle: String = "",
+    val textbookId: String = "",
     val messages: List<AiChatMessage> = emptyList(),
     val suggestions: List<String> = emptyList(),
     val quickCheck: AiQuickCheck? = null,
+    val quickCheckMessageId: String? = null,
     val syllabus: List<AiSyllabusItem> = emptyList(),
     val textbookQuestions: List<AiMenuContentItem> = emptyList(),
     val examPrepPyqs: List<AiMenuContentItem> = emptyList(),

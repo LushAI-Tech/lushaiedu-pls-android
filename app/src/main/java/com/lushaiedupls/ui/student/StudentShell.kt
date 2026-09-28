@@ -1,11 +1,6 @@
 package com.lushaiedupls.ui.student
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -15,7 +10,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -27,6 +21,16 @@ import com.lushaiedupls.data.mock.SubjectChapterStats
 import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.session.UserSessionStore
+import com.lushaiedupls.ui.common.AdaptiveRoleScaffold
+import com.lushaiedupls.ui.common.LegalDocumentScreen
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
+import com.lushaiedupls.ui.common.StudentPageSkeleton
+import com.lushaiedupls.ui.common.StudentSkeletonKind
+import com.lushaiedupls.ui.navigation.lushEnterTransition
+import com.lushaiedupls.ui.navigation.lushExitTransition
+import com.lushaiedupls.ui.navigation.lushPopEnterTransition
+import com.lushaiedupls.ui.navigation.lushPopExitTransition
+import com.lushaiedupls.ui.navigation.navigateToRoleTab
 import com.lushaiedupls.ui.student.ai.StudentAiChatRoute
 import com.lushaiedupls.ui.student.ai.StudentAiHubRoute
 import com.lushaiedupls.ui.student.attendance.StudentAttendanceRoute
@@ -34,26 +38,17 @@ import com.lushaiedupls.ui.student.calendar.StudentCalendarRoute
 import com.lushaiedupls.ui.student.fees.StudentFeesRoute
 import com.lushaiedupls.ui.student.home.StudentHomeRoute
 import com.lushaiedupls.ui.student.linkparent.StudentLinkParentRoute
-import com.lushaiedupls.ui.common.LegalDocumentScreen
 import com.lushaiedupls.ui.student.menu.StudentAccountRoute
 import com.lushaiedupls.ui.student.menu.StudentMenuOverlay
-import com.lushaiedupls.ui.common.LushPullToRefreshBox
-import com.lushaiedupls.ui.common.StudentPageSkeleton
-import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.student.secondary.ChaptersScreen
 import com.lushaiedupls.ui.student.secondary.ChaptersViewModel
-import com.lushaiedupls.ui.student.secondary.SubjectContentUnavailableScreen
 import com.lushaiedupls.ui.student.secondary.MoreRoute
 import com.lushaiedupls.ui.student.secondary.NotificationsScreen
 import com.lushaiedupls.ui.student.secondary.NotificationsViewModel
 import com.lushaiedupls.ui.student.secondary.QuizScreen
 import com.lushaiedupls.ui.student.secondary.QuizViewModel
+import com.lushaiedupls.ui.student.secondary.SubjectContentUnavailableScreen
 import com.lushaiedupls.ui.student.secondary.TimetableRoute
-import com.lushaiedupls.ui.theme.BgWhite
-import com.lushaiedupls.ui.navigation.lushEnterTransition
-import com.lushaiedupls.ui.navigation.lushExitTransition
-import com.lushaiedupls.ui.navigation.lushPopEnterTransition
-import com.lushaiedupls.ui.navigation.lushPopExitTransition
 
 private val StudentTabRoutes = StudentTab.entries.map { it.route }.toSet()
 
@@ -96,36 +91,23 @@ fun StudentShell(
     var showMenuOverlay by remember { mutableStateOf(false) }
 
     fun navigateTab(route: String) {
-        tabNavController.navigate(route) {
-            popUpTo(tabNavController.graph.findStartDestination().id) {
-                saveState = true
-            }
-            launchSingleTop = true
-            restoreState = true
-        }
+        tabNavController.navigateToRoleTab(route, moreRoute = StudentRoutes.MORE)
     }
 
-    Scaffold(
-        modifier = modifier
-            .fillMaxSize()
-            .background(BgWhite)
-            .systemBarsPadding(),
-        containerColor = BgWhite,
+    AdaptiveRoleScaffold(
+        showNav = !inAiFlow,
         bottomBar = {
-            if (!inAiFlow) {
-                StudentBottomBar(
-                    selectedTab = selectedTab,
-                    onTabSelected = { tab -> navigateTab(tab.route) },
-                )
-            }
+            StudentBottomBar(
+                selectedTab = selectedTab,
+                onTabSelected = { tab -> navigateTab(tab.route) },
+            )
         },
-    ) { innerPadding ->
+        modifier = modifier,
+    ) {
         NavHost(
             navController = tabNavController,
             startDestination = StudentRoutes.HOME,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
+            modifier = Modifier.fillMaxSize(),
             enterTransition = { lushEnterTransition(tabRoutes = StudentTabRoutes) },
             exitTransition = { lushExitTransition(tabRoutes = StudentTabRoutes) },
             popEnterTransition = { lushPopEnterTransition(tabRoutes = StudentTabRoutes) },
@@ -135,6 +117,7 @@ fun StudentShell(
                 StudentHomeRoute(
                     userSessionStore = userSessionStore,
                     studentRepository = studentRepository,
+                    authRepository = authRepository,
                     onNotificationsClick = {
                         tabNavController.navigate(StudentRoutes.NOTIFICATIONS)
                     },
@@ -147,7 +130,8 @@ fun StudentShell(
                 )
                 val state by vm.uiState.collectAsStateWithLifecycle()
                 when {
-                    state.isLoading && state.notifications.isEmpty() -> StudentPageSkeleton(
+                    state.isLoading && state.notifications.isEmpty() && !state.isRefreshing ->
+                        StudentPageSkeleton(
                         kind = StudentSkeletonKind.Notifications,
                         title = stringResource(R.string.notifications_title),
                     )
@@ -218,14 +202,15 @@ fun StudentShell(
                 )
                 val state by vm.uiState.collectAsStateWithLifecycle()
                 when {
-                    state.isLoading && state.chapters.isEmpty() -> StudentPageSkeleton(
+                    state.isLoading && state.chapters.isEmpty() && !state.isRefreshing ->
+                        StudentPageSkeleton(
                         kind = StudentSkeletonKind.List,
                         title = subjectName.ifBlank { stringResource(R.string.chapters_subject_title) },
                     )
                     state.errorMessage != null && state.chapters.isEmpty() ->
                         LushPullToRefreshBox(
                             isRefreshing = state.isLoading || state.isRefreshing,
-                            onRefresh = vm::refresh,
+                            onRefresh = { vm.refresh(forceRefresh = true) },
                             modifier = Modifier.fillMaxSize(),
                         ) {
                             SubjectContentUnavailableScreen(
@@ -245,7 +230,7 @@ fun StudentShell(
                                 StudentRoutes.aiChats(subjectId, chapter.id),
                             )
                         },
-                        onRefresh = vm::refresh,
+                        onRefresh = { vm.refresh(forceRefresh = true) },
                         isRefreshing = state.isRefreshing,
                         modifier = Modifier.fillMaxSize(),
                     )
@@ -297,14 +282,15 @@ fun StudentShell(
                 )
                 val state by vm.uiState.collectAsStateWithLifecycle()
                 when {
-                    state.isLoading && state.chapters.isEmpty() -> StudentPageSkeleton(
+                    state.isLoading && state.chapters.isEmpty() && !state.isRefreshing ->
+                        StudentPageSkeleton(
                         kind = StudentSkeletonKind.List,
                         title = stringResource(R.string.chapters_subject_title),
                     )
                     state.errorMessage != null && state.chapters.isEmpty() ->
                         LushPullToRefreshBox(
                             isRefreshing = state.isLoading || state.isRefreshing,
-                            onRefresh = vm::refresh,
+                            onRefresh = { vm.refresh(forceRefresh = true) },
                             modifier = Modifier.fillMaxSize(),
                         ) {
                             SubjectContentUnavailableScreen(
@@ -324,7 +310,7 @@ fun StudentShell(
                         onChapterClick = { chapter ->
                             tabNavController.navigate(StudentRoutes.quiz(chapter.id))
                         },
-                        onRefresh = vm::refresh,
+                        onRefresh = { vm.refresh(forceRefresh = true) },
                         isRefreshing = state.isRefreshing,
                         modifier = Modifier.fillMaxSize(),
                     )

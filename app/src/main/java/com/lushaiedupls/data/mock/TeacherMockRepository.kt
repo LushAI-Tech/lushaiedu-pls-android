@@ -41,6 +41,7 @@ data class TeacherGroup(
     val status: String = "Active",
     val subjectIconRes: Int = R.drawable.ic_metric_subject,
     val subjectName: String = "",
+    val institutionId: String = "",
 )
 
 data class TeacherVolumeRow(
@@ -449,9 +450,15 @@ class TeacherMockRepository {
     fun accountEmail(): String = "Fakeavangchhia@gmail.com"
 
     fun registeredDevices(): List<RegisteredDevice> = listOf(
-        RegisteredDevice("iOS", "7th Aug 2026, 12:06", "--"),
-        RegisteredDevice("Web", "7th Aug 2026, 12:32", "--"),
-        RegisteredDevice("Android", "10th Aug 2026, 11:06", "Yes"),
+        RegisteredDevice("iOS", "7th Aug 2026, 12:06", "--", id = "ios-1"),
+        RegisteredDevice("Web", "7th Aug 2026, 12:32", "--", id = "web-1"),
+        RegisteredDevice(
+            platform = "Android",
+            lastActive = "10th Aug 2026, 11:06",
+            sessions = "Yes",
+            id = "android-1",
+            isCurrent = true,
+        ),
     )
 
     fun aiHubStats(): List<AiHubStat> = listOf(

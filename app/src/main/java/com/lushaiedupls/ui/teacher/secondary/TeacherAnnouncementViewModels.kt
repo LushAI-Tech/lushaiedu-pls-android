@@ -10,6 +10,7 @@ import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.dto.NotificationAudience
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.TeacherRepository
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.viewModelFactory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,12 +32,13 @@ class TeacherAnnouncementsViewModel(
     fun refresh() {
         viewModelScope.launch {
             val hasContent = _uiState.value.announcements.isNotEmpty()
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoading, hasContent)
             _uiState.update {
-                if (hasContent) {
-                    it.copy(isRefreshing = true, isLoading = false, errorMessage = null)
-                } else {
-                    it.copy(isLoading = true, isRefreshing = false, errorMessage = null)
-                }
+                it.copy(
+                    isRefreshing = refreshing,
+                    isLoading = loading,
+                    errorMessage = null,
+                )
             }
             when (val result = teacherRepository.notifications()) {
                 is NetworkResult.Success -> _uiState.update {
@@ -229,23 +231,24 @@ class TeacherNewAnnouncementViewModel(
             (classIds.isNotEmpty() && current.selectedAudienceIds.containsAll(classIds))
         viewModelScope.launch {
             _uiState.update { it.copy(isSending = true, errorMessage = null) }
-            val results = if (selectAll || unitIds.isEmpty()) {
-                listOf(
-                    teacherRepository.createNotification(
-                        title = title,
-                        body = body,
-                        audience = NotificationAudience.STUDENTS,
-                    ),
-                )
-            } else {
-                unitIds.map { unitId ->
-                    teacherRepository.createNotification(
-                        title = title,
-                        body = body,
-                        audience = NotificationAudience.TEACHING_UNIT,
-                        teachingUnitId = unitId,
-                    )
+            val targets = when {
+                selectAll -> classIds.toList()
+                unitIds.isNotEmpty() -> unitIds
+                else -> emptyList()
+            }
+            if (targets.isEmpty()) {
+                _uiState.update {
+                    it.copy(isSending = false, errorMessage = "Select at least one class.")
                 }
+                return@launch
+            }
+            val results = targets.map { unitId ->
+                teacherRepository.createNotification(
+                    title = title,
+                    body = body,
+                    audience = NotificationAudience.TEACHING_UNIT,
+                    teachingUnitId = unitId,
+                )
             }
             val failed = results.firstOrNull { it !is NetworkResult.Success }
             if (failed != null) {

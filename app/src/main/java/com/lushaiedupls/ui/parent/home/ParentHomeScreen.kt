@@ -41,6 +41,7 @@ import com.lushaiedupls.data.repository.ParentRepository
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.session.UserSessionStore
 import com.lushaiedupls.ui.auth.components.PrimaryButton
+import com.lushaiedupls.ui.common.AdaptiveChunkedGrid
 import com.lushaiedupls.ui.common.AppTopBar
 import com.lushaiedupls.ui.common.CenteredEmptyState
 import com.lushaiedupls.ui.common.LushPullToRefreshBox
@@ -118,6 +119,8 @@ fun ParentHomeScreen(
         ) {
             AppTopBar(
                 displayName = uiState.displayName,
+                avatarUrl = uiState.avatarUrl,
+                avatarCacheKey = uiState.avatarCacheKey,
                 notificationCount = uiState.notificationCount,
                 onNotificationClick = onNotificationsClick,
                 onProfileClick = onProfileClick,
@@ -125,8 +128,8 @@ fun ParentHomeScreen(
             )
             ParentPendingApprovalPanel(
                 onScanClick = onScanClick,
-                onRefresh = onRefresh,
-                isRefreshing = uiState.isLoading,
+                onRefresh = onPullRefresh,
+                isRefreshing = uiState.isLoading || uiState.isRefreshing,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -134,7 +137,7 @@ fun ParentHomeScreen(
             screenTitle = stringResource(R.string.section_overview),
             message = uiState.errorMessage.orEmpty(),
             onRetry = onRefresh,
-            isRetrying = uiState.isLoading,
+            isRetrying = uiState.isLoading || uiState.isRefreshing,
             modifier = modifier,
         )
         else -> LushPullToRefreshBox(
@@ -153,6 +156,8 @@ fun ParentHomeScreen(
             ) {
                 AppTopBar(
                     displayName = uiState.displayName,
+                    avatarUrl = uiState.avatarUrl,
+                    avatarCacheKey = uiState.avatarCacheKey,
                     notificationCount = uiState.notificationCount,
                     onNotificationClick = onNotificationsClick,
                     onProfileClick = onProfileClick,
@@ -181,9 +186,14 @@ fun ParentHomeScreen(
                         },
                     )
                 } else {
-                    uiState.children.forEach { child ->
+                    AdaptiveChunkedGrid(
+                        items = uiState.children,
+                        compactColumns = 1,
+                        mediumColumns = 2,
+                        expandedColumns = 2,
+                        verticalSpacing = 12.dp,
+                    ) { child, _ ->
                         ChildCard(child = child)
-                        Spacer(modifier = Modifier.height(12.dp))
                     }
                 }
             }
@@ -279,10 +289,10 @@ private fun ChildCard(
                 modifier = Modifier.weight(1f),
             )
             MetricCard(
-                label = stringResource(R.string.teacher_stat_total_sessions),
+                label = stringResource(R.string.parent_stat_sessions),
                 value = overall.sessions.toString(),
                 emphasized = false,
-                iconKind = OverviewIcon.Subject,
+                iconKind = OverviewIcon.Sessions,
                 modifier = Modifier.weight(1f),
             )
         }

@@ -7,6 +7,7 @@ import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.dto.ParentLinkStatus
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.StudentRepository
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.viewModelFactory
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -32,10 +33,11 @@ class StudentLinkParentViewModel(
     fun refreshParents() {
         viewModelScope.launch {
             val hasContent = _uiState.value.parents.isNotEmpty()
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoadingParents, hasContent)
             _uiState.update {
                 it.copy(
-                    isLoadingParents = !hasContent,
-                    isRefreshing = hasContent,
+                    isLoadingParents = loading,
+                    isRefreshing = refreshing,
                     errorMessage = null,
                 )
             }

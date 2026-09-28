@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,7 +22,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -54,6 +55,7 @@ import com.lushaiedupls.ui.common.CenteredEmptyState
 import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
+import com.lushaiedupls.ui.common.verticalScrollWithIme
 import com.lushaiedupls.ui.parent.components.ParentLoadErrorPanel
 import com.lushaiedupls.ui.parent.components.ParentPendingApprovalPanel
 import com.lushaiedupls.ui.parent.formatIsoDate
@@ -98,7 +100,7 @@ fun ParentFeedbackRoute(
         onMessageChange = viewModel::setMessage,
         onStudentChange = viewModel::setStudentId,
         onSave = viewModel::save,
-        onDelete = viewModel::deleteCurrent,
+        onDeleteItem = viewModel::deleteItem,
         modifier = modifier,
     )
 }
@@ -116,7 +118,7 @@ fun ParentFeedbackScreen(
     onMessageChange: (String) -> Unit,
     onStudentChange: (String?) -> Unit,
     onSave: () -> Unit,
-    onDelete: () -> Unit,
+    onDeleteItem: (ParentFeedbackOut) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     when {
@@ -149,7 +151,6 @@ fun ParentFeedbackScreen(
             onMessageChange = onMessageChange,
             onStudentChange = onStudentChange,
             onSave = onSave,
-            onDelete = onDelete,
             modifier = modifier,
         )
         else -> FeedbackList(
@@ -157,6 +158,7 @@ fun ParentFeedbackScreen(
             onBack = onBack,
             onNew = onNew,
             onOpen = onOpen,
+            onDeleteItem = onDeleteItem,
             onPullRefresh = onPullRefresh,
             modifier = modifier,
         )
@@ -169,6 +171,7 @@ private fun FeedbackList(
     onBack: () -> Unit,
     onNew: () -> Unit,
     onOpen: (ParentFeedbackOut) -> Unit,
+    onDeleteItem: (ParentFeedbackOut) -> Unit,
     onPullRefresh: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -203,7 +206,11 @@ private fun FeedbackList(
                     )
                 } else {
                     uiState.items.forEach { item ->
-                        FeedbackCard(item = item, onClick = { onOpen(item) })
+                        FeedbackCard(
+                            item = item,
+                            onClick = { onOpen(item) },
+                            onDelete = { onDeleteItem(item) },
+                        )
                         Spacer(modifier = Modifier.height(12.dp))
                     }
                 }
@@ -238,15 +245,13 @@ private fun FeedbackComposer(
     onMessageChange: (String) -> Unit,
     onStudentChange: (String?) -> Unit,
     onSave: () -> Unit,
-    onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(BgWhite)
-            .imePadding()
-            .verticalScroll(rememberScrollState())
+            .verticalScrollWithIme(rememberScrollState())
             .padding(horizontal = 20.dp)
             .padding(top = 8.dp, bottom = 24.dp),
     ) {
@@ -262,16 +267,6 @@ private fun FeedbackComposer(
             color = BrandBlack,
             fontFamily = FontFamily.SansSerif,
         )
-        uiState.status?.let { status ->
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = feedbackStatusLabel(status),
-                color = TextSecondary,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                fontFamily = FontFamily.SansSerif,
-            )
-        }
         Spacer(modifier = Modifier.height(16.dp))
         if (uiState.children.isNotEmpty()) {
             Text(
@@ -313,11 +308,18 @@ private fun FeedbackComposer(
                 color = BrandBlack,
             )
             Spacer(modifier = Modifier.height(6.dp))
+            // Static / fixed — read-only admin reply in a tile box.
             Text(
                 text = notes,
-                color = TextSecondary,
+                color = BrandBlack,
                 fontSize = 14.sp,
                 fontFamily = FontFamily.SansSerif,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .border(1.dp, BorderGray, RoundedCornerShape(14.dp))
+                    .background(BgLight)
+                    .padding(14.dp),
             )
         }
         if (!uiState.errorMessage.isNullOrBlank()) {
@@ -337,20 +339,6 @@ private fun FeedbackComposer(
             fullyRounded = true,
             modifier = Modifier.fillMaxWidth(),
         )
-        if (uiState.editingId != null) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = stringResource(R.string.parent_feedback_delete),
-                color = DeleteRed,
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(enabled = !uiState.isSaving, onClick = onDelete)
-                    .padding(vertical = 12.dp),
-                fontFamily = FontFamily.SansSerif,
-            )
-        }
     }
 }
 
@@ -358,6 +346,7 @@ private fun FeedbackComposer(
 private fun FeedbackCard(
     item: ParentFeedbackOut,
     onClick: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -365,54 +354,104 @@ private fun FeedbackCard(
             .clip(CardShape)
             .border(1.dp, BorderGray.copy(alpha = 0.7f), CardShape)
             .background(BgWhite)
-            .clickable(onClick = onClick)
             .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
     ) {
-        Icon(
-            imageVector = Icons.Filled.Forum,
-            contentDescription = null,
-            tint = BrandBlack,
-            modifier = Modifier.size(24.dp),
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = onClick),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Forum,
+                contentDescription = null,
+                tint = BrandBlack,
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = item.subject,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     color = BrandBlack,
                     fontFamily = FontFamily.SansSerif,
-                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = feedbackStatusLabel(item.status),
-                    color = TextSecondary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    fontFamily = FontFamily.SansSerif,
-                )
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = listOfNotNull(
+                if (item.message.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = item.message,
+                        color = BrandBlack,
+                        fontSize = 14.sp,
+                        fontFamily = FontFamily.SansSerif,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                val meta = listOfNotNull(
                     item.student?.name?.takeIf { it.isNotBlank() },
                     formatIsoDate(item.created_at).takeIf { it.isNotBlank() },
-                ).joinToString(" · "),
+                ).joinToString(" · ")
+                if (meta.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = meta,
+                        color = TextSecondary,
+                        fontSize = 13.sp,
+                        fontFamily = FontFamily.SansSerif,
+                    )
+                }
+                val adminNotes = item.admin_notes?.trim().orEmpty()
+                if (adminNotes.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(1.dp, BorderGray.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
+                            .background(BgLight)
+                            .padding(12.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.parent_feedback_admin_notes),
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                            color = TextSecondary,
+                            fontFamily = FontFamily.SansSerif,
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = adminNotes,
+                            color = BrandBlack,
+                            fontSize = 14.sp,
+                            fontFamily = FontFamily.SansSerif,
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = feedbackStatusLabel(item.status),
                 color = TextSecondary,
-                fontSize = 13.sp,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
                 fontFamily = FontFamily.SansSerif,
             )
-            if (item.message.isNotBlank()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = item.message,
-                    color = BrandBlack,
-                    fontSize = 14.sp,
-                    fontFamily = FontFamily.SansSerif,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
+            Spacer(modifier = Modifier.height(6.dp))
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(28.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.DeleteOutline,
+                    contentDescription = stringResource(R.string.parent_feedback_delete),
+                    tint = DeleteRed,
+                    modifier = Modifier.size(18.dp),
                 )
             }
         }

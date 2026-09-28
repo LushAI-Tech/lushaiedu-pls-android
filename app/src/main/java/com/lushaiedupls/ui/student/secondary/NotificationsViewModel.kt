@@ -8,6 +8,7 @@ import com.lushaiedupls.data.mock.AppNotification
 import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.StudentRepository
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.viewModelFactory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,10 +37,11 @@ class NotificationsViewModel(
     fun refresh() {
         viewModelScope.launch {
             val hasContent = _uiState.value.notifications.isNotEmpty()
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoading, hasContent)
             _uiState.update {
                 it.copy(
-                    isLoading = !hasContent,
-                    isRefreshing = hasContent,
+                    isLoading = loading,
+                    isRefreshing = refreshing,
                     errorMessage = null,
                 )
             }

@@ -8,6 +8,7 @@ import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.needsAdminApproval
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.StudentRepository
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.viewModelFactory
 import java.time.YearMonth
 import kotlinx.coroutines.async
@@ -56,10 +57,11 @@ class StudentAttendanceViewModel(
     private fun load(month: YearMonth, selectedDay: Int? = _uiState.value.selectedDay) {
         viewModelScope.launch {
             val hasContent = _uiState.value.dashboard != null
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoading, hasContent)
             _uiState.update {
                 it.copy(
-                    isLoading = !hasContent,
-                    isRefreshing = hasContent,
+                    isLoading = loading,
+                    isRefreshing = refreshing,
                     errorMessage = null,
                     visibleMonth = month,
                     selectedDay = selectedDay,

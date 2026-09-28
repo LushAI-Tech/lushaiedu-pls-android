@@ -63,6 +63,7 @@ fun InstitutionSelectorDropdown(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     icon: ImageVector = Icons.Outlined.Apartment,
+    filled: Boolean = false,
 ) {
     if (institutions.isEmpty()) return
 
@@ -87,6 +88,7 @@ fun InstitutionSelectorDropdown(
             expanded = expanded,
             chevronRotation = chevronRotation,
             icon = icon,
+            filled = filled,
             onClick = {
                 if (canExpand) {
                     expanded = !expanded
@@ -127,17 +129,25 @@ private fun InstitutionSelectorTrigger(
     expanded: Boolean,
     chevronRotation: Float,
     icon: ImageVector,
+    filled: Boolean,
     onClick: () -> Unit,
 ) {
+    val fieldBg = if (filled) BgLight else BgWhite
     val borderColor = when {
         expanded -> BrandBlack
+        filled -> BorderGray.copy(alpha = 0.55f)
         else -> BorderGray.copy(alpha = 0.85f)
     }
+    val labelColor = TextSecondary
+    val valueColor = BrandBlack
+    val iconBoxBg = if (filled) BgWhite else BgLight
+    val iconTint = BrandBlack
+    val chevronTint = if (expanded) BrandBlack else TextSecondary
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(FieldShape)
-            .background(BgWhite)
+            .background(fieldBg)
             .border(1.dp, borderColor, FieldShape)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -147,13 +157,13 @@ private fun InstitutionSelectorTrigger(
             modifier = Modifier
                 .size(36.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(BgLight),
+                .background(iconBoxBg),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = BrandBlack,
+                tint = iconTint,
                 modifier = Modifier.size(20.dp),
             )
         }
@@ -163,7 +173,7 @@ private fun InstitutionSelectorTrigger(
                 text = label,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
-                color = TextSecondary,
+                color = labelColor,
                 fontFamily = FontFamily.SansSerif,
             )
             Spacer(modifier = Modifier.height(2.dp))
@@ -171,7 +181,7 @@ private fun InstitutionSelectorTrigger(
                 text = selectedName,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = BrandBlack,
+                color = valueColor,
                 fontFamily = FontFamily.SansSerif,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -181,7 +191,7 @@ private fun InstitutionSelectorTrigger(
             Icon(
                 imageVector = Icons.Outlined.KeyboardArrowDown,
                 contentDescription = null,
-                tint = if (expanded) BrandBlack else TextSecondary,
+                tint = chevronTint,
                 modifier = Modifier
                     .size(22.dp)
                     .rotate(chevronRotation),

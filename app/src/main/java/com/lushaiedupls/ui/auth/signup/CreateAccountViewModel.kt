@@ -6,12 +6,17 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lushaiedupls.data.remote.NetworkResult
+import com.lushaiedupls.data.remote.PendingSignInNotice
+import com.lushaiedupls.data.remote.deviceSessionConflictOrNull
+import com.lushaiedupls.data.remote.extractConflictToken
 import com.lushaiedupls.data.remote.isAccountAlreadyExists
 import com.lushaiedupls.data.remote.isGooglePasswordLinkBlocked
+import com.lushaiedupls.data.remote.loginUserMessage
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.session.UserSessionStore
+import com.lushaiedupls.ui.auth.google.GoogleOauthLogger
 import com.lushaiedupls.ui.common.viewModelFactory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,6 +32,8 @@ class CreateAccountViewModel(
 
     private val _uiState = MutableStateFlow(CreateAccountUiState())
     val uiState: StateFlow<CreateAccountUiState> = _uiState.asStateFlow()
+    private var pendingGoogleIdToken: String? = null
+    private var pendingConflictBody: String? = null
 
     fun onFullNameChange(value: String) = update {
         copy(fullName = value, errorMessage = null, accountAlreadyExists = false, googleLinkBlocked = false)
@@ -117,7 +124,7 @@ class CreateAccountViewModel(
                     )
                     // Upload avatar after account is created (non-fatal if it fails)
                     state.avatarUri?.let { uri ->
-                        studentRepository.uploadAvatar(uri, context)
+                        persistUploadedAvatar(uri, context)
                     }
                     val route = authRepository.resolvePostAuthRoute(
                         result.data,
@@ -151,7 +158,7 @@ class CreateAccountViewModel(
                 is NetworkResult.Success -> {
                     val state = _uiState.value
                     state.avatarUri?.let { uri ->
-                        studentRepository.uploadAvatar(uri, context)
+                        persistUploadedAvatar(uri, context)
                     }
                     val route = authRepository.resolvePostAuthRoute(
                         result.data,
@@ -160,19 +167,126 @@ class CreateAccountViewModel(
                     _uiState.update { it.copy(isLoading = false, successRoute = route) }
                 }
                 else -> {
+                    val conflict = result.deviceSessionConflictOrNull()
                     val blocked = result.isGooglePasswordLinkBlocked()
-                    val message = result.userMessage()
-                    if (blocked) {
-                        authRepository.setPendingSignInMessage(message)
+                    val message = GoogleOauthLogger.uiNetworkMessage(result.loginUserMessage(), result)
+                    if (conflict != null) {
+                        pendingGoogleIdToken = idToken
+                        pendingConflictBody = (result as? NetworkResult.Error)?.body
+                        val conflictToken = conflict.conflictToken
+                            ?: extractConflictToken(pendingConflictBody)
+                        authRepository.setPendingSignInNotice(
+                            PendingSignInNotice(
+                                message = conflict.message,
+                                conflict = conflict.copy(conflictToken = conflictToken),
+                                googleIdToken = idToken,
+                            ),
+                        )
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                errorMessage = null,
+                                googleLinkBlocked = false,
+                                accountAlreadyExists = false,
+                                showDeviceConflict = true,
+                                deviceConflictMessage = conflict.message,
+                                deviceConflictAccount = conflict.accountLabel
+                                    ?: it.email.trim().takeIf { email -> email.isNotBlank() },
+                                deviceConflictDevices = conflict.devices,
+                                deviceConflictToken = conflictToken,
+                                isResolvingConflict = false,
+                                conflictResolveError = null,
+                            )
+                        }
+                    } else {
+                        if (blocked) {
+                            authRepository.setPendingSignInMessage(message)
+                        }
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                errorMessage = message,
+                                googleLinkBlocked = blocked,
+                                accountAlreadyExists = false,
+                            )
+                        }
                     }
+                }
+            }
+        }
+    }
+
+    private suspend fun persistUploadedAvatar(uri: Uri, context: Context) {
+        when (val avatarResult = studentRepository.uploadAvatar(uri, context)) {
+            is NetworkResult.Success -> {
+                studentRepository.updateProfile(avatarUrl = avatarResult.data.publicUrl)
+                userSessionStore.setAvatarUrl(avatarResult.data.publicUrl)
+                userSessionStore.bumpAvatarRevision()
+            }
+            else -> Unit
+        }
+    }
+
+    fun dismissDeviceConflict() {
+        if (_uiState.value.isResolvingConflict) return
+        pendingGoogleIdToken = null
+        pendingConflictBody = null
+        _uiState.update {
+            it.copy(
+                showDeviceConflict = false,
+                deviceConflictMessage = null,
+                deviceConflictAccount = null,
+                deviceConflictDevices = emptyList(),
+                deviceConflictToken = null,
+                isResolvingConflict = false,
+                conflictResolveError = null,
+            )
+        }
+    }
+
+    fun resolveDeviceConflict(context: Context) {
+        val conflictToken = _uiState.value.deviceConflictToken
+            ?: extractConflictToken(pendingConflictBody)
+        if (conflictToken.isNullOrBlank()) {
+            _uiState.update {
+                it.copy(
+                    conflictResolveError =
+                        "This conflict cannot be resolved from here. Sign out on the other device, then try again.",
+                )
+            }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(isResolvingConflict = true, conflictResolveError = null) }
+            when (val result = authRepository.resolveDeviceConflict(conflictToken)) {
+                is NetworkResult.Success -> {
+                    val fromGoogle = !pendingGoogleIdToken.isNullOrBlank()
+                    pendingGoogleIdToken = null
+                    val state = _uiState.value
+                    if (fromGoogle) {
+                        state.avatarUri?.let { uri ->
+                            persistUploadedAvatar(uri, context)
+                        }
+                    }
+                    val route = authRepository.resolvePostAuthRoute(
+                        result.data,
+                        fromGoogle = fromGoogle,
+                    )
                     _uiState.update {
                         it.copy(
-                            isLoading = false,
-                            errorMessage = message,
-                            googleLinkBlocked = blocked,
-                            accountAlreadyExists = false,
+                            isResolvingConflict = false,
+                            showDeviceConflict = false,
+                            deviceConflictToken = null,
+                            conflictResolveError = null,
+                            successRoute = route,
                         )
                     }
+                }
+                else -> _uiState.update {
+                    it.copy(
+                        isResolvingConflict = false,
+                        conflictResolveError = result.userMessage(),
+                    )
                 }
             }
         }

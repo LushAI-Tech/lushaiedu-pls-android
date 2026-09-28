@@ -1,16 +1,14 @@
 package com.lushaiedupls.ui.admin.announcements
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,12 +25,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,14 +57,16 @@ import com.lushaiedupls.R
 import com.lushaiedupls.data.mapper.StudentUiMappers
 import com.lushaiedupls.data.mock.AppNotification
 import com.lushaiedupls.data.remote.NetworkResult
+import com.lushaiedupls.data.remote.dto.InstitutionOut
 import com.lushaiedupls.data.remote.dto.NotificationAudience
 import com.lushaiedupls.data.remote.dto.NotificationCreate
-import com.lushaiedupls.data.remote.dto.NotificationUpdate
+import com.lushaiedupls.data.remote.dto.TeachingUnitOut
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.AdminRepository
-import com.lushaiedupls.ui.admin.AdminEditDeleteIcons
-import com.lushaiedupls.ui.admin.AdminManageToggle
+import com.lushaiedupls.data.session.UserSessionStore
+import com.lushaiedupls.ui.admin.AdminDeleteRed
 import com.lushaiedupls.ui.admin.AdminFilterRow
+import com.lushaiedupls.ui.admin.AdminManageToggle
 import com.lushaiedupls.ui.auth.components.OutlinedAuthField
 import com.lushaiedupls.ui.auth.components.PrimaryButton
 import com.lushaiedupls.ui.common.LoadErrorPanel
@@ -71,46 +76,135 @@ import com.lushaiedupls.ui.common.NotificationEmptyState
 import com.lushaiedupls.ui.common.NotificationListCard
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.viewModelFactory
+import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
+import com.lushaiedupls.ui.theme.BrandOrange
+import com.lushaiedupls.ui.theme.TextSecondary
+import com.lushaiedupls.ui.theme.TileSelected
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+private val ComposeControlShape = RoundedCornerShape(12.dp)
+
+data class ClassUnitGroup(
+    val classId: String,
+    val className: String,
+    val sortOrder: Int,
+    val units: List<TeachingUnitOut>,
+)
+
+data class InstitutionUnitSection(
+    val institutionId: String,
+    val institutionName: String,
+    val classes: List<ClassUnitGroup>,
+)
+
 data class AdminAnnouncementsUiState(
     val items: List<AppNotification> = emptyList(),
+    val institutions: List<InstitutionOut> = emptyList(),
     val composing: Boolean = false,
-    val editingId: String? = null,
     val title: String = "",
     val body: String = "",
-    val audience: NotificationAudience = NotificationAudience.ALL,
+    val audience: NotificationAudience = NotificationAudience.STUDENTS,
+    val selectedInstitutionIds: Set<String> = emptySet(),
+    val selectedUnitIds: Set<String> = emptySet(),
+    val teachingUnits: List<TeachingUnitOut> = emptyList(),
+    val classSortById: Map<String, Int> = emptyMap(),
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val isSaving: Boolean = false,
+    val isLoadingUnits: Boolean = false,
     val errorMessage: String? = null,
-)
+) {
+    val unitAudience: Boolean
+        get() = audience == NotificationAudience.TEACHING_UNIT
+
+    val institutionUnits: List<TeachingUnitOut>
+        get() = teachingUnits.filter { unit ->
+            unit.institution_id != null && unit.institution_id in selectedInstitutionIds
+        }
+
+    val selectedUnits: List<TeachingUnitOut>
+        get() {
+            val allowed = institutionUnits.map { it.id }.toSet()
+            return institutionUnits.filter { it.id in selectedUnitIds && it.id in allowed }
+        }
+
+    val institutionSections: List<InstitutionUnitSection>
+        get() {
+            return selectedInstitutionIds.mapNotNull { institutionId ->
+                val name = institutions.find { it.id == institutionId }?.name ?: return@mapNotNull null
+                val byClass = linkedMapOf<String, ClassUnitGroup>()
+                for (unit in institutionUnits.filter { it.institution_id == institutionId }) {
+                    val existing = byClass[unit.class_id]
+                    if (existing == null) {
+                        byClass[unit.class_id] = ClassUnitGroup(
+                            classId = unit.class_id,
+                            className = unit.class_name,
+                            sortOrder = classSortById[unit.class_id] ?: Int.MAX_VALUE,
+                            units = listOf(unit),
+                        )
+                    } else {
+                        byClass[unit.class_id] = existing.copy(units = existing.units + unit)
+                    }
+                }
+                val classes = byClass.values
+                    .map { group ->
+                        group.copy(
+                            units = group.units.sortedBy { it.subject_name.lowercase() },
+                        )
+                    }
+                    .sortedWith(compareBy({ it.sortOrder }, { it.className.lowercase() }))
+                if (classes.isEmpty()) null
+                else InstitutionUnitSection(institutionId, name, classes)
+            }
+        }
+
+    val canSend: Boolean
+        get() = title.isNotBlank() &&
+            body.isNotBlank() &&
+            selectedInstitutionIds.isNotEmpty() &&
+            (!unitAudience || selectedUnits.isNotEmpty()) &&
+            !isSaving
+}
 
 class AdminAnnouncementsViewModel(
     private val adminRepository: AdminRepository,
+    private val userSessionStore: UserSessionStore? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AdminAnnouncementsUiState(isLoading = true))
     val uiState: StateFlow<AdminAnnouncementsUiState> = _uiState.asStateFlow()
 
-    init { refresh() }
+    init {
+        refresh()
+    }
 
     fun refresh() {
         viewModelScope.launch {
             val hasContent = _uiState.value.items.isNotEmpty()
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoading, hasContent)
             _uiState.update {
                 it.copy(
-                    isLoading = !hasContent,
-                    isRefreshing = hasContent,
+                    isLoading = loading,
+                    isRefreshing = refreshing,
                     errorMessage = null,
                 )
+            }
+            val institutions = when (val result = adminRepository.listInstitutions(includeInactive = true)) {
+                is NetworkResult.Success -> result.data
+                    .filter { it.is_active }
+                    .sortedWith(compareBy({ it.sort_order }, { it.name }))
+                else -> _uiState.value.institutions
             }
             when (val result = adminRepository.notifications()) {
                 is NetworkResult.Success -> _uiState.update {
@@ -118,12 +212,20 @@ class AdminAnnouncementsViewModel(
                         isLoading = false,
                         isRefreshing = false,
                         items = StudentUiMappers.notifications(result.data),
+                        institutions = institutions,
+                        selectedInstitutionIds = it.selectedInstitutionIds
+                            .filter { id -> institutions.any { inst -> inst.id == id } }
+                            .toSet()
+                            .ifEmpty {
+                                if (it.composing) defaultInstitutionIds(institutions) else emptySet()
+                            },
                     )
                 }
                 else -> _uiState.update {
                     it.copy(
                         isLoading = false,
                         isRefreshing = false,
+                        institutions = institutions,
                         errorMessage = result.userMessage(),
                     )
                 }
@@ -131,60 +233,122 @@ class AdminAnnouncementsViewModel(
         }
     }
 
-    fun startCreate() = _uiState.update {
+    fun startCreate() {
+        val institutions = _uiState.value.institutions
+        _uiState.update {
+            it.copy(
+                composing = true,
+                title = "",
+                body = "",
+                audience = NotificationAudience.STUDENTS,
+                selectedInstitutionIds = defaultInstitutionIds(institutions),
+                selectedUnitIds = emptySet(),
+                errorMessage = null,
+            )
+        }
+        loadTeachingUnitData()
+    }
+
+    fun cancel() = _uiState.update {
         it.copy(
-            composing = true,
-            editingId = null,
+            composing = false,
             title = "",
             body = "",
-            audience = NotificationAudience.ALL,
+            selectedUnitIds = emptySet(),
+            errorMessage = null,
         )
     }
 
-    fun startEdit(item: AppNotification) = _uiState.update {
-        it.copy(
-            composing = true,
-            editingId = item.id,
-            title = item.title,
-            body = item.body,
-        )
+    fun onTitle(value: String) {
+        if (value.length <= 80) _uiState.update { it.copy(title = value) }
     }
 
-    fun cancel() = _uiState.update { it.copy(composing = false) }
-    fun onTitle(value: String) = _uiState.update { it.copy(title = value) }
-    fun onBody(value: String) = _uiState.update { it.copy(body = value) }
-    fun onAudience(value: NotificationAudience) = _uiState.update { it.copy(audience = value) }
+    fun onBody(value: String) {
+        if (value.length <= 500) _uiState.update { it.copy(body = value) }
+    }
+
+    fun onAudience(value: NotificationAudience) {
+        _uiState.update { it.copy(audience = value) }
+        if (value == NotificationAudience.TEACHING_UNIT) {
+            loadTeachingUnitData()
+        }
+    }
+
+    fun toggleInstitution(id: String) {
+        val current = _uiState.value.selectedInstitutionIds
+        val next = if (id in current) current - id else current + id
+        _uiState.update { state ->
+            val keptUnits = state.selectedUnitIds.filter { unitId ->
+                val unit = state.teachingUnits.find { it.id == unitId }
+                unit?.institution_id != null && unit.institution_id in next
+            }.toSet()
+            state.copy(selectedInstitutionIds = next, selectedUnitIds = keptUnits)
+        }
+        if (_uiState.value.unitAudience) {
+            loadTeachingUnitData()
+        }
+    }
+
+    fun toggleUnit(id: String) {
+        _uiState.update { state ->
+            val next = if (id in state.selectedUnitIds) {
+                state.selectedUnitIds - id
+            } else {
+                state.selectedUnitIds + id
+            }
+            state.copy(selectedUnitIds = next)
+        }
+    }
 
     fun send() {
         val state = _uiState.value
-        if (state.title.isBlank() || state.body.isBlank()) return
+        if (!state.canSend) return
+        val title = state.title.trim()
+        val body = state.body.trim()
         viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true, errorMessage = null) }
-            val result = if (state.editingId == null) {
-                adminRepository.createNotification(
-                    NotificationCreate(
-                        title = state.title.trim(),
-                        body = state.body.trim(),
-                        audience = state.audience,
-                    ),
-                )
+            val results = if (!state.unitAudience) {
+                state.selectedInstitutionIds.map { institutionId ->
+                    adminRepository.createNotification(
+                        NotificationCreate(
+                            title = title,
+                            body = body,
+                            audience = state.audience,
+                            institution_id = institutionId,
+                            teaching_unit_id = null,
+                        ),
+                    )
+                }
             } else {
-                adminRepository.updateNotification(
-                    state.editingId,
-                    NotificationUpdate(
-                        title = state.title.trim(),
-                        body = state.body.trim(),
-                    ),
-                )
+                state.selectedUnits.map { unit ->
+                    adminRepository.createNotification(
+                        NotificationCreate(
+                            title = title,
+                            body = body,
+                            audience = NotificationAudience.TEACHING_UNIT,
+                            institution_id = unit.institution_id
+                                ?: state.selectedInstitutionIds.firstOrNull(),
+                            teaching_unit_id = unit.id,
+                        ),
+                    )
+                }
             }
-            when (result) {
-                is NetworkResult.Success -> {
-                    _uiState.update { it.copy(isSaving = false, composing = false) }
-                    refresh()
+            val failed = results.firstOrNull { it !is NetworkResult.Success }
+            if (failed != null) {
+                _uiState.update {
+                    it.copy(isSaving = false, errorMessage = failed.userMessage())
                 }
-                else -> _uiState.update {
-                    it.copy(isSaving = false, errorMessage = result.userMessage())
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isSaving = false,
+                        composing = false,
+                        title = "",
+                        body = "",
+                        selectedUnitIds = emptySet(),
+                    )
                 }
+                refresh()
             }
         }
     }
@@ -198,9 +362,63 @@ class AdminAnnouncementsViewModel(
         }
     }
 
+    private fun defaultInstitutionIds(institutions: List<InstitutionOut>): Set<String> {
+        val sessionId = userSessionStore?.getInstitutionId()
+            ?.takeIf { id -> institutions.any { it.id == id } }
+        return if (sessionId != null) setOf(sessionId) else emptySet()
+    }
+
+    private fun loadTeachingUnitData() {
+        val institutionIds = _uiState.value.selectedInstitutionIds.toList()
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingUnits = true) }
+            val units = when (val result = adminRepository.teachingUnits()) {
+                is NetworkResult.Success -> result.data
+                else -> _uiState.value.teachingUnits
+            }
+            val sortMap = linkedMapOf<String, Int>()
+            if (institutionIds.isNotEmpty()) {
+                coroutineScope {
+                    institutionIds.map { institutionId ->
+                        async {
+                            when (
+                                val result = adminRepository.listClasses(
+                                    includeInactive = false,
+                                    institutionId = institutionId,
+                                )
+                            ) {
+                                is NetworkResult.Success -> result.data
+                                else -> emptyList()
+                            }
+                        }
+                    }.awaitAll().forEach { classes ->
+                        classes.forEach { sortMap[it.id] = it.sort_order }
+                    }
+                }
+            }
+            _uiState.update {
+                it.copy(
+                    teachingUnits = units,
+                    classSortById = it.classSortById + sortMap,
+                    isLoadingUnits = false,
+                    selectedUnitIds = it.selectedUnitIds.filter { unitId ->
+                        units.any { unit ->
+                            unit.id == unitId &&
+                                unit.institution_id != null &&
+                                unit.institution_id in it.selectedInstitutionIds
+                        }
+                    }.toSet(),
+                )
+            }
+        }
+    }
+
     companion object {
-        fun provideFactory(adminRepository: AdminRepository): ViewModelProvider.Factory =
-            viewModelFactory { AdminAnnouncementsViewModel(adminRepository) }
+        fun provideFactory(
+            adminRepository: AdminRepository,
+            userSessionStore: UserSessionStore? = null,
+        ): ViewModelProvider.Factory =
+            viewModelFactory { AdminAnnouncementsViewModel(adminRepository, userSessionStore) }
     }
 }
 
@@ -209,9 +427,10 @@ fun AdminAnnouncementsRoute(
     adminRepository: AdminRepository,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    userSessionStore: UserSessionStore? = null,
 ) {
     val viewModel: AdminAnnouncementsViewModel = viewModel(
-        factory = AdminAnnouncementsViewModel.provideFactory(adminRepository),
+        factory = AdminAnnouncementsViewModel.provideFactory(adminRepository, userSessionStore),
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     LifecycleResumeEffect(Unit) {
@@ -222,10 +441,11 @@ fun AdminAnnouncementsRoute(
         uiState = uiState,
         onBack = { if (uiState.composing) viewModel.cancel() else onBack() },
         onStartCreate = viewModel::startCreate,
-        onStartEdit = viewModel::startEdit,
+        onToggleInstitution = viewModel::toggleInstitution,
         onTitle = viewModel::onTitle,
         onBody = viewModel::onBody,
         onAudience = viewModel::onAudience,
+        onToggleUnit = viewModel::toggleUnit,
         onSend = viewModel::send,
         onDelete = viewModel::delete,
         onRetry = viewModel::refresh,
@@ -233,30 +453,38 @@ fun AdminAnnouncementsRoute(
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AdminAnnouncementsScreen(
     uiState: AdminAnnouncementsUiState,
     onBack: () -> Unit,
     onStartCreate: () -> Unit,
-    onStartEdit: (AppNotification) -> Unit,
+    onToggleInstitution: (String) -> Unit,
     onTitle: (String) -> Unit,
     onBody: (String) -> Unit,
     onAudience: (NotificationAudience) -> Unit,
+    onToggleUnit: (String) -> Unit,
     onSend: () -> Unit,
     onDelete: (String) -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val audiences = listOf(
-        NotificationAudience.ALL,
         NotificationAudience.STUDENTS,
         NotificationAudience.TEACHERS,
         NotificationAudience.PARENTS,
+        NotificationAudience.TEACHING_UNIT,
+    )
+    val audienceLabels = listOf(
+        stringResource(R.string.admin_audience_students),
+        stringResource(R.string.admin_audience_teachers),
+        stringResource(R.string.admin_audience_parents),
+        stringResource(R.string.admin_audience_teaching_unit),
     )
     when {
         uiState.isLoading && uiState.items.isEmpty() && uiState.errorMessage == null ->
             StudentPageSkeleton(kind = StudentSkeletonKind.Notifications, modifier = modifier)
-        uiState.errorMessage != null && uiState.items.isEmpty() -> LoadErrorPanel(
+        uiState.errorMessage != null && uiState.items.isEmpty() && !uiState.composing -> LoadErrorPanel(
             screenTitle = stringResource(R.string.admin_announce_title),
             message = uiState.errorMessage.orEmpty(),
             onRetry = onRetry,
@@ -265,156 +493,295 @@ fun AdminAnnouncementsScreen(
         )
         else -> {
             var managing by rememberSaveable { mutableStateOf(false) }
-            var selected by rememberSaveable { mutableStateOf<String?>(null) }
-            val selectedItem = uiState.items.firstOrNull { it.id == selected }
-            BackHandler(enabled = uiState.composing || selected != null) {
-                when {
-                    uiState.composing -> onBack()
-                    else -> selected = null
-                }
+            var detailItem by remember { mutableStateOf<AppNotification?>(null) }
+            BackHandler(enabled = detailItem != null) {
+                detailItem = null
             }
+            BackHandler(enabled = uiState.composing && detailItem == null) {
+                onBack()
+            }
+            val detail = detailItem
+            if (detail != null && !uiState.composing) {
+                NotificationDetailScreen(
+                    notification = detail,
+                    onBack = { detailItem = null },
+                    modifier = modifier
+                        .fillMaxSize()
+                        .background(BgWhite),
+                )
+            } else {
             LushPullToRefreshBox(
                 isRefreshing = uiState.isRefreshing,
                 onRefresh = onRetry,
                 modifier = modifier.fillMaxSize(),
             ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(BgWhite)
-                    .imePadding(),
-            ) {
-                Column(
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp)
-                        .padding(bottom = if (uiState.composing) 24.dp else 88.dp),
+                        .background(BgWhite)
+                        .imePadding(),
                 ) {
-                    AnnouncementTopBar(
-                        title = when {
-                            uiState.composing && uiState.editingId == null ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = if (uiState.composing) 24.dp else 88.dp),
+                    ) {
+                        AnnouncementTopBar(
+                            title = if (uiState.composing) {
                                 stringResource(R.string.admin_announce_new)
-                            uiState.composing -> stringResource(R.string.admin_edit_announcement)
-                            else -> stringResource(R.string.admin_announce_title)
-                        },
-                        onBack = onBack,
-                        showManage = !uiState.composing,
-                        managing = managing,
-                        onToggleManage = { managing = !managing },
-                    )
-                    if (uiState.composing) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        if (uiState.editingId == null) {
+                            } else {
+                                stringResource(R.string.admin_announce_title)
+                            },
+                            onBack = onBack,
+                            showManage = !uiState.composing && uiState.items.isNotEmpty(),
+                            managing = managing,
+                            onToggleManage = { managing = !managing },
+                        )
+                        if (uiState.composing) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            uiState.errorMessage?.takeIf { it.isNotBlank() }?.let { message ->
+                                Text(
+                                    text = message,
+                                    color = BrandOrange,
+                                    fontSize = 13.sp,
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+                            OutlinedAuthField(
+                                label = stringResource(R.string.admin_announce_subject),
+                                value = uiState.title,
+                                onValueChange = onTitle,
+                                placeholder = stringResource(R.string.admin_announce_subject),
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedAuthField(
+                                label = stringResource(R.string.admin_announce_body),
+                                value = uiState.body,
+                                onValueChange = onBody,
+                                placeholder = stringResource(R.string.admin_announce_body),
+                                singleLine = false,
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = stringResource(R.string.admin_announce_institution),
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 14.sp,
+                                color = BrandBlack,
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                uiState.institutions.forEach { institution ->
+                                    InstitutionCheckTile(
+                                        name = institution.name,
+                                        selected = institution.id in uiState.selectedInstitutionIds,
+                                        onToggle = { onToggleInstitution(institution.id) },
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(14.dp))
                             AdminFilterRow(
-                                labels = listOf(
-                                    stringResource(R.string.admin_audience_all),
-                                    stringResource(R.string.admin_audience_students),
-                                    stringResource(R.string.admin_audience_teachers),
-                                    stringResource(R.string.admin_audience_parents),
-                                ),
+                                labels = audienceLabels,
                                 selectedIndex = audiences.indexOf(uiState.audience).coerceAtLeast(0),
                                 onSelect = { onAudience(audiences[it]) },
                             )
-                            Spacer(modifier = Modifier.height(12.dp))
-                        }
-                        OutlinedAuthField(
-                            label = stringResource(R.string.admin_announce_subject),
-                            value = uiState.title,
-                            onValueChange = onTitle,
-                            placeholder = stringResource(R.string.admin_announce_subject),
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        OutlinedAuthField(
-                            label = stringResource(R.string.admin_announce_body),
-                            value = uiState.body,
-                            onValueChange = onBody,
-                            placeholder = stringResource(R.string.admin_announce_body),
-                            singleLine = false,
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        PrimaryButton(
-                            text = stringResource(
-                                if (uiState.editingId == null) {
-                                    R.string.admin_announce_send
-                                } else {
-                                    R.string.admin_save
-                                },
-                            ),
-                            onClick = onSend,
-                            enabled = uiState.title.isNotBlank() &&
-                                uiState.body.isNotBlank() &&
-                                !uiState.isSaving,
-                            fullyRounded = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    } else {
-                        Spacer(modifier = Modifier.height(20.dp))
-                        if (uiState.items.isEmpty()) {
-                            NotificationEmptyState(
-                                message = stringResource(R.string.admin_announce_empty),
+                            if (uiState.unitAudience) {
+                                Spacer(modifier = Modifier.height(14.dp))
+                                TeachingUnitPicker(
+                                    sections = uiState.institutionSections,
+                                    selectedUnitIds = uiState.selectedUnitIds,
+                                    showInstitutionHeaders = uiState.selectedInstitutionIds.size > 1,
+                                    selectedCount = uiState.selectedUnits.size,
+                                    onToggleUnit = onToggleUnit,
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            PrimaryButton(
+                                text = stringResource(R.string.admin_announce_send),
+                                onClick = onSend,
+                                enabled = uiState.canSend,
+                                fullyRounded = true,
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         } else {
-                            uiState.items.forEach { item ->
-                                NotificationListCard(
-                                    item = item,
-                                    onClick = { selected = item.id },
-                                    showUnreadDot = false,
-                                    trailingContent = if (managing) {
-                                        {
-                                            AdminEditDeleteIcons(
-                                                onEdit = {
-                                            selected = null
-                                            onStartEdit(item)
-                                        },
-                                                onDelete = { onDelete(item.id) },
-                                                editDescription = stringResource(
-                                                    R.string.admin_edit_announcement,
-                                                ),
-                                                deleteDescription = stringResource(
-                                                    R.string.admin_delete_announcement,
-                                                ),
-                                            )
-                                        }
-                                    } else {
-                                        null
-                                    },
+                            Spacer(modifier = Modifier.height(20.dp))
+                            if (uiState.items.isEmpty()) {
+                                NotificationEmptyState(
+                                    message = stringResource(R.string.admin_announce_empty),
                                 )
-                                Spacer(modifier = Modifier.height(10.dp))
+                            } else {
+                                uiState.items.forEach { item ->
+                                    NotificationListCard(
+                                        item = item,
+                                        onClick = { detailItem = item },
+                                        showUnreadDot = false,
+                                        chipLabel = item.audienceChipLabel,
+                                        trailingContent = if (managing) {
+                                            {
+                                                IconButton(
+                                                    onClick = { onDelete(item.id) },
+                                                    modifier = Modifier.size(40.dp),
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Outlined.DeleteOutline,
+                                                        contentDescription = stringResource(
+                                                            R.string.admin_delete_announcement,
+                                                        ),
+                                                        tint = AdminDeleteRed,
+                                                        modifier = Modifier.size(22.dp),
+                                                    )
+                                                }
+                                            }
+                                        } else {
+                                            null
+                                        },
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                }
                             }
                         }
                     }
-                }
-                if (!uiState.composing) {
-                    FloatingActionButton(
-                        onClick = onStartCreate,
-                        shape = CircleShape,
-                        containerColor = BrandBlack,
-                        contentColor = Color.White,
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(20.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Add,
-                            contentDescription = stringResource(R.string.admin_announce_new),
-                        )
-                    }
-                }
-                AnimatedVisibility(
-                    visible = selectedItem != null && !uiState.composing,
-                    enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
-                    exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
-                ) {
-                    selectedItem?.let { announcement ->
-                        NotificationDetailScreen(
-                            notification = announcement,
-                            onBack = { selected = null },
-                        )
+                    if (!uiState.composing) {
+                        FloatingActionButton(
+                            onClick = onStartCreate,
+                            shape = CircleShape,
+                            containerColor = BrandBlack,
+                            contentColor = Color.White,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(20.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Add,
+                                contentDescription = stringResource(R.string.admin_announce_new),
+                            )
+                        }
                     }
                 }
             }
             }
+        }
+    }
+}
+
+@Composable
+private fun InstitutionCheckTile(
+    name: String,
+    selected: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .clip(ComposeControlShape)
+            .border(
+                1.dp,
+                if (selected) TileSelected else BorderGray.copy(alpha = 0.7f),
+                ComposeControlShape,
+            )
+            .background(if (selected) BgLight else BgWhite)
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(
+            checked = selected,
+            onCheckedChange = { onToggle() },
+            colors = CheckboxDefaults.colors(
+                checkedColor = BrandBlack,
+                uncheckedColor = BorderGray,
+                checkmarkColor = Color.White,
+            ),
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = name,
+            fontSize = 13.sp,
+            color = BrandBlack,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TeachingUnitPicker(
+    sections: List<InstitutionUnitSection>,
+    selectedUnitIds: Set<String>,
+    showInstitutionHeaders: Boolean,
+    selectedCount: Int,
+    onToggleUnit: (String) -> Unit,
+) {
+    if (sections.isEmpty()) {
+        Text(
+            text = stringResource(R.string.admin_announce_no_classes),
+            color = TextSecondary,
+            fontSize = 13.sp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, BorderGray.copy(alpha = 0.7f), ComposeControlShape)
+                .padding(horizontal = 14.dp, vertical = 20.dp),
+        )
+        return
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.admin_announce_subjects),
+            fontWeight = FontWeight.Medium,
+            fontSize = 14.sp,
+            color = BrandBlack,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = if (selectedCount == 0) {
+                stringResource(R.string.admin_announce_choose_units)
+            } else {
+                stringResource(R.string.admin_announce_units_selected, selectedCount)
+            },
+            color = TextSecondary,
+            fontSize = 12.sp,
+        )
+    }
+    Spacer(modifier = Modifier.height(10.dp))
+    sections.forEach { section ->
+        if (showInstitutionHeaders) {
+            Text(
+                text = section.institutionName,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = BrandBlack,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+        section.classes.forEach { group ->
+            Text(
+                text = group.className,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                color = TextSecondary,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                group.units.forEach { unit ->
+                    InstitutionCheckTile(
+                        name = unit.subject_name,
+                        selected = unit.id in selectedUnitIds,
+                        onToggle = { onToggleUnit(unit.id) },
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
         }
     }
 }

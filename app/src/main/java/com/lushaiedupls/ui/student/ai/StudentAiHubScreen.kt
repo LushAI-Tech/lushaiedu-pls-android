@@ -27,12 +27,14 @@ import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -48,10 +50,12 @@ import com.lushaiedupls.data.mock.AiHubStat
 import com.lushaiedupls.data.mock.AiSubjectItem
 import com.lushaiedupls.data.mock.StudentMockRepository
 import com.lushaiedupls.data.repository.StudentRepository
+import com.lushaiedupls.ui.common.AnimatedFilterChipRow
 import com.lushaiedupls.ui.common.InfoMessageCard
 import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
+import com.lushaiedupls.ui.common.markdown.KatexRenderer
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
@@ -73,10 +77,13 @@ fun StudentAiHubRoute(
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { KatexRenderer.prewarm(context) }
     StudentAiHubScreen(
         uiState = uiState,
         onSubjectClick = onSubjectClick,
-        onRefresh = viewModel::refresh,
+        onInstitutionSelected = viewModel::selectInstitution,
+        onRefresh = { viewModel.refresh(forceRefresh = true) },
         modifier = modifier,
     )
 }
@@ -86,6 +93,7 @@ fun StudentAiHubScreen(
     uiState: StudentAiHubUiState,
     onSubjectClick: (AiSubjectItem) -> Unit,
     onClassSelected: (String) -> Unit = {},
+    onInstitutionSelected: (Int) -> Unit = {},
     onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -106,6 +114,20 @@ fun StudentAiHubScreen(
             color = BrandBlack,
             fontFamily = FontFamily.SansSerif,
         )
+        if (uiState.institutionIds.size > 1) {
+            val selectedInstitutionIndex = uiState.institutionIds
+                .indexOf(uiState.selectedInstitutionId)
+                .coerceAtLeast(0)
+            AnimatedFilterChipRow(
+                options = uiState.institutions,
+                selectedIndex = selectedInstitutionIndex,
+                onSelect = onInstitutionSelected,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 8.dp),
+            )
+        }
         if (uiState.classOptions.isNotEmpty()) {
             AiClassSelector(
                 classes = uiState.classOptions,

@@ -9,6 +9,12 @@
     <string name="welcome_tagline">Personalised Learning System.\nSmarter Every Day.</string>
     <string name="create_account">Create Account</string>
     <string name="sign_in">Sign In</string>
+    <string name="sign_in_device_conflict_title">Already signed in</string>
+    <string name="sign_in_device_conflict_account">Account</string>
+    <string name="sign_in_device_conflict_devices">Active devices</string>
+    <string name="sign_in_device_conflict_unknown_device">Another device</string>
+    <string name="sign_in_device_conflict_hint">Open the other device → Account → Sign out all.</string>
+    <string name="sign_in_device_conflict_resolve">Sign out all and log in</string>
     <string name="or_continue_with">Or continue with</string>
     <string name="google">Google</string>
 
@@ -67,15 +73,16 @@
     <string name="error_invite_code">Please enter your invite code.</string>
 
     <string name="select_institution">Select Institution</string>
+    <string name="select_institutions">Select Institutions</string>
     <string name="error_select_institution">Please select an institution.</string>
+    <string name="error_select_institutions">Please select at least one institution.</string>
     <string name="onboarding_step">Step %1$d of %2$d</string>
-    <string name="onboarding_institution_subtitle">Choose where you study or teach.</string>
-    <string name="onboarding_institution_teacher_hint">Teachers set up one institution now. Your admin can assign you to more later.</string>
     <string name="onboarding_class_subtitle">Pick the class or classes you belong to.</string>
     <string name="onboarding_subject_subtitle">Choose the subjects you teach or study.</string>
 
     <string name="select_class">Select Class</string>
     <string name="select_classes">Select Classes</string>
+    <string name="select_classes_bridge_for">For</string>
     <string name="select_classes_hint">Teachers can select more than one class.</string>
     <string name="class_ix">Class IX</string>
     <string name="class_x">Class X</string>
@@ -224,6 +231,9 @@
     <string name="menu_theme">Theme</string>
     <string name="menu_privacy">Privacy Policy</string>
     <string name="menu_terms">Terms &amp; Conditions</string>
+    <string name="menu_version">Version %1$s</string>
+    <string name="oauth_logs_show">Show OAuth logs</string>
+    <string name="oauth_logs_hide">Hide OAuth logs</string>
     <string name="theme_stub_message">Theme switching will arrive in a later update. Light theme is active.</string>
     <string name="account_title">Account</string>
     <string name="account_edit_profile">Edit Profile</string>
@@ -243,6 +253,13 @@
     <string name="account_platform">Platform</string>
     <string name="account_last_active">Last Active</string>
     <string name="account_sessions">Sessions</string>
+    <string name="account_this_device">This device</string>
+    <string name="account_no_devices">No other devices are registered on this account.</string>
+    <string name="account_sign_out">Sign out</string>
+    <string name="account_sign_out_device">Sign out</string>
+    <string name="account_sign_out_device_title">Sign out %1$s?</string>
+    <string name="account_sign_out_device_body">This signs you out on that device. You can then sign in on another phone.</string>
+    <string name="account_sign_out_device_student_body">Student accounts have one session. Signing out this device signs you out everywhere, including this phone.</string>
     <string name="account_sign_out_all">Sign out all</string>
     <string name="account_sign_out_all_title">Sign out all devices?</string>
     <string name="account_sign_out_all_body">This signs you out on every registered device, including this phone. You will need to sign in again.</string>
@@ -252,6 +269,8 @@
     <string name="account_institution">Institution</string>
     <string name="account_class">Class</string>
     <string name="account_subjects">Subjects</string>
+    <string name="account_assigned_classes">Assigned classes</string>
+    <string name="account_no_classes_assigned">No classes assigned yet</string>
     <string name="account_email_verified">Email verified</string>
     <string name="account_verified">Verified</string>
     <string name="account_verify_email_hint">Verify your email using the link we sent you. After that, Sign in with Google with this address will link to the same account.</string>
@@ -327,7 +346,6 @@
     <string name="teacher_shell_hello">Hello, %1$s</string>
     <string name="teacher_tab_my_groups">My Groups</string>
     <string name="teacher_my_classes_title">MY CLASSES</string>
-    <string name="teacher_my_classes_subtitle">View and manage your teaching groups.</string>
     <string name="teacher_my_classes_empty">No classes yet. Complete class and subject selection to see your groups here.</string>
     <string name="teacher_class_students_empty">No students in this class yet.</string>
     <string name="teacher_group_meta">Code %1$s · %2$s</string>
@@ -385,7 +403,6 @@
     <string name="teacher_attendance_period_all">All time</string>
     <string name="teacher_class_section_hint">This section arrives in a later teacher phase.</string>
     <string name="teacher_calendar_title">Academic calendar</string>
-    <string name="teacher_calendar_subtitle">View holidays, exams, and events</string>
     <string name="teacher_calendar_month_view">Month view</string>
     <string name="teacher_menu_phase_hint">Menu screens arrive in a later teacher phase.</string>
     <string name="teacher_menu_switch_roles">Switch Roles</string>
@@ -495,6 +512,7 @@
     <string name="parent_stat_children">Children</string>
     <string name="parent_stat_pending_fees">Pending fees</string>
     <string name="parent_stat_open_complaints">Open complaints</string>
+    <string name="parent_stat_sessions">Sessions</string>
     <string name="parent_child_fee_pending">%1$s pending</string>
     <string name="parent_child_fee_pending_months">%1$s pending · %2$d months</string>
     <string name="parent_child_fee_paid">Fees paid this month</string>
@@ -505,16 +523,17 @@
     <string name="parent_fees_totals">Total %1$s · Paid %2$s · Pending %3$s</string>
     <string name="parent_fees_month_totals">%1$s · Paid %2$s · Pending %3$s</string>
     <string name="parent_fee_paid">Paid</string>
+    <string name="parent_fee_pending">Pending</string>
     <string name="parent_fee_not_paid">Not paid</string>
     <string name="parent_fee_paid_on">Paid %1$s</string>
     <string name="parent_feedback_title">Feedback</string>
     <string name="parent_feedback_empty">No complaints yet.</string>
-    <string name="parent_feedback_new">New complaint</string>
+    <string name="parent_feedback_new">Your Feedback</string>
     <string name="parent_feedback_subject">Subject</string>
     <string name="parent_feedback_message">Message</string>
     <string name="parent_feedback_subject_hint">What is this about?</string>
     <string name="parent_feedback_message_hint">Describe the issue</string>
-    <string name="parent_feedback_child">About a child</string>
+    <string name="parent_feedback_child">Tell us about how we can improve</string>
     <string name="parent_feedback_child_none">General</string>
     <string name="parent_feedback_save">Save</string>
     <string name="parent_feedback_delete">Delete</string>
@@ -552,12 +571,10 @@
     <string name="admin_users_page">Page %1$d of %2$d · %3$d users</string>
     <string name="admin_teacher_assign_title">Assign institution</string>
     <string name="admin_teacher_assign_save">Save assignments</string>
-    <string name="admin_teacher_assign_action">Assign institution</string>
+    <string name="admin_teacher_assign_action">Assign</string>
     <string name="admin_parent_link_action_parent">Link student</string>
     <string name="admin_parent_link_action_student">Link parent</string>
-    <string name="admin_parent_link_title">Link parent–student</string>
-    <string name="admin_parent_link_subtitle_for_parent">Choose a student to link with %1$s.</string>
-    <string name="admin_parent_link_subtitle_for_student">Choose a parent to link with %1$s.</string>
+    <string name="admin_parent_link_title">Link Parent-Student</string>
     <string name="admin_parent_link_search_students">Search students</string>
     <string name="admin_parent_link_search_parents">Search parents</string>
     <string name="admin_parent_link_relationship">Relationship</string>
@@ -712,15 +729,21 @@
     <string name="admin_announce_new">New announcement</string>
     <string name="admin_edit_announcement">Edit announcement</string>
     <string name="admin_delete_announcement">Delete announcement</string>
-    <string name="admin_manage_announcements">Edit announcements</string>
+    <string name="admin_manage_announcements">Manage announcements</string>
     <string name="admin_announce_subject">Title</string>
     <string name="admin_announce_body">Message</string>
     <string name="admin_announce_send">Send</string>
     <string name="admin_announce_audience">Audience</string>
+    <string name="admin_announce_institution">Institution</string>
+    <string name="admin_announce_subjects">Subjects</string>
+    <string name="admin_announce_choose_units">Choose one or more</string>
+    <string name="admin_announce_units_selected">%d selected</string>
+    <string name="admin_announce_no_classes">No classes in the selected institutions.</string>
     <string name="admin_audience_all">Everyone</string>
     <string name="admin_audience_students">Students</string>
     <string name="admin_audience_teachers">Teachers</string>
     <string name="admin_audience_parents">Parents</string>
+    <string name="admin_audience_teaching_unit">Teaching unit</string>
     <string name="admin_feedback_title">Complaints</string>
     <string name="admin_feedback_empty">No complaints yet.</string>
     <string name="admin_feedback_mark_seen">Mark seen</string>

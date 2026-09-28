@@ -7,6 +7,7 @@ import com.lushaiedupls.data.remote.dto.RollOut
 import com.lushaiedupls.data.remote.dto.RosterResponse
 import com.lushaiedupls.data.remote.dto.StudentAttendanceSummary
 import com.lushaiedupls.data.remote.dto.UnitAttendanceSummary
+import com.lushaiedupls.data.remote.dto.UnitMonthAttendance
 import com.lushaiedupls.data.remote.dto.UpsertRollRequest
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -54,6 +55,12 @@ interface AttendanceApi {
         @Path("unit_id") unitId: String,
         @Query("month") month: String? = null,
     ): UnitAttendanceSummary
+
+    @GET("api/v1/attendance/teaching-units/{unit_id}/month")
+    suspend fun unitMonth(
+        @Path("unit_id") unitId: String,
+        @Query("month") month: String,
+    ): UnitMonthAttendance
 
     @PUT("api/v1/attendance/rolls")
     suspend fun upsertRoll(@Body body: UpsertRollRequest): RollOut

@@ -4,9 +4,10 @@ import android.util.Log
 import okhttp3.logging.HttpLoggingInterceptor
 
 /**
- * Debug-only OkHttp logger. Filter Logcat by tag [TAG] (`LushApi`) to see:
- * - HTTP headers (Authorization redacted)
- * - Pretty-printed REQUEST BODY / RESPONSE BODY blocks
+ * OkHttp logger. Filter Logcat by tag [TAG] (`LushApi`).
+ *
+ * Uses ERROR on purpose: Vivo/Oppo/ColorOS hide app INFO/DEBUG, and R8 strips Log.d.
+ * Staging/debug only — interceptors are not installed when [BuildConfig.ENABLE_API_LOGS] is false.
  */
 object ApiHttpLogger : HttpLoggingInterceptor.Logger {
     const val TAG = "LushApi"
@@ -15,13 +16,13 @@ object ApiHttpLogger : HttpLoggingInterceptor.Logger {
 
     override fun log(message: String) {
         if (message.length <= MAX_LOG_CHUNK) {
-            Log.d(TAG, message)
+            Log.println(Log.ERROR, TAG, message)
             return
         }
         var start = 0
         while (start < message.length) {
             val end = minOf(start + MAX_LOG_CHUNK, message.length)
-            Log.d(TAG, message.substring(start, end))
+            Log.println(Log.ERROR, TAG, message.substring(start, end))
             start = end
         }
     }

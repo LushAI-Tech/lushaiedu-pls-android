@@ -42,10 +42,13 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.lushaiedupls.R
+import com.lushaiedupls.ui.common.LushNavigationRail
+import com.lushaiedupls.ui.common.LushRailNavIcon
 import com.lushaiedupls.ui.common.navItemClickable
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
+import com.lushaiedupls.ui.theme.BrandOrange
 
 enum class StudentTab(
     val route: String,
@@ -112,6 +115,44 @@ fun StudentBottomBar(
 }
 
 @Composable
+fun StudentNavigationRail(
+    selectedTab: StudentTab,
+    onTabSelected: (StudentTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LushNavigationRail(modifier = modifier) {
+        LushRailNavIcon(
+            icon = Icons.Outlined.Home,
+            label = stringResource(R.string.tab_home),
+            selected = selectedTab == StudentTab.Home,
+            onClick = { onTabSelected(StudentTab.Home) },
+        )
+        LushRailNavIcon(
+            icon = Icons.Outlined.Schedule,
+            label = stringResource(R.string.tab_timetable),
+            selected = selectedTab == StudentTab.Timetable,
+            onClick = { onTabSelected(StudentTab.Timetable) },
+        )
+        AiCenterButton(
+            selected = selectedTab == StudentTab.Ai,
+            onClick = { onTabSelected(StudentTab.Ai) },
+        )
+        LushRailNavIcon(
+            icon = Icons.Outlined.Person,
+            label = stringResource(R.string.tab_attendance),
+            selected = selectedTab == StudentTab.Attendance,
+            onClick = { onTabSelected(StudentTab.Attendance) },
+        )
+        LushRailNavIcon(
+            icon = Icons.Outlined.Menu,
+            label = stringResource(R.string.tab_more),
+            selected = selectedTab == StudentTab.More,
+            onClick = { onTabSelected(StudentTab.More) },
+        )
+    }
+}
+
+@Composable
 private fun BottomNavIcon(
     icon: ImageVector,
     label: String,
@@ -134,14 +175,14 @@ private fun BottomNavIcon(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = BrandBlack,
+                tint = if (selected) BrandOrange else BrandBlack,
                 modifier = Modifier.size(26.dp),
             )
             if (showCheckBadge) {
                 Icon(
                     imageVector = Icons.Outlined.Check,
                     contentDescription = null,
-                    tint = BrandBlack,
+                    tint = if (selected) BrandOrange else BrandBlack,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .offset(x = 4.dp, y = (-2).dp)
@@ -159,7 +200,7 @@ private fun BottomNavIcon(
             modifier = Modifier
                 .size(width = indicatorWidth, height = 3.dp)
                 .clip(RoundedCornerShape(50))
-                .background(BrandBlack),
+                .background(BrandOrange),
         )
     }
 }
@@ -187,7 +228,7 @@ private fun AiCenterButton(
                 role = Role.Tab
                 this.selected = selected
             }
-            .size(width = 52.dp, height = 48.dp)
+            .size(44.dp)
             .navItemClickable(
                 selectedScale = scale,
                 onClick = onClick,

@@ -16,6 +16,7 @@ import com.lushaiedupls.data.remote.dto.SubjectOut
 import com.lushaiedupls.data.remote.dto.UserSummary
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.AdminRepository
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.viewModelFactory
 import java.time.YearMonth
 import kotlinx.coroutines.async
@@ -239,10 +240,11 @@ class AdminFeesViewModel(
                 _uiState.value.templates.isNotEmpty() ||
                 _uiState.value.ledgers.isNotEmpty() ||
                 _uiState.value.summary != null
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoading, hasContent)
             _uiState.update {
                 it.copy(
-                    isLoading = !hasContent,
-                    isRefreshing = hasContent,
+                    isLoading = loading,
+                    isRefreshing = refreshing,
                     errorMessage = if (it.isAddingTemplate || it.editingFeeId != null) {
                         it.errorMessage
                     } else {
@@ -449,10 +451,11 @@ class AdminFeesViewModel(
             val state = _uiState.value
             if (!FeeMonth.isYearMonth(state.month)) return@launch
             val hasContent = state.ledgers.isNotEmpty() || state.summary != null
+            val (loading, refreshing) = reloadUiFlags(state.isLoading, hasContent)
             _uiState.update {
                 it.copy(
-                    isLoading = !hasContent,
-                    isRefreshing = hasContent,
+                    isLoading = loading,
+                    isRefreshing = refreshing,
                     errorMessage = null,
                 )
             }

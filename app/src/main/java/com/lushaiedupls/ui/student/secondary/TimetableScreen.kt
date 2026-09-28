@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -245,7 +246,7 @@ private fun WeeklyTimetableTable(
     val cellDividerColor = Color(0xFFD1D5DB)
     val headerLine = Color.White.copy(alpha = 0.2f)
 
-    Column(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .shadow(2.dp, TableShape, clip = false)
@@ -253,14 +254,22 @@ private fun WeeklyTimetableTable(
             .border(1.dp, tableBorderColor, TableShape)
             .background(BgWhite),
     ) {
+        val periodCount = timeSlots.size.coerceAtLeast(1)
+        val containerWidth = maxWidth
+        val availableForPeriods = (containerWidth - DayColWidth).coerceAtLeast(0.dp)
+        val periodWidth = maxOf(PeriodColWidth, availableForPeriods / periodCount)
+        val tableWidth = DayColWidth + periodWidth * periodCount
+        val needsScroll = tableWidth > containerWidth
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(hScroll),
+                .then(if (needsScroll) Modifier.horizontalScroll(hScroll) else Modifier),
         ) {
-            Column {
+            Column(modifier = Modifier.width(tableWidth.coerceAtLeast(containerWidth))) {
                 Row(
                     modifier = Modifier
+                        .fillMaxWidth()
                         .background(HeaderBg)
                         .height(HeaderHeight),
                     verticalAlignment = Alignment.CenterVertically,
@@ -275,7 +284,7 @@ private fun WeeklyTimetableTable(
                     timeSlots.forEachIndexed { index, slot ->
                         GridHeaderCell(
                             text = slot,
-                            modifier = Modifier.width(PeriodColWidth),
+                            modifier = Modifier.width(periodWidth),
                             dividerColor = headerLine,
                             bottomDividerColor = tableBorderColor,
                             showEndDivider = index != timeSlots.lastIndex,
@@ -288,7 +297,9 @@ private fun WeeklyTimetableTable(
                     val isLastRow = dayIndex == days.lastIndex
                     val cells = rows.getOrNull(dayIndex).orEmpty()
                     Row(
-                        modifier = Modifier.height(RowHeight),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(RowHeight),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         GridBodyCell(
@@ -307,7 +318,7 @@ private fun WeeklyTimetableTable(
                             val isOff = cellText.equals("Off", ignoreCase = true)
                             GridBodyCell(
                                 text = cellText,
-                                modifier = Modifier.width(PeriodColWidth),
+                                modifier = Modifier.width(periodWidth),
                                 background = if (isOff) BgWhite else Color(0xFFF4F5F7),
                                 dividerColor = cellDividerColor,
                                 showEndDivider = col != timeSlots.lastIndex,

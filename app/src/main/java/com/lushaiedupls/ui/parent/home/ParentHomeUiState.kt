@@ -6,6 +6,8 @@ import com.lushaiedupls.data.remote.dto.ParentRelationship
 
 data class ParentHomeUiState(
     val displayName: String = "",
+    val avatarUrl: String? = null,
+    val avatarCacheKey: Long = 0L,
     val monthLabel: String = "",
     val notificationCount: Int = 0,
     val totalChildren: Int = 0,

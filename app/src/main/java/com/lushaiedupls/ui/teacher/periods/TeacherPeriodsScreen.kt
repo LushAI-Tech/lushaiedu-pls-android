@@ -13,6 +13,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.lushaiedupls.data.mapper.TeacherUiMappers
 import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.dto.PeriodCreate
 import com.lushaiedupls.data.remote.dto.PeriodOut
@@ -45,12 +46,17 @@ class TeacherPeriodsViewModel(
     fun refresh() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            val institutions = when (val result = teacherRepository.institutions()) {
+            val catalog = when (val result = teacherRepository.institutions()) {
                 is NetworkResult.Success -> result.data
                     .filter { it.is_active }
                     .sortedWith(compareBy({ it.sort_order }, { it.name }))
                 else -> _uiState.value.institutions
             }
+            val units = when (val result = teacherRepository.teachingUnits()) {
+                is NetworkResult.Success -> result.data
+                else -> emptyList()
+            }
+            val institutions = TeacherUiMappers.assignedInstitutions(units, catalog)
             val selectedInstitutionId = _uiState.value.selectedInstitutionId
                 ?.takeIf { id -> institutions.any { it.id == id } }
                 ?: initialInstitutionId?.takeIf { id -> institutions.any { it.id == id } }
@@ -70,7 +76,7 @@ class TeacherPeriodsViewModel(
                         isLoading = false,
                         items = emptyList(),
                         errorMessage = if (institutions.isEmpty()) {
-                            "No institutions are available yet."
+                            "No assigned institutions yet."
                         } else {
                             "Please select an institution."
                         },

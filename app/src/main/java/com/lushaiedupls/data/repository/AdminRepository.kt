@@ -63,6 +63,7 @@ import com.lushaiedupls.data.remote.dto.SubjectOut
 import com.lushaiedupls.data.remote.dto.SubjectUpdate
 import com.lushaiedupls.data.remote.dto.TeacherAssignment
 import com.lushaiedupls.data.remote.dto.TeacherInstitutionAssignmentRequest
+import com.lushaiedupls.data.remote.dto.TeacherInstitutionAssignmentsResponse
 import com.lushaiedupls.data.remote.dto.TeachingUnitOut
 import com.lushaiedupls.data.remote.dto.UnreadCountResponse
 import com.lushaiedupls.data.remote.dto.UserOut
@@ -124,16 +125,14 @@ class AdminRepository(
                 )
             }
             val data = (result as? NetworkResult.Success)?.data ?: break
-            val pendingInPage = data.items.count { it.status == UserStatus.PENDING_APPROVAL }
-            pending += pendingInPage
-            val filterIgnored = data.items.any { it.status != UserStatus.PENDING_APPROVAL }
-            val lastPage = data.items.isEmpty() || page >= data.total_pages || filterIgnored
-            if (lastPage) {
-                if (filterIgnored && page == 1) {
-                    return countPendingAcrossAllUsers()
-                }
-                break
+            val pendingInPage = data.items.filter { it.status == UserStatus.PENDING_APPROVAL }
+            // Status query ignored — fall back to scanning all users.
+            if (pendingInPage.size != data.items.size) {
+                return countPendingAcrossAllUsers()
             }
+            pending += pendingInPage.size
+            // Last page: short page. Do not trust API `total` / `total_pages`.
+            if (data.items.size < 100) return pending
             page++
         }
         return pending
@@ -155,7 +154,7 @@ class AdminRepository(
             }
             val data = (result as? NetworkResult.Success)?.data ?: break
             pending += data.items.count { it.status == UserStatus.PENDING_APPROVAL }
-            if (data.items.isEmpty() || page >= data.total_pages) break
+            if (data.items.size < 100) break
             page++
         }
         return pending
@@ -234,7 +233,7 @@ class AdminRepository(
         institutionId: String,
         assignments: List<TeacherAssignment>,
         replaceExisting: Boolean = true,
-    ): NetworkResult<UserOut> = safeApiCall {
+    ): NetworkResult<TeacherInstitutionAssignmentsResponse> = safeApiCall {
         adminApi.assignTeacherInstitution(
             teacherId,
             TeacherInstitutionAssignmentRequest(

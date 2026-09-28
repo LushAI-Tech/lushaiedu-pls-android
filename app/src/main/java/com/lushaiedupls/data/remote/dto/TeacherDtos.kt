@@ -50,6 +50,24 @@ data class UnitAttendanceSummary(
 )
 
 @Serializable
+data class UnitMonthDay(
+    val day: String,
+    val has_extra_class: Boolean = false,
+    val totals: AttendanceTotals = AttendanceTotals(),
+)
+
+@Serializable
+data class UnitMonthAttendance(
+    val teaching_unit_id: String,
+    val class_name: String,
+    val subject_name: String,
+    val month: String,
+    val days: List<UnitMonthDay> = emptyList(),
+    val institution_id: String? = null,
+    val institution_name: String? = null,
+)
+
+@Serializable
 data class StudentRate(
     val student: UserSummary,
     val totals: AttendanceTotals,
@@ -186,6 +204,7 @@ data class NotificationCreate(
     val title: String,
     val body: String,
     val audience: NotificationAudience = NotificationAudience.ALL,
+    val institution_id: String? = null,
     val teaching_unit_id: String? = null,
     val expires_at: String? = null,
 )

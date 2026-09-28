@@ -2,6 +2,7 @@ package com.lushaiedupls.data.remote.dto
 
 import com.lushaiedupls.data.mapper.TeacherUiMappers
 import com.lushaiedupls.data.remote.ApiClient
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
@@ -29,6 +30,30 @@ class InstitutionContractTest {
         assertEquals("inst-1", parsed["institution_id"]!!.jsonPrimitive.content)
         assertEquals("class-1", parsed["class_id"]!!.jsonPrimitive.content)
         assertTrue(parsed.containsKey("subject_ids"))
+    }
+
+    @Test
+    fun teacherOnboarding_encodesInstitutionIdsAndAssignments() {
+        val body = CompleteOnboardingRequest(
+            role = UserRole.TEACHER,
+            name = "Vanlalawmpuia",
+            invite_code = "QC2BG9CK",
+            institution_ids = listOf("inst-1", "inst-2"),
+            assignments = listOf(
+                TeacherAssignment(class_id = "class-1", subject_id = "sub-1"),
+                TeacherAssignment(class_id = "class-2", subject_id = "sub-2"),
+            ),
+        )
+        val encoded = json.encodeToString(CompleteOnboardingRequest.serializer(), body)
+        val parsed = json.parseToJsonElement(encoded).jsonObject
+
+        assertEquals("TEACHER", parsed["role"]!!.jsonPrimitive.content)
+        assertFalse(parsed.containsKey("institution_id"))
+        assertEquals(
+            listOf("inst-1", "inst-2"),
+            parsed["institution_ids"]!!.jsonArray.map { it.jsonPrimitive.content },
+        )
+        assertEquals(2, parsed["assignments"]!!.jsonArray.size)
     }
 
     @Test

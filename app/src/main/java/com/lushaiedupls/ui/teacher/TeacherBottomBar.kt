@@ -40,10 +40,13 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.lushaiedupls.R
+import com.lushaiedupls.ui.common.LushNavigationRail
+import com.lushaiedupls.ui.common.LushRailNavIcon
 import com.lushaiedupls.ui.common.navItemClickable
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
+import com.lushaiedupls.ui.theme.BrandOrange
 
 enum class TeacherTab(
     val route: String,
@@ -109,6 +112,44 @@ fun TeacherBottomBar(
 }
 
 @Composable
+fun TeacherNavigationRail(
+    selectedTab: TeacherTab,
+    onTabSelected: (TeacherTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LushNavigationRail(modifier = modifier) {
+        LushRailNavIcon(
+            icon = Icons.Outlined.Home,
+            label = stringResource(R.string.tab_home),
+            selected = selectedTab == TeacherTab.Home,
+            onClick = { onTabSelected(TeacherTab.Home) },
+        )
+        LushRailNavIcon(
+            icon = Icons.Outlined.Groups,
+            label = stringResource(R.string.teacher_tab_my_groups),
+            selected = selectedTab == TeacherTab.MyGroups,
+            onClick = { onTabSelected(TeacherTab.MyGroups) },
+        )
+        AiCenterButton(
+            selected = selectedTab == TeacherTab.Ai,
+            onClick = { onTabSelected(TeacherTab.Ai) },
+        )
+        LushRailNavIcon(
+            icon = Icons.Outlined.CalendarMonth,
+            label = stringResource(R.string.tab_calendar),
+            selected = selectedTab == TeacherTab.Calendar,
+            onClick = { onTabSelected(TeacherTab.Calendar) },
+        )
+        LushRailNavIcon(
+            icon = Icons.Outlined.Menu,
+            label = stringResource(R.string.more_title),
+            selected = selectedTab == TeacherTab.Menu,
+            onClick = { onTabSelected(TeacherTab.Menu) },
+        )
+    }
+}
+
+@Composable
 private fun TeacherNavIcon(
     icon: ImageVector,
     label: String,
@@ -129,7 +170,7 @@ private fun TeacherNavIcon(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = BrandBlack,
+            tint = if (selected) BrandOrange else BrandBlack,
             modifier = Modifier.size(26.dp),
         )
         Spacer(modifier = Modifier.height(5.dp))
@@ -142,7 +183,7 @@ private fun TeacherNavIcon(
             modifier = Modifier
                 .size(width = indicatorWidth, height = 3.dp)
                 .clip(RoundedCornerShape(50))
-                .background(BrandBlack),
+                .background(BrandOrange),
         )
     }
 }
@@ -170,7 +211,7 @@ private fun AiCenterButton(
                 role = Role.Tab
                 this.selected = selected
             }
-            .size(width = 52.dp, height = 48.dp)
+            .size(44.dp)
             .navItemClickable(
                 selectedScale = scale,
                 onClick = onClick,

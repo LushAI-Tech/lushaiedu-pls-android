@@ -1,6 +1,7 @@
 package com.lushaiedupls.data.mock
 
 import com.lushaiedupls.R
+import com.lushaiedupls.data.remote.dto.NotificationAudience
 
 data class StudentProfile(
     val displayName: String,
@@ -25,6 +26,7 @@ enum class OverviewIcon {
     Staff,
     Classes,
     Attendance,
+    Sessions,
 }
 
 data class SessionSummary(
@@ -130,7 +132,17 @@ data class AppNotification(
     val section: NotificationSection,
     val authorName: String? = null,
     val teachingUnitLabel: String? = null,
-)
+    val audience: NotificationAudience? = null,
+) {
+    /** List chip: teaching-unit label when scoped to a unit, otherwise audience name. */
+    val audienceChipLabel: String?
+        get() = when (audience) {
+            NotificationAudience.TEACHING_UNIT ->
+                teachingUnitLabel?.takeIf { it.isNotBlank() } ?: "Teaching unit"
+            null -> teachingUnitLabel?.takeIf { it.isNotBlank() }
+            else -> audience.name
+        }
+}
 
 enum class NotificationSection {
     Today,
@@ -189,12 +201,18 @@ data class AiSubjectItem(
     val abbreviation: String,
     val iconRes: Int,
     val className: String = "",
+    val classId: String = "",
+    val institutionId: String = "",
+    val institutionName: String = "",
 )
 
 data class RegisteredDevice(
     val platform: String,
     val lastActive: String,
     val sessions: String,
+    val id: String = "",
+    val isCurrent: Boolean = false,
+    val deviceName: String? = null,
 )
 
 data class AiChatMessage(
@@ -704,9 +722,16 @@ class StudentMockRepository {
     fun accountEmail(): String = "Fakeavangchhia@gmail.com"
 
     fun registeredDevices(): List<RegisteredDevice> = listOf(
-        RegisteredDevice("iOS", "7th Aug 2026, 12:06", "--"),
-        RegisteredDevice("Web", "7th Aug 2026, 12:32", "--"),
-        RegisteredDevice("Android", "10th Aug 2026, 11:06", "Yes"),
+        RegisteredDevice("iOS", "7th Aug 2026, 12:06", "--", id = "ios-1", deviceName = "iPhone"),
+        RegisteredDevice("Web", "7th Aug 2026, 12:32", "--", id = "web-1"),
+        RegisteredDevice(
+            platform = "Android",
+            lastActive = "10th Aug 2026, 11:06",
+            sessions = "Yes",
+            id = "android-1",
+            isCurrent = true,
+            deviceName = "Pixel",
+        ),
     )
 
     fun aiChatSession(subjectId: String): AiChatSession = aiChatSessionFor(subjectId)

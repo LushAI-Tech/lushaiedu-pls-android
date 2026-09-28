@@ -2,7 +2,6 @@ package com.lushaiedupls.ui.admin.home
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -37,6 +36,7 @@ import com.lushaiedupls.data.mock.OverviewIcon
 import com.lushaiedupls.data.remote.dto.AttendanceTotals
 import com.lushaiedupls.data.repository.AdminRepository
 import com.lushaiedupls.data.session.UserSessionStore
+import com.lushaiedupls.ui.common.AdaptiveChunkedGrid
 import com.lushaiedupls.ui.common.AppTopBar
 import com.lushaiedupls.ui.common.AttendanceDonut
 import com.lushaiedupls.ui.common.AttendanceRingAbsent
@@ -120,6 +120,8 @@ fun AdminHomeScreen(
             ) {
                 AppTopBar(
                     displayName = uiState.displayName,
+                    avatarUrl = uiState.avatarUrl,
+                    avatarCacheKey = uiState.avatarCacheKey,
                     notificationCount = uiState.notificationCount,
                     onNotificationClick = onNotificationsClick,
                     onProfileClick = onProfileClick,
@@ -135,25 +137,45 @@ fun AdminHomeScreen(
                 Spacer(modifier = Modifier.height(20.dp))
                 SectionTitle(text = stringResource(R.string.section_overview))
                 Spacer(modifier = Modifier.height(12.dp))
-                MetricRow(
-                    leftLabel = stringResource(R.string.admin_stat_students),
-                    leftValue = uiState.totalStudents.toString(),
-                    leftIcon = OverviewIcon.Children,
-                    leftEmphasized = true,
-                    rightLabel = stringResource(R.string.admin_stat_teachers),
-                    rightValue = uiState.totalTeachers.toString(),
-                    rightIcon = OverviewIcon.Staff,
-                    rightEmphasized = true,
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                MetricRow(
-                    leftLabel = stringResource(R.string.admin_stat_parents),
-                    leftValue = uiState.totalParents.toString(),
-                    leftIcon = OverviewIcon.Children,
-                    rightLabel = stringResource(R.string.admin_stat_classes),
-                    rightValue = uiState.totalClasses.toString(),
-                    rightIcon = OverviewIcon.Classes,
-                )
+                AdaptiveChunkedGrid(
+                    items = listOf(
+                        AdminMetric(
+                            label = stringResource(R.string.admin_stat_students),
+                            value = uiState.totalStudents.toString(),
+                            icon = OverviewIcon.Children,
+                            emphasized = true,
+                        ),
+                        AdminMetric(
+                            label = stringResource(R.string.admin_stat_teachers),
+                            value = uiState.totalTeachers.toString(),
+                            icon = OverviewIcon.Staff,
+                            emphasized = true,
+                        ),
+                        AdminMetric(
+                            label = stringResource(R.string.admin_stat_parents),
+                            value = uiState.totalParents.toString(),
+                            icon = OverviewIcon.Children,
+                            emphasized = false,
+                        ),
+                        AdminMetric(
+                            label = stringResource(R.string.admin_stat_classes),
+                            value = uiState.totalClasses.toString(),
+                            icon = OverviewIcon.Classes,
+                            emphasized = false,
+                        ),
+                    ),
+                    compactColumns = 2,
+                    mediumColumns = 4,
+                    expandedColumns = 4,
+                ) { metric, _ ->
+                    MetricCard(
+                        label = metric.label,
+                        value = metric.value,
+                        emphasized = metric.emphasized,
+                        iconKind = metric.icon,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 Spacer(modifier = Modifier.height(24.dp))
                 SectionTitle(text = stringResource(R.string.section_attendance))
                 Spacer(modifier = Modifier.height(12.dp))
@@ -165,6 +187,13 @@ fun AdminHomeScreen(
         }
     }
 }
+
+private data class AdminMetric(
+    val label: String,
+    val value: String,
+    val icon: OverviewIcon,
+    val emphasized: Boolean,
+)
 
 @Composable
 private fun AdminHomeFilterSection(
@@ -264,38 +293,6 @@ private fun LegendRow(color: Color, text: String) {
             fontSize = 13.sp,
             color = LegendGray,
             fontFamily = FontFamily.SansSerif,
-        )
-    }
-}
-
-@Composable
-private fun MetricRow(
-    leftLabel: String,
-    leftValue: String,
-    leftIcon: OverviewIcon,
-    rightLabel: String,
-    rightValue: String,
-    rightIcon: OverviewIcon,
-    leftEmphasized: Boolean = false,
-    rightEmphasized: Boolean = false,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        MetricCard(
-            label = leftLabel,
-            value = leftValue,
-            emphasized = leftEmphasized,
-            iconKind = leftIcon,
-            modifier = Modifier.weight(1f),
-        )
-        MetricCard(
-            label = rightLabel,
-            value = rightValue,
-            emphasized = rightEmphasized,
-            iconKind = rightIcon,
-            modifier = Modifier.weight(1f),
         )
     }
 }

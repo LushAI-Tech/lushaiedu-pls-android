@@ -9,12 +9,16 @@
       margin: 0;
       padding: 0;
       background: transparent;
-      overflow: hidden;
+      /* Auto-height WebViews must not clip #content to the native frame during measure. */
+      height: auto;
+      min-height: 0;
+      overflow: visible;
       -webkit-text-size-adjust: 100%;
     }
     #content {
       margin: 0;
       padding: 0;
+      height: auto;
       word-wrap: break-word;
       overflow-wrap: anywhere;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -126,15 +130,22 @@
       var pendingHeight = -1;
       var reportTimer = null;
 
-      function reportHeight() {
+      function measureHeight() {
         var el = document.getElementById("content");
-        var rectH = el ? el.getBoundingClientRect().height : 0;
-        var h = Math.ceil(Math.max(
-          rectH,
-          el ? el.scrollHeight : 0,
-          el ? el.offsetHeight : 0
-        ));
-        if (h < 1) h = 1;
+        if (!el) return 1;
+        // Measure #content only. body/document heights follow the native WebView
+        // frame and create a chicken-and-egg clip when overflow was hidden.
+        void el.offsetHeight;
+        var h = Math.max(
+          el.scrollHeight || 0,
+          el.offsetHeight || 0,
+          el.getBoundingClientRect().height || 0
+        );
+        return Math.max(1, Math.ceil(h + 1));
+      }
+
+      function reportHeight() {
+        var h = measureHeight();
         if (h === pendingHeight) return;
         pendingHeight = h;
         if (window.AndroidBridge && AndroidBridge.onHeight) {
@@ -144,14 +155,38 @@
       }
 
       function scheduleReport() {
+        reportHeight();
         if (reportTimer) clearTimeout(reportTimer);
         reportTimer = setTimeout(function () {
           requestAnimationFrame(function () {
             reportHeight();
+            setTimeout(reportHeight, 16);
             setTimeout(reportHeight, 50);
-            setTimeout(reportHeight, 200);
+            setTimeout(reportHeight, 120);
+            setTimeout(reportHeight, 280);
+            setTimeout(reportHeight, 500);
           });
-        }, 16);
+        }, 0);
+      }
+
+      if (typeof ResizeObserver !== "undefined") {
+        var resizeObserver = new ResizeObserver(function () { scheduleReport(); });
+        window.addEventListener("load", function () {
+          var el = document.getElementById("content");
+          if (el) resizeObserver.observe(el);
+        });
+      }
+      if (typeof MutationObserver !== "undefined") {
+        window.addEventListener("load", function () {
+          var el = document.getElementById("content");
+          if (!el) return;
+          new MutationObserver(function () { scheduleReport(); }).observe(el, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true
+          });
+        });
       }
 
       window.setTheme = function (opts) {
@@ -160,6 +195,7 @@
         if (opts.color) c.style.color = opts.color;
         if (opts.fontSizePx) c.style.fontSize = opts.fontSizePx + "px";
         if (opts.lineHeight) c.style.lineHeight = String(opts.lineHeight);
+        if (opts.fontWeight) c.style.fontWeight = String(opts.fontWeight);
         if (opts.textAlign) c.style.textAlign = opts.textAlign;
         if (opts.linkColor) {
           var styleId = "dynamic-link-color";
@@ -176,6 +212,11 @@
 
       if (window.marked && marked.use) {
         marked.use({ gfm: true, breaks: true, pedantic: false });
+      }
+
+      // KaTeX has \text but not \mbox; alias for tutor/JLatexMath content.
+      if (window.katex && typeof katex.__defineMacro === "function") {
+        try { katex.__defineMacro("\\mbox", "\\text{#1}"); } catch (e) {}
       }
 
       var MATH_TOKEN_PREFIX = "LUSHMATHPH";
@@ -195,6 +236,7 @@
         var body = s
           .replace(/\\mathrm\{([^{}]*)\}/g, "$1")
           .replace(/\\mbox\{([^{}]*)\}/g, "$1")
+          .replace(/\\text\{([^{}]*)\}/g, "$1")
           .replace(/_\{(\d+)\}/g, "$1")
           .replace(/_(\d+)/g, "$1")
           .replace(/\^\{([^{}]+)\}/g, "^$1")
@@ -206,8 +248,9 @@
       }
 
       function stashMath(slots, tex, display) {
+        var cleaned = String(tex || "").replace(/\r\n/g, "\n").replace(/\n+/g, " ").replace(/[ \t]{2,}/g, " ").trim();
         var id = slots.length;
-        slots.push({ tex: wrapChemistryAsMhchem(tex), display: !!display });
+        slots.push({ tex: wrapChemistryAsMhchem(cleaned), display: !!display });
         return MATH_TOKEN_PREFIX + id + MATH_TOKEN_SUFFIX;
       }
 
@@ -264,14 +307,21 @@
           if (s.charAt(i) === "$" && s.charAt(i + 1) !== "$") {
             var j = i + 1;
             var found = -1;
+            var crossedNewline = false;
+            var sawLatex = false;
             while (j < s.length) {
               if (s.charAt(j) === "\\") {
+                sawLatex = true;
                 j += 2;
                 continue;
               }
-              if (s.charAt(j) === "\n") break;
+              if (s.charAt(j) === "\n") {
+                crossedNewline = true;
+                j++;
+                continue;
+              }
               if (s.charAt(j) === "$") {
-                found = j;
+                if (!crossedNewline || sawLatex) found = j;
                 break;
               }
               j++;
@@ -338,6 +388,7 @@
         window.renderPrepared(extractMath(markdown || ""));
       };
 
+      window.scheduleReport = scheduleReport;
       window.addEventListener("load", scheduleReport);
       window.addEventListener("resize", scheduleReport);
     })();

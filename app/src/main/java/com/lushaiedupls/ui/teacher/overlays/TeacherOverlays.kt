@@ -11,18 +11,14 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Info
@@ -55,22 +51,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.lushaiedupls.R
 import com.lushaiedupls.data.mock.TeacherDayPeriod
 import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.TeacherRepository
+import com.lushaiedupls.ui.common.OverlayScrimDialog
+import com.lushaiedupls.ui.common.keepKeyboardOpen
+import com.lushaiedupls.ui.common.scrollIntoViewOnFocus
 import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
 import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.TextSecondary
-import com.lushaiedupls.ui.common.scrollIntoViewOnFocus
-import com.lushaiedupls.ui.common.verticalScrollWithIme
 import kotlinx.coroutines.launch
+
 data class AttendancePeriodOption(
     val periodId: String,
     val label: String,
@@ -90,28 +86,7 @@ fun TeacherScrimDialog(
     onDismiss: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .imePadding()
-                .background(Color.Black.copy(alpha = 0.45f))
-                .clickable(onClick = onDismiss),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .clickable(enabled = false) {},
-            ) {
-                content()
-            }
-        }
-    }
+    OverlayScrimDialog(onDismiss = onDismiss, content = content)
 }
 
 @Composable
@@ -176,8 +151,7 @@ fun InviteParentOverlay(
                 .fillMaxWidth()
                 .clip(CardShape)
                 .background(BgWhite)
-                .padding(20.dp)
-                .verticalScrollWithIme(rememberScrollState()),
+                .padding(20.dp),
         ) {
             Text(
                 text = stringResource(R.string.teacher_invite_parent_title),
@@ -737,7 +711,6 @@ fun DayDetailOverlay(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 560.dp)
                 .clip(CardShape)
                 .background(BgWhite)
                 .padding(20.dp),
@@ -756,7 +729,6 @@ fun DayDetailOverlay(
             )
             Spacer(modifier = Modifier.height(16.dp))
             Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 periods.chunked(2).forEach { row ->
@@ -847,6 +819,7 @@ private fun OverlayTextField(
             ),
             modifier = Modifier
                 .fillMaxWidth()
+                .keepKeyboardOpen()
                 .scrollIntoViewOnFocus(),
         )
     }

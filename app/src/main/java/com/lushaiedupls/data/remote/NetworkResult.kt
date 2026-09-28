@@ -30,6 +30,7 @@ fun NetworkResult<*>.userMessage(): String = when (this) {
         ?: aiScopeAwareMessage(code, body)
         ?: stemBindingUnavailableMessage(code, body, message)
         ?: googlePasswordLinkBlockedMessage(code, body)
+        ?: deviceSessionConflictMessage(code, body)
         ?: accountAlreadyExistsMessage(code, body)
         ?: feeTemplateConflictMessage(code, body)
         ?: feeTemplateNotFoundMessage(code, body)
@@ -63,6 +64,27 @@ fun NetworkResult<*>.isAccountAlreadyExists(): Boolean {
 fun NetworkResult<*>.isGooglePasswordLinkBlocked(): Boolean {
     if (this !is NetworkResult.Error) return false
     return googlePasswordLinkBlockedMessage(code, body) != null
+}
+
+/** True when login is blocked because this account already occupies a device slot. */
+fun NetworkResult<*>.isDeviceSessionConflict(): Boolean {
+    if (this !is NetworkResult.Error) return false
+    return deviceSessionConflictMessage(code, body) != null
+}
+
+/**
+ * Login / Google-auth copy. Device-slot 409s show the API detail plus how to free
+ * the slot; other 409s keep the existing account-exists / Google-link mapping.
+ */
+fun NetworkResult<*>.loginUserMessage(): String {
+    if (this is NetworkResult.Error && code == 409) {
+        deviceSessionConflictMessage(code, body)?.let { return it }
+        if (googlePasswordLinkBlockedMessage(code, body) != null) return userMessage()
+        if (accountAlreadyExistsMessage(code, body) != null) return userMessage()
+        val detail = apiDetailMessage(body)
+        if (!detail.isNullOrBlank()) return formatDeviceSessionConflict(detail)
+    }
+    return userMessage()
 }
 
 /** 400/404 from chapter/subtopic-scoped AI endpoints. */
@@ -176,9 +198,47 @@ private fun googlePasswordLinkBlockedMessage(code: Int, body: String?): String? 
     return GOOGLE_PASSWORD_LINK_BLOCKED_MESSAGE
 }
 
+private fun deviceSessionConflictMessage(code: Int, body: String?): String? {
+    if (code != 409) return null
+    if (googlePasswordLinkBlockedMessage(code, body) != null) return null
+    val detail = apiDetailMessage(body)
+    val combined = listOfNotNull(detail, body).joinToString(" ").lowercase()
+    if (combined.isBlank()) return null
+    val feeContext = listOf("ledger", "fee template", "fee_template", "subject-monthly")
+        .any { it in combined }
+    if (feeContext) return null
+    val hasConflictToken = "conflict_token" in combined || "\"conflictToken\"" in combined
+    val deviceContext = hasConflictToken || listOf(
+        "device",
+        "session",
+        "signed in",
+        "logged in",
+        "another device",
+        "other device",
+        "concurrent",
+        "already active",
+        "active session",
+        "device limit",
+        "max device",
+        "maximum device",
+        "too many device",
+        "slot",
+    ).any { it in combined }
+    if (!deviceContext) return null
+    return formatDeviceSessionConflict(detail)
+}
+
+private fun formatDeviceSessionConflict(detail: String?): String {
+    val text = detail?.trim()?.takeIf { it.isNotBlank() } ?: DEVICE_SESSION_CONFLICT_FALLBACK
+    val alreadyGuides = listOf("sign out", "sign-out", "account →", "account ->")
+        .any { it in text.lowercase() }
+    return if (alreadyGuides) text else "$text\n\n$DEVICE_SESSION_HINT"
+}
+
 private fun accountAlreadyExistsMessage(code: Int, body: String?): String? {
     if (code !in setOf(400, 409, 422)) return null
     if (googlePasswordLinkBlockedMessage(code, body) != null) return null
+    if (deviceSessionConflictMessage(code, body) != null) return null
     val detail = apiDetailMessage(body).orEmpty()
     val combined = listOfNotNull(detail, body).joinToString(" ").lowercase()
     if (combined.isBlank()) {
@@ -206,6 +266,12 @@ private fun accountAlreadyExistsMessage(code: Int, body: String?): String? {
     }
 }
 
+const val DEVICE_SESSION_CONFLICT_FALLBACK =
+    "This account is already signed in on another device."
+const val DEVICE_SESSION_HINT =
+    "Open the other device → Account → Sign out."
+const val LOGOUT_ALL_REQUIRES_SESSION =
+    "Sign out all needs this account’s current session. Open the other device → Account → Sign out all."
 const val GOOGLE_PASSWORD_LINK_BLOCKED_MESSAGE =
     "An account with this email already exists with a password. Sign in with your password, verify your email, then Sign in with Google to link."
 const val ACCOUNT_ALREADY_EXISTS_MESSAGE =
@@ -282,9 +348,13 @@ private fun apiDetailMessage(body: String?): String? {
         val detail = ApiClient.json.parseToJsonElement(body).jsonObject["detail"] ?: return null
         when (detail) {
             is JsonPrimitive -> detail.contentOrNull?.takeIf { it.isNotBlank() }
+            is JsonObject -> listOf("message", "detail", "msg").firstNotNullOfOrNull { key ->
+                (detail[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+            }
             is JsonArray -> detail.firstNotNullOfOrNull { item ->
                 val obj = item as? JsonObject ?: return@firstNotNullOfOrNull null
                 (obj["msg"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+                    ?: (obj["message"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
             }
             else -> null
         }

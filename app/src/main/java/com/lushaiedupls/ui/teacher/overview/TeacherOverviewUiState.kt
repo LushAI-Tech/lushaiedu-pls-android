@@ -27,6 +27,7 @@ data class TeacherOverviewUiState(
     val selectedUnitId: String? = null,
     val attendanceMonth: YearMonth = YearMonth.now(),
     val selectedAttendanceDay: Int? = null,
+    val markedRollDays: Set<Int> = emptySet(),
     val setupDateLabel: String? = null,
     val setupScheduledPeriods: List<AttendancePeriodOption> = emptyList(),
     val setupInstitutePeriods: List<AttendancePeriodOption> = emptyList(),

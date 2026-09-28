@@ -37,8 +37,8 @@ import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.dto.ClassOut
 import com.lushaiedupls.data.remote.dto.InstitutionOut
 import com.lushaiedupls.data.remote.dto.TeacherAssignment
-import com.lushaiedupls.data.remote.dto.TeachingUnitOut
-import com.lushaiedupls.data.remote.dto.TeachingUnitStatus
+import com.lushaiedupls.data.remote.dto.TeacherInstitutionGroup
+import com.lushaiedupls.data.remote.dto.UserOut
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.AdminRepository
 import com.lushaiedupls.ui.admin.AdminFilterRow
@@ -89,6 +89,7 @@ class AdminTeacherAssignmentViewModel(
     private val adminRepository: AdminRepository,
     private val teacherId: String,
     teacherName: String,
+    private val initialUser: UserOut? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(
         AdminTeacherAssignmentUiState(
@@ -99,25 +100,74 @@ class AdminTeacherAssignmentViewModel(
     )
     val uiState: StateFlow<AdminTeacherAssignmentUiState> = _uiState.asStateFlow()
 
-    /** Existing ACTIVE teaching units for this teacher (class/subject pairs). */
-    private var teacherUnits: List<TeachingUnitOut> = emptyList()
+    private var userInstitutions: List<TeacherInstitutionGroup> = emptyList()
+    private var loadGeneration = 0
 
-    init {
-        loadInitial()
+    fun reload(latestUser: UserOut? = initialUser) {
+        loadInitial(latestUser)
     }
 
-    private fun loadInitial() {
+    private fun resolveUser(network: UserOut?, fallback: UserOut?): UserOut? {
+        if (network == null) return fallback
+        if (network.teaching_institutions.isNotEmpty() || fallback == null) return network
+        if (fallback.teaching_institutions.isEmpty()) return network
+        return network.copy(teaching_institutions = fallback.teaching_institutions)
+    }
+
+    private fun orderInstitutions(
+        catalog: List<InstitutionOut>,
+        user: UserOut?,
+    ): List<InstitutionOut> {
+        if (user == null || user.teaching_institutions.isEmpty()) return catalog
+        val byId = catalog.associateBy { it.id }
+        val byName = catalog.associateBy { it.name.trim().lowercase() }
+        val seen = linkedSetOf<String>()
+        val leading = mutableListOf<InstitutionOut>()
+        for (group in user.teaching_institutions) {
+            val match = byId[group.institution_id]
+                ?: group.institution_name.trim().lowercase()
+                    .takeIf { it.isNotBlank() }
+                    ?.let(byName::get)
+                ?: continue
+            if (seen.add(match.id)) leading += match
+        }
+        if (leading.isEmpty()) return catalog
+        return leading + catalog.filter { it.id !in seen }
+    }
+
+    private fun captureUser(user: UserOut, institutions: List<InstitutionOut>): String? {
+        userInstitutions = user.teaching_institutions.filter { group ->
+            group.institution_id.isNotBlank()
+        }
+        val byId = institutions.associateBy { it.id }
+        val byName = institutions.associateBy { it.name.trim().lowercase() }
+        for (group in userInstitutions) {
+            byId[group.institution_id]?.let { return it.id }
+            val name = group.institution_name.trim().lowercase()
+            if (name.isNotBlank()) {
+                byName[name]?.let { return it.id }
+            }
+        }
+        return userInstitutions.firstOrNull()?.institution_id
+    }
+
+    private fun hasSavedSelection(): Boolean =
+        userInstitutions.any { group ->
+            group.assignments.any { it.class_id.isNotBlank() && it.subject_id.isNotBlank() }
+        }
+
+    private fun loadInitial(latestUser: UserOut? = initialUser) {
+        val generation = ++loadGeneration
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             coroutineScope {
                 val institutionsDeferred = async {
                     adminRepository.listInstitutions(includeInactive = false)
                 }
-                val unitsDeferred = async { adminRepository.teachingUnits(forceRefresh = true) }
                 val userDeferred = async { adminRepository.getUser(teacherId) }
                 val institutionsResult = institutionsDeferred.await()
-                val unitsResult = unitsDeferred.await()
                 val userResult = userDeferred.await()
+                if (generation != loadGeneration) return@coroutineScope
 
                 if (institutionsResult !is NetworkResult.Success) {
                     _uiState.update {
@@ -129,57 +179,67 @@ class AdminTeacherAssignmentViewModel(
                     return@coroutineScope
                 }
 
-                val institutions = institutionsResult.data
-                    .filter { it.is_active }
-                    .sortedWith(compareBy({ it.sort_order }, { it.name }))
-                teacherUnits = (unitsResult as? NetworkResult.Success)?.data
-                    .orEmpty()
-                    .filter { unit ->
-                        unit.teacher?.id == teacherId &&
-                            unit.status == TeachingUnitStatus.ACTIVE
+                val catalog = institutionsResult.data.filter { it.is_active }
+                val user = resolveUser(
+                    network = (userResult as? NetworkResult.Success)?.data,
+                    fallback = latestUser,
+                )
+                val institutions = orderInstitutions(catalog, user)
+                if (user == null) {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            institutions = institutions,
+                            errorMessage = userResult.userMessage(),
+                        )
                     }
-                val teacherInstitutionId = (userResult as? NetworkResult.Success)?.data
-                    ?.institution_id
-                    ?.takeIf { id -> institutions.any { it.id == id } }
-                val unitInstitutionId = teacherUnits
-                    .mapNotNull { it.institution_id }
-                    .firstOrNull { id -> institutions.any { it.id == id } }
-                val selectedInstitutionId = teacherInstitutionId
-                    ?: unitInstitutionId
-                    ?: institutions.firstOrNull()?.id
+                    return@coroutineScope
+                }
+                val selectedInstitutionId = captureUser(user, institutions)
 
                 _uiState.update {
                     it.copy(
                         isLoading = false,
                         institutions = institutions,
                         selectedInstitutionId = selectedInstitutionId,
-                        teacherName = (userResult as? NetworkResult.Success)?.data?.name
-                            ?.takeIf { name -> name.isNotBlank() }
+                        selectedClassIds = emptySet(),
+                        selectedAssignmentKeys = emptySet(),
+                        subjectChoices = emptyList(),
+                        classes = emptyList(),
+                        teacherName = user.name.takeIf { name -> name.isNotBlank() }
                             ?: it.teacherName,
+                        errorMessage = null,
                     )
                 }
-                selectedInstitutionId?.let { loadClasses(it, applyExisting = true) }
+                selectedInstitutionId?.let { loadClasses(it, restoreFromUser = true, generation) }
             }
         }
     }
 
     fun selectInstitution(index: Int) {
         val selected = _uiState.value.institutions.getOrNull(index) ?: return
-        if (selected.id == _uiState.value.selectedInstitutionId) return
-        _uiState.update {
-            it.copy(
-                selectedInstitutionId = selected.id,
-                classes = emptyList(),
-                selectedClassIds = emptySet(),
-                subjectChoices = emptyList(),
-                selectedAssignmentKeys = emptySet(),
-                errorMessage = null,
-            )
+        val alreadySelected = selected.id == _uiState.value.selectedInstitutionId
+        if (alreadySelected && _uiState.value.selectedClassIds.isNotEmpty()) return
+        if (!alreadySelected) {
+            _uiState.update {
+                it.copy(
+                    selectedInstitutionId = selected.id,
+                    classes = emptyList(),
+                    selectedClassIds = emptySet(),
+                    subjectChoices = emptyList(),
+                    selectedAssignmentKeys = emptySet(),
+                    errorMessage = null,
+                )
+            }
         }
-        loadClasses(selected.id, applyExisting = true)
+        loadClasses(selected.id, restoreFromUser = true)
     }
 
-    private fun loadClasses(institutionId: String, applyExisting: Boolean) {
+    private fun loadClasses(
+        institutionId: String,
+        restoreFromUser: Boolean,
+        generation: Int = ++loadGeneration,
+    ) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             when (
@@ -189,61 +249,81 @@ class AdminTeacherAssignmentViewModel(
                 )
             ) {
                 is NetworkResult.Success -> {
+                    if (generation != loadGeneration) return@launch
                     val classes = result.data.filter { c -> c.is_active }
+                    val shouldRestore = restoreFromUser && hasSavedSelection() && classes.isNotEmpty()
                     _uiState.update {
-                        it.copy(isLoading = false, classes = classes)
+                        it.copy(
+                            isLoading = false,
+                            classes = classes,
+                            selectedClassIds = emptySet(),
+                            subjectChoices = emptyList(),
+                            selectedAssignmentKeys = emptySet(),
+                            isLoadingSubjects = shouldRestore,
+                        )
                     }
-                    if (applyExisting) {
-                        applyExistingSelections(institutionId)
+                    if (shouldRestore) {
+                        applySavedUserSelection(classes, generation)
                     }
                 }
-                else -> _uiState.update {
-                    it.copy(isLoading = false, errorMessage = result.userMessage())
+                else -> {
+                    if (generation != loadGeneration) return@launch
+                    _uiState.update {
+                        it.copy(isLoading = false, errorMessage = result.userMessage())
+                    }
                 }
             }
         }
     }
 
-    private fun applyExistingSelections(institutionId: String) {
-        val classIdsInInstitution = _uiState.value.classes.map { it.id }.toSet()
-        val existing = teacherUnits.filter { unit ->
-            unit.class_id in classIdsInInstitution &&
-                (unit.institution_id == null || unit.institution_id == institutionId)
+    private fun applySavedUserSelection(classes: List<ClassOut>, generation: Int) {
+        if (generation != loadGeneration) return
+        if (!restoreAssignmentsFromUser(classes, generation)) {
+            _uiState.update { it.copy(isLoadingSubjects = false) }
         }
-        val classIds = existing.map { it.class_id }.toSet()
-        val keys = existing.map { "${it.class_id}:${it.subject_id}" }.toSet()
-        if (classIds.isEmpty()) {
-            _uiState.update {
-                it.copy(
-                    selectedClassIds = emptySet(),
-                    subjectChoices = emptyList(),
-                    selectedAssignmentKeys = emptySet(),
-                    isLoadingSubjects = false,
-                )
+    }
+
+    private fun restoreAssignmentsFromUser(classes: List<ClassOut>, generation: Int): Boolean {
+        val institutionId = _uiState.value.selectedInstitutionId
+        val classIdsInInstitution = classes.map { it.id }.toSet()
+        val scoped = userInstitutions
+            .firstOrNull { it.institution_id == institutionId }
+            ?.assignments
+            .orEmpty()
+            .filter { row ->
+                row.class_id in classIdsInInstitution && row.subject_id.isNotBlank()
             }
-            return
-        }
+        val classIds = scoped.map { it.class_id }.toSet()
+        val keys = scoped.map { "${it.class_id}:${it.subject_id}" }.toSet()
+        if (classIds.isEmpty()) return false
         _uiState.update {
             it.copy(
                 selectedClassIds = classIds,
-                selectedAssignmentKeys = emptySet(),
+                selectedAssignmentKeys = keys,
                 isLoadingSubjects = true,
             )
         }
-        loadSubjects(classIds, preselectKeys = keys)
+        loadSubjects(classIds, preselectKeys = keys, generation = generation)
+        return true
     }
 
     fun toggleClass(classId: String) {
         _uiState.update { state ->
-            val next = if (classId in state.selectedClassIds) {
+            val removing = classId in state.selectedClassIds
+            val next = if (removing) {
                 state.selectedClassIds - classId
             } else {
                 state.selectedClassIds + classId
             }
+            val keptKeys = if (removing) {
+                state.selectedAssignmentKeys.filterNot { it.startsWith("$classId:") }.toSet()
+            } else {
+                state.selectedAssignmentKeys
+            }
             state.copy(
                 selectedClassIds = next,
                 subjectChoices = emptyList(),
-                selectedAssignmentKeys = emptySet(),
+                selectedAssignmentKeys = keptKeys,
                 isLoadingSubjects = next.isNotEmpty(),
             )
         }
@@ -252,47 +332,21 @@ class AdminTeacherAssignmentViewModel(
             _uiState.update { it.copy(isLoadingSubjects = false) }
             return
         }
-        loadSubjects(classIds, preselectKeys = null)
+        loadSubjects(classIds)
     }
 
-    private fun loadSubjects(classIds: Set<String>, preselectKeys: Set<String>?) {
+    private fun loadSubjects(
+        classIds: Set<String>,
+        preselectKeys: Set<String>? = null,
+        generation: Int = loadGeneration,
+    ) {
         viewModelScope.launch {
-            val institutionId = _uiState.value.selectedInstitutionId ?: return@launch
-            val classNames = _uiState.value.classes.associate { it.id to it.name }
             _uiState.update { it.copy(isLoadingSubjects = true, errorMessage = null) }
-            val loaded = coroutineScope {
-                classIds.map { classId ->
-                    async {
-                        classId to adminRepository.listSubjects(
-                            classId = classId,
-                            institutionId = institutionId,
-                            includeInactive = false,
-                        )
-                    }
-                }.awaitAll()
-            }
-            val choices = mutableListOf<AdminAssignmentSubjectChoice>()
-            var error: String? = null
-            loaded.forEach { (classId, result) ->
-                when (result) {
-                    is NetworkResult.Success -> {
-                        result.data.filter { it.is_active }.forEach { subject ->
-                            choices += AdminAssignmentSubjectChoice(
-                                classId = classId,
-                                className = classNames[classId].orEmpty(),
-                                subjectId = subject.id,
-                                subjectName = subject.name,
-                            )
-                        }
-                    }
-                    else -> error = result.userMessage()
-                }
-            }
+            val (choices, error) = loadSubjectChoices(classIds)
+            if (generation != loadGeneration) return@launch
             val choiceKeys = choices.map { it.key }.toSet()
-            val selectedKeys = when {
-                preselectKeys != null -> preselectKeys.intersect(choiceKeys)
-                else -> _uiState.value.selectedAssignmentKeys.intersect(choiceKeys)
-            }
+            val selectedKeys = preselectKeys?.intersect(choiceKeys)
+                ?: _uiState.value.selectedAssignmentKeys.intersect(choiceKeys)
             _uiState.update {
                 it.copy(
                     isLoadingSubjects = false,
@@ -304,6 +358,43 @@ class AdminTeacherAssignmentViewModel(
                 )
             }
         }
+    }
+
+    private suspend fun loadSubjectChoices(
+        classIds: Set<String>,
+    ): Pair<List<AdminAssignmentSubjectChoice>, String?> {
+        val institutionId = _uiState.value.selectedInstitutionId
+            ?: return emptyList<AdminAssignmentSubjectChoice>() to null
+        val classNames = _uiState.value.classes.associate { it.id to it.name }
+        val loaded = coroutineScope {
+            classIds.map { classId ->
+                async {
+                    classId to adminRepository.listSubjects(
+                        classId = classId,
+                        institutionId = institutionId,
+                        includeInactive = false,
+                    )
+                }
+            }.awaitAll()
+        }
+        val choices = mutableListOf<AdminAssignmentSubjectChoice>()
+        var error: String? = null
+        loaded.forEach { (classId, result) ->
+            when (result) {
+                is NetworkResult.Success -> {
+                    result.data.filter { it.is_active }.forEach { subject ->
+                        choices += AdminAssignmentSubjectChoice(
+                            classId = classId,
+                            className = classNames[classId].orEmpty(),
+                            subjectId = subject.id,
+                            subjectName = subject.name,
+                        )
+                    }
+                }
+                else -> error = result.userMessage()
+            }
+        }
+        return choices to error
     }
 
     fun toggleAssignment(key: String) {
@@ -360,8 +451,9 @@ class AdminTeacherAssignmentViewModel(
             adminRepository: AdminRepository,
             teacherId: String,
             teacherName: String,
+            initialUser: UserOut? = null,
         ): ViewModelProvider.Factory = viewModelFactory {
-            AdminTeacherAssignmentViewModel(adminRepository, teacherId, teacherName)
+            AdminTeacherAssignmentViewModel(adminRepository, teacherId, teacherName, initialUser)
         }
     }
 }
@@ -374,16 +466,21 @@ fun AdminTeacherAssignmentRoute(
     onBack: () -> Unit,
     onSaved: () -> Unit,
     modifier: Modifier = Modifier,
+    initialUser: UserOut? = null,
 ) {
     val viewModel: AdminTeacherAssignmentViewModel = viewModel(
-        key = "admin-teacher-assign-$teacherId",
+        key = "admin-teacher-assign-$teacherId-v2",
         factory = AdminTeacherAssignmentViewModel.provideFactory(
             adminRepository,
             teacherId,
             teacherName,
+            initialUser,
         ),
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(teacherId) {
+        viewModel.reload(initialUser)
+    }
     BackHandler(onBack = onBack)
     LaunchedEffect(uiState.saved) {
         if (uiState.saved) {
@@ -456,9 +553,9 @@ fun AdminTeacherAssignmentScreen(
                 AdminFilterRow(
                     labels = uiState.institutions.map { it.name },
                     selectedIndex = uiState.institutions
-                        .indexOfFirst { it.id == uiState.selectedInstitutionId }
-                        .coerceAtLeast(0),
+                        .indexOfFirst { it.id == uiState.selectedInstitutionId },
                     onSelect = onSelectInstitution,
+                    allowUnselected = true,
                 )
                 Spacer(modifier = Modifier.height(16.dp))
             }

@@ -7,6 +7,7 @@ import com.lushaiedupls.data.mapper.StudentUiMappers
 import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.StudentRepository
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.viewModelFactory
 import java.time.YearMonth
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -66,10 +67,11 @@ class StudentCalendarViewModel(
         viewModelScope.launch {
             val hasContent = _uiState.value.allEvents.isNotEmpty() ||
                 _uiState.value.dayMarks.isNotEmpty()
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoading, hasContent)
             _uiState.update {
                 it.copy(
-                    isLoading = !hasContent,
-                    isRefreshing = hasContent,
+                    isLoading = loading,
+                    isRefreshing = refreshing,
                     errorMessage = null,
                     visibleMonth = month,
                     selectedDay = selectedDay,

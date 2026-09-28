@@ -14,6 +14,7 @@ import com.lushaiedupls.data.remote.dto.SubjectOut
 import com.lushaiedupls.data.remote.dto.SubjectUpdate
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.AdminRepository
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.viewModelFactory
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -70,14 +71,13 @@ class AdminClassesViewModel(
         viewModelScope.launch {
             val hasContent = _uiState.value.classes.isNotEmpty() ||
                 _uiState.value.institutions.isNotEmpty()
-            if (!hasContent) {
-                _uiState.update {
-                    it.copy(isLoading = true, isRefreshing = false, errorMessage = null)
-                }
-            } else {
-                _uiState.update {
-                    it.copy(isRefreshing = true, isLoading = false, errorMessage = null)
-                }
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoading, hasContent)
+            _uiState.update {
+                it.copy(
+                    isLoading = loading,
+                    isRefreshing = refreshing,
+                    errorMessage = null,
+                )
             }
             val institutions = when (val result = adminRepository.listInstitutions(includeInactive = true)) {
                 is NetworkResult.Success -> result.data.sortedWith(compareBy({ it.sort_order }, { it.name }))

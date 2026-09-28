@@ -9,6 +9,7 @@ import com.lushaiedupls.data.remote.dto.FeedbackStatus
 import com.lushaiedupls.data.remote.dto.ParentFeedbackOut
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.AdminRepository
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.viewModelFactory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -56,10 +57,11 @@ class AdminFeedbackViewModel(
     fun refresh() {
         viewModelScope.launch {
             val hasContent = _uiState.value.items.isNotEmpty()
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoading, hasContent)
             _uiState.update {
                 it.copy(
-                    isLoading = !hasContent,
-                    isRefreshing = hasContent,
+                    isLoading = loading,
+                    isRefreshing = refreshing,
                     errorMessage = null,
                 )
             }

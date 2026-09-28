@@ -14,6 +14,9 @@ interface UserSessionStore {
     fun setDisplayName(name: String)
     fun getAvatarUrl(): String?
     fun setAvatarUrl(url: String?)
+    /** Bumped when the user uploads a new avatar so Coil reloads even if the URL is unchanged. */
+    fun getAvatarRevision(): Long
+    fun bumpAvatarRevision(): Long
     fun getSelectedClasses(): List<SchoolClass>
     fun setSelectedClasses(classes: List<SchoolClass>)
     fun getClassSubjects(): Map<SchoolClass, List<SubjectOption>>
@@ -38,6 +41,12 @@ interface UserSessionStore {
     fun setPendingInviteCode(code: String?)
     fun getInstitutionId(): String?
     fun setInstitutionId(institutionId: String?)
+    fun getInstitutionIds(): List<String>
+    fun setInstitutionIds(ids: List<String>)
+    fun getClassInstitutionIds(): Map<String, String>
+    fun setClassInstitutionIds(map: Map<String, String>)
+    fun getPendingTeacherAssignments(): List<PendingTeacherAssignment>
+    fun setPendingTeacherAssignments(items: List<PendingTeacherAssignment>)
     fun isParentSignupFlow(): Boolean
     fun setParentSignupFlow(enabled: Boolean)
     /** After Google OAuth: collect name/phone/password/address/gender before role. */

@@ -26,8 +26,12 @@ import com.lushaiedupls.data.remote.dto.ClearChatHistoryResponse
 import com.lushaiedupls.data.remote.dto.ExamPrepPyqsResponse
 import com.lushaiedupls.data.remote.dto.MemberOut
 import com.lushaiedupls.data.remote.dto.MessageResponse
-import com.lushaiedupls.data.remote.dto.ProgressDashboardResponse
+import com.lushaiedupls.data.remote.dto.ProgressOverviewResponse
+import com.lushaiedupls.data.remote.dto.ProgressOverviewTotals
+import com.lushaiedupls.data.remote.dto.ProgressSubjectOverview
+import com.lushaiedupls.data.remote.dto.SelfProgressOverview
 import com.lushaiedupls.data.remote.dto.ProgressUpdateRequest
+import com.lushaiedupls.data.remote.dto.QuickCheckAttemptRequest
 import com.lushaiedupls.data.remote.dto.QuizAttemptSummary
 import com.lushaiedupls.data.remote.dto.QuizStartResponse
 import com.lushaiedupls.data.remote.dto.QuizSubmitRequest
@@ -81,11 +85,11 @@ class StudentRepositoryAiPrefetchTest {
         val sectionCallCount = AtomicInteger(0)
         val historyCallCount = AtomicInteger(0)
         val introCallCount = AtomicInteger(0)
-        val dashboardCallCount = AtomicInteger(0)
+        val overviewCallCount = AtomicInteger(0)
         val resumeCallCount = AtomicInteger(0)
         val quizHistoryCallCount = AtomicInteger(0)
 
-        override suspend fun subjects(): List<AiSubjectOut> {
+        override suspend fun subjects(institutionId: String?): List<AiSubjectOut> {
             subjectsCallCount.incrementAndGet()
             return listOf(
                 AiSubjectOut(
@@ -242,17 +246,39 @@ class StudentRepositoryAiPrefetchTest {
             return emptyList()
         }
 
-        override suspend fun progressDashboard(): ProgressDashboardResponse {
-            dashboardCallCount.incrementAndGet()
-            return ProgressDashboardResponse(
-                overall_progress_pct = 75.0,
-                overall_mastery_pct = 80.0,
-                quizzes_completed = 4,
-                quick_check_attempts = 12,
+        override suspend fun progressOverview(
+            scope: String,
+            subjectId: String?,
+            classId: String?,
+            institutionId: String?,
+        ): ProgressOverviewResponse {
+            overviewCallCount.incrementAndGet()
+            return ProgressOverviewResponse(
+                scope = "self",
+                ai_available = true,
+                self_overview = SelfProgressOverview(
+                    totals = ProgressOverviewTotals(
+                        overall_progress_pct = 75.0,
+                        overall_mastery_pct = 80.0,
+                        overall_quiz_mastery_pct = 70.0,
+                        quizzes_completed = 4,
+                        quick_check_attempts = 12,
+                    ),
+                    subjects = listOf(
+                        ProgressSubjectOverview(
+                            textbook_id = "tb_chem",
+                            subject_id = "sub_chem",
+                            subject_name = "Chemistry",
+                            progress_pct = 40.0,
+                            overall_mastery_pct = 58.0,
+                            quiz_mastery_pct = 50.0,
+                        ),
+                    ),
+                ),
             )
         }
 
-        override suspend fun progressResume(): ResumeResponse {
+        override suspend fun progressResume(textbookId: String): ResumeResponse {
             resumeCallCount.incrementAndGet()
             return ResumeResponse(
                 chapter_id = "ch_atomic",
@@ -270,6 +296,9 @@ class StudentRepositoryAiPrefetchTest {
         }
 
         override suspend fun progressUpdate(body: ProgressUpdateRequest): JsonElement =
+            JsonObject(emptyMap())
+
+        override suspend fun quickCheckAttempt(body: QuickCheckAttemptRequest): JsonElement =
             JsonObject(emptyMap())
     }
 
@@ -330,10 +359,10 @@ class StudentRepositoryAiPrefetchTest {
 
         assertTrue("Subjects should be fetched", fakeAi.subjectsCallCount.get() >= 1)
         assertTrue("Teaching units should be fetched", fakeUnits.listCallCount.get() >= 1)
-        assertTrue("Dashboard progress should be fetched", fakeAi.dashboardCallCount.get() >= 1)
+        assertTrue("Overview progress should be fetched", fakeAi.overviewCallCount.get() >= 1)
         assertTrue("Resume state should be fetched", fakeAi.resumeCallCount.get() >= 1)
         assertTrue("Quiz history should be fetched", fakeAi.quizHistoryCallCount.get() >= 1)
-        assertEquals("Chapter lists should not be prefetched", 0, fakeAi.chaptersCallCount.get())
+        assertEquals("First subject's chapter list is needed for textbook_id", 1, fakeAi.chaptersCallCount.get())
         assertEquals("Questions list should not be prefetched", 0, fakeAi.questionsListCallCount.get())
         assertEquals("Chapter details should not be prefetched", 0, fakeAi.chapterCallCount.get())
         assertEquals("Chapter attachments should not be prefetched", 0, fakeAi.attachmentsCallCount.get())
@@ -343,15 +372,15 @@ class StudentRepositoryAiPrefetchTest {
         assertEquals("Section content should not be prefetched", 0, fakeAi.sectionCallCount.get())
 
         val subjectsBefore = fakeAi.subjectsCallCount.get()
-        val dashboardBefore = fakeAi.dashboardCallCount.get()
+        val overviewBefore = fakeAi.overviewCallCount.get()
 
         val cachedSubjects = repo.aiSubjects()
         assertTrue(cachedSubjects is NetworkResult.Success)
         assertEquals(subjectsBefore, fakeAi.subjectsCallCount.get())
 
-        val cachedDashboard = repo.progressDashboard()
-        assertTrue(cachedDashboard is NetworkResult.Success)
-        assertEquals(dashboardBefore, fakeAi.dashboardCallCount.get())
+        val cachedOverview = repo.progressOverview()
+        assertTrue(cachedOverview is NetworkResult.Success)
+        assertEquals(overviewBefore, fakeAi.overviewCallCount.get())
 
         val cachedChapters = repo.chapters("sub_chem")
         assertTrue(cachedChapters is NetworkResult.Success)
@@ -359,7 +388,7 @@ class StudentRepositoryAiPrefetchTest {
 
         assertEquals("Chemistry", repo.getCachedAiSubjects()?.firstOrNull()?.name)
         assertEquals("Atomic Structure", repo.getCachedChapters("sub_chem")?.firstOrNull()?.title)
-        assertEquals(75.0, repo.getCachedProgressDashboard()?.overall_progress_pct ?: 0.0, 0.01)
+        assertEquals(75.0, repo.getCachedProgressOverview()?.self_overview?.totals?.overall_progress_pct ?: 0.0, 0.01)
 
         repo.clearAiCache()
         repo.aiSubjects()
@@ -397,7 +426,7 @@ class StudentRepositoryAiPrefetchTest {
     fun singleFlightDeduplicatesConcurrentInFlightRequests() = runBlocking {
         val fakeAi = object : AiApi by FakeAiApi() {
             val count = AtomicInteger(0)
-            override suspend fun subjects(): List<AiSubjectOut> {
+            override suspend fun subjects(institutionId: String?): List<AiSubjectOut> {
                 count.incrementAndGet()
                 kotlinx.coroutines.delay(50)
                 return listOf(

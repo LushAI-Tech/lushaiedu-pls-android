@@ -8,6 +8,7 @@ import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.dto.RollNumberAssignment
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.TeacherRepository
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.viewModelFactory
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -190,12 +191,13 @@ class TeacherClassOverviewViewModel(
     fun refresh() {
         viewModelScope.launch {
             val hasContent = _uiState.value.overview != null
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoading, hasContent)
             _uiState.update {
-                if (hasContent) {
-                    it.copy(isRefreshing = true, isLoading = false, errorMessage = null)
-                } else {
-                    it.copy(isLoading = true, isRefreshing = false, errorMessage = null)
-                }
+                it.copy(
+                    isRefreshing = refreshing,
+                    isLoading = loading,
+                    errorMessage = null,
+                )
             }
             refreshSilently()
             _uiState.update { it.copy(isLoading = false, isRefreshing = false) }

@@ -282,18 +282,23 @@ class QuizViewModel(
 
     private suspend fun resolveChapterId(): String? {
         chapterIdHint?.takeIf { it.isNotBlank() }?.let { return it }
-        val resume = studentRepository.progressResume()
-        if (resume is NetworkResult.Success && !resume.data?.chapter_id.isNullOrBlank()) {
-            return resume.data?.chapter_id
-        }
         val subjects = studentRepository.aiSubjects()
         val subjectId = (subjects as? NetworkResult.Success)?.data?.firstOrNull()?.subject_id
             ?: return null
         val chapters = studentRepository.chapters(subjectId)
-        return (chapters as? NetworkResult.Success)?.data
+        val active = (chapters as? NetworkResult.Success)?.data
             ?.filter { it.is_active }
-            ?.minByOrNull { it.chapter_number }
-            ?.id
+            .orEmpty()
+        val textbookId = active.firstOrNull { it.textbook_id.isNotBlank() }?.textbook_id
+            ?: studentRepository.textbookIdForSubject(subjectId)
+        if (!textbookId.isNullOrBlank()) {
+            val resume = studentRepository.progressResume(textbookId)
+            val resumeChapterId = (resume as? NetworkResult.Success)?.data?.chapter_id
+            if (!resumeChapterId.isNullOrBlank() && active.any { it.id == resumeChapterId }) {
+                return resumeChapterId
+            }
+        }
+        return active.minByOrNull { it.chapter_number }?.id
     }
 
     companion object {

@@ -71,6 +71,7 @@ import com.lushaiedupls.ui.common.LoadErrorPanel
 import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
+import com.lushaiedupls.ui.common.keepKeyboardOpen
 import com.lushaiedupls.ui.common.scrollIntoViewOnFocus
 import com.lushaiedupls.ui.common.verticalScrollWithIme
 import com.lushaiedupls.ui.teacher.overlays.AddStudentOverlay
@@ -312,14 +313,16 @@ private fun StudentsInClassSection(
             fontFamily = FontFamily.SansSerif,
             modifier = Modifier.weight(1f),
         )
-        IconButton(onClick = onToggleEdit) {
-            Icon(
-                imageVector = if (isEditing) Icons.Outlined.Close else Icons.Outlined.Edit,
-                contentDescription = stringResource(
-                    if (isEditing) R.string.cd_cancel_edit_students else R.string.cd_edit_students,
-                ),
-                tint = if (isEditing) BrandOrange else BrandBlack,
-            )
+        if (students.isNotEmpty()) {
+            IconButton(onClick = onToggleEdit) {
+                Icon(
+                    imageVector = if (isEditing) Icons.Outlined.Close else Icons.Outlined.Edit,
+                    contentDescription = stringResource(
+                        if (isEditing) R.string.cd_cancel_edit_students else R.string.cd_edit_students,
+                    ),
+                    tint = if (isEditing) BrandOrange else BrandBlack,
+                )
+            }
         }
         IconButton(onClick = onAddStudent) {
             Icon(
@@ -537,6 +540,7 @@ private fun StudentRosterCard(
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
+                            .keepKeyboardOpen()
                             .scrollIntoViewOnFocus(),
                     )
                 }

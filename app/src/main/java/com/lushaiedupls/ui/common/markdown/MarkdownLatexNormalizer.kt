@@ -181,13 +181,24 @@ object MarkdownLatexNormalizer {
 
     private fun findInlineMathEnd(text: String, start: Int): Int {
         var j = start
+        var crossedNewline = false
+        var sawLatex = false
         while (j < text.length) {
-            if (text[j] == '$' && text[j - 1] != '\\') {
+            val c = text[j]
+            if (c == '\\') {
+                sawLatex = true
+                j += 1
+                if (j < text.length) j += 1
+                continue
+            }
+            if (c == '$' && text[j - 1] != '\\') {
                 // Ensure not a price like $100 or empty $$
                 if (j == start) return -1
+                // Allow multiline `$...$` only when the body looks like LaTeX (has `\`).
+                if (crossedNewline && !sawLatex) return -1
                 return j
             }
-            if (text[j] == '\n') return -1 // inline math shouldn't cross multiple lines
+            if (c == '\n') crossedNewline = true
             j++
         }
         return -1
@@ -197,11 +208,16 @@ object MarkdownLatexNormalizer {
         var s = latex.trim()
         if (s.isEmpty()) return s
 
+        // KaTeX inline math cannot contain newlines; collapse soft line-breaks from the model.
+        s = s.replace("\r\n", "\n").replace('\n', ' ')
+        while (s.contains("  ")) s = s.replace("  ", " ")
+        s = s.trim()
+
         s = replaceChemistryCommands(s, wrapUnmath = false)
 
-        // Normalize text commands for JLatexMath: \text{...} -> \mbox{...}
-        s = s.replace(Regex("""\\text\{([^{}]*)\}""")) { match ->
-            "\\mbox{${match.groupValues[1]}}"
+        // KaTeX supports \text, not \mbox (legacy JLatexMath alias).
+        s = s.replace(Regex("""\\mbox\{([^{}]*)\}""")) { match ->
+            "\\text{${match.groupValues[1]}}"
         }
 
         // Normalize degrees

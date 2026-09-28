@@ -1,10 +1,6 @@
 package com.lushaiedupls.ui.admin
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -14,7 +10,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -38,6 +33,7 @@ import com.lushaiedupls.ui.admin.institutions.AdminInstitutionsRoute
 import com.lushaiedupls.ui.admin.invites.AdminInvitesRoute
 import com.lushaiedupls.ui.admin.menu.AdminMenuOverlay
 import com.lushaiedupls.ui.admin.more.AdminMoreScreen
+import com.lushaiedupls.ui.common.AdaptiveRoleScaffold
 import com.lushaiedupls.ui.admin.notifications.AdminNotificationsRoute
 import com.lushaiedupls.ui.admin.periods.AdminPeriodsRoute
 import com.lushaiedupls.ui.admin.users.AdminUsersRoute
@@ -45,9 +41,9 @@ import com.lushaiedupls.ui.navigation.lushEnterTransition
 import com.lushaiedupls.ui.navigation.lushExitTransition
 import com.lushaiedupls.ui.navigation.lushPopEnterTransition
 import com.lushaiedupls.ui.navigation.lushPopExitTransition
+import com.lushaiedupls.ui.navigation.navigateToRoleTab
 import com.lushaiedupls.ui.common.LegalDocumentScreen
 import com.lushaiedupls.ui.student.menu.StudentAccountRoute
-import com.lushaiedupls.ui.theme.BgWhite
 
 private val AdminTabRoutes = setOf(
     AdminRoutes.HOME,
@@ -97,13 +93,7 @@ fun AdminShell(
     var pendingFocusEventId by remember { mutableStateOf(0L) }
 
     fun navigateTab(route: String) {
-        tabNavController.navigate(route) {
-            popUpTo(tabNavController.graph.findStartDestination().id) {
-                saveState = true
-            }
-            launchSingleTop = true
-            restoreState = true
-        }
+        tabNavController.navigateToRoleTab(route, moreRoute = AdminRoutes.MORE)
     }
 
     LaunchedEffect(Unit) {
@@ -121,12 +111,8 @@ fun AdminShell(
         }
     }
 
-    Scaffold(
-        modifier = modifier
-            .fillMaxSize()
-            .background(BgWhite)
-            .systemBarsPadding(),
-        containerColor = BgWhite,
+    AdaptiveRoleScaffold(
+        showNav = true,
         bottomBar = {
             AdminBottomBar(
                 selectedTab = selectedTab,
@@ -134,13 +120,12 @@ fun AdminShell(
                 pendingUserCount = pendingUserCount,
             )
         },
-    ) { innerPadding ->
+        modifier = modifier,
+    ) {
         NavHost(
             navController = tabNavController,
             startDestination = AdminRoutes.HOME,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
+            modifier = Modifier.fillMaxSize(),
             enterTransition = { lushEnterTransition(tabRoutes = AdminTabRoutes) },
             exitTransition = { lushExitTransition(tabRoutes = AdminTabRoutes) },
             popEnterTransition = { lushPopEnterTransition(tabRoutes = AdminTabRoutes) },
@@ -253,6 +238,7 @@ fun AdminShell(
             composable(AdminRoutes.ANNOUNCEMENTS) {
                 AdminAnnouncementsRoute(
                     adminRepository = adminRepository,
+                    userSessionStore = userSessionStore,
                     onBack = { tabNavController.popBackStack() },
                     modifier = Modifier.fillMaxSize(),
                 )

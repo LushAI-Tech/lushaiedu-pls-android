@@ -1,11 +1,12 @@
 package com.lushaiedupls.data.repository
 
-import android.util.Log
 import com.lushaiedupls.data.remote.NetworkResult
+import com.lushaiedupls.data.remote.PendingSignInNotice
 import com.lushaiedupls.data.remote.api.AuthApi
 import com.lushaiedupls.data.remote.device.DeviceIdProvider
 import com.lushaiedupls.data.remote.dto.ChangePasswordRequest
 import com.lushaiedupls.data.remote.dto.CompleteOnboardingRequest
+import com.lushaiedupls.data.remote.dto.DeviceConflictResolveRequest
 import com.lushaiedupls.data.remote.dto.Gender
 import com.lushaiedupls.data.remote.dto.GoogleLoginRequest
 import com.lushaiedupls.data.remote.dto.LoginRequest
@@ -23,6 +24,7 @@ import com.lushaiedupls.data.remote.dto.UserStatus
 import com.lushaiedupls.data.remote.safeApiCall
 import com.lushaiedupls.data.session.UserSessionStore
 import com.lushaiedupls.push.PushTokenSynchronizer
+import com.lushaiedupls.ui.auth.google.GoogleOauthLogger
 import com.lushaiedupls.ui.auth.selectrole.UserRole as AppUserRole
 import com.lushaiedupls.ui.navigation.AppRoutes
 
@@ -42,16 +44,24 @@ class AuthRepository(
         private set
 
     @Volatile
-    private var pendingSignInMessage: String? = null
+    private var pendingSignInNotice: PendingSignInNotice? = null
 
     fun setPendingSignInMessage(message: String?) {
-        pendingSignInMessage = message?.takeIf { it.isNotBlank() }
+        pendingSignInNotice = message?.takeIf { it.isNotBlank() }?.let {
+            PendingSignInNotice(message = it)
+        }
     }
 
-    fun consumePendingSignInMessage(): String? {
-        val message = pendingSignInMessage
-        pendingSignInMessage = null
-        return message
+    fun setPendingSignInNotice(notice: PendingSignInNotice?) {
+        pendingSignInNotice = notice?.takeIf { it.message.isNotBlank() || it.conflict != null }
+    }
+
+    fun consumePendingSignInMessage(): String? = consumePendingSignInNotice()?.message
+
+    fun consumePendingSignInNotice(): PendingSignInNotice? {
+        val notice = pendingSignInNotice
+        pendingSignInNotice = null
+        return notice
     }
 
     fun isLoggedIn(): Boolean = sessionRepository.isLoggedIn()
@@ -87,9 +97,25 @@ class AuthRepository(
         ).also { persistTokenPair(it, device.fcm_token) }
     }
 
+    /**
+     * Completes a blocked login/Google sign-in after a device-slot 409.
+     * Sends [conflictToken] from the 409 detail object plus the same device payload as login.
+     * Response is a normal [TokenPair] — tokens are persisted like login/google.
+     */
+    suspend fun resolveDeviceConflict(conflictToken: String): NetworkResult<TokenPair> =
+        safeApiCall {
+            val device = deviceIdProvider.deviceInfo()
+            authApi.resolveDeviceConflict(
+                DeviceConflictResolveRequest(
+                    conflict_token = conflictToken,
+                    device = device,
+                ),
+            ).also { persistTokenPair(it, device.fcm_token) }
+        }
+
     suspend fun google(idToken: String): NetworkResult<TokenPair> {
         val device = deviceIdProvider.deviceInfo()
-        Log.d(TAG, "Calling auth/google (idTokenLength=${idToken.length})")
+        GoogleOauthLogger.log("Calling auth/google (idTokenLength=${idToken.length})")
         val result = safeApiCall {
             authApi.google(
                 GoogleLoginRequest(
@@ -97,8 +123,7 @@ class AuthRepository(
                     device = device,
                 ),
             ).also { pair ->
-                Log.d(
-                    TAG,
+                GoogleOauthLogger.log(
                     buildString {
                         appendLine("auth/google succeeded")
                         appendLine("  userId: ${pair.user.id}")
@@ -116,11 +141,14 @@ class AuthRepository(
         }
         when (result) {
             is NetworkResult.Success -> Unit
-            is NetworkResult.Error -> Log.e(
-                TAG,
-                "auth/google failed: HTTP ${result.code} — ${result.message}${result.body?.let { " body=$it" }.orEmpty()}",
+            is NetworkResult.Error -> GoogleOauthLogger.log(
+                "auth/google failed: HTTP ${result.code} — ${result.message}" +
+                    (result.body?.let { " body=$it" }.orEmpty()),
             )
-            is NetworkResult.Exception -> Log.e(TAG, "auth/google failed", result.throwable)
+            is NetworkResult.Exception -> GoogleOauthLogger.log(
+                "auth/google failed",
+                result.throwable,
+            )
         }
         return result
     }
@@ -164,6 +192,10 @@ class AuthRepository(
             authApi.logout(LogoutRequest(device_id = deviceIdProvider.deviceId()))
         }
         clearLocalSession()
+    }
+
+    suspend fun logoutAll(): NetworkResult<MessageResponse> = safeApiCall {
+        authApi.logoutAll()
     }
 
     fun clearLocalSession() {
@@ -266,13 +298,13 @@ class AuthRepository(
         UserRole.ADMIN -> AppRoutes.SELECT_INVITE_CODE
         UserRole.TEACHER -> when {
             userSessionStore.getPendingInviteCode().isNullOrBlank() -> AppRoutes.SELECT_INVITE_CODE
-            userSessionStore.getInstitutionId().isNullOrBlank() -> AppRoutes.SELECT_INSTITUTION
-            else -> AppRoutes.SELECT_CLASS
+            userSessionStore.getInstitutionIds().isEmpty() -> AppRoutes.SELECT_INSTITUTION
+            else -> AppRoutes.selectClass(userSessionStore.getInstitutionIds().first())
         }
-        UserRole.STUDENT -> if (userSessionStore.getInstitutionId().isNullOrBlank()) {
+        UserRole.STUDENT -> if (userSessionStore.getInstitutionIds().isEmpty()) {
             AppRoutes.SELECT_INSTITUTION
         } else {
-            AppRoutes.SELECT_CLASS
+            AppRoutes.selectClass(userSessionStore.getInstitutionIds().first())
         }
         UserRole.PARENT -> AppRoutes.SELECT_ROLE
     }
@@ -339,8 +371,19 @@ class AuthRepository(
             (onboardingOverride ?: user.onboarding_state).name,
         )
         userSessionStore.setUserStatus(user.status.name)
-        user.class_id?.let { userSessionStore.setClassId(it) }
-        user.institution_id?.let { userSessionStore.setInstitutionId(it) }
+        if (user.role == UserRole.TEACHER) {
+            userSessionStore.setClassId(null)
+            val institutionIds = user.teaching_institutions
+                .map { it.institution_id.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+            userSessionStore.setInstitutionIds(institutionIds)
+        } else {
+            user.class_id?.let { userSessionStore.setClassId(it) }
+            user.institution_id?.takeIf { it.isNotBlank() }?.let { id ->
+                userSessionStore.setInstitutionIds(listOf(id))
+            }
+        }
         user.phone?.let { userSessionStore.setPendingPhone(it) }
         user.address?.let { userSessionStore.setPendingAddress(it) }
         user.gender?.name?.let { userSessionStore.setPendingGender(it) }
@@ -355,8 +398,6 @@ class AuthRepository(
     }
 
     companion object {
-        private const val TAG = "GoogleSignIn"
-
         fun normalizeAvatarUrl(raw: String?): String? =
             raw
                 ?.trim()

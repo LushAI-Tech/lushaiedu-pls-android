@@ -2,19 +2,26 @@ package com.lushaiedupls.ui.admin.users
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FamilyRestroom
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,7 +29,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -44,7 +53,6 @@ import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.AdminRepository
 import com.lushaiedupls.ui.admin.AdminCard
 import com.lushaiedupls.ui.admin.AdminEmptyText
-import com.lushaiedupls.ui.admin.AdminFilterRow
 import com.lushaiedupls.ui.admin.AdminMuted
 import com.lushaiedupls.ui.admin.AdminScreenHeader
 import com.lushaiedupls.ui.admin.label
@@ -52,10 +60,12 @@ import com.lushaiedupls.ui.auth.components.OutlinedAuthField
 import com.lushaiedupls.ui.auth.components.PrimaryButton
 import com.lushaiedupls.ui.common.viewModelFactory
 import com.lushaiedupls.ui.parent.home.label
+import com.lushaiedupls.ui.teacher.components.InstitutionSelectorDropdown
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BrandBlack
 import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.TextSecondary
+import coil.compose.AsyncImage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -300,26 +310,6 @@ fun AdminParentLinkScreen(
             title = stringResource(R.string.admin_parent_link_title),
             onBack = onBack,
         )
-        AdminMuted(
-            if (pickingStudents) {
-                stringResource(R.string.admin_parent_link_subtitle_for_parent, uiState.anchor.name)
-            } else {
-                stringResource(R.string.admin_parent_link_subtitle_for_student, uiState.anchor.name)
-            },
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        AdminCard {
-            Text(
-                text = uiState.anchor.name,
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                color = BrandBlack,
-                fontFamily = FontFamily.SansSerif,
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            AdminMuted("${uiState.anchor.role.label()} · ${uiState.anchor.status.label()}")
-        }
-        Spacer(modifier = Modifier.height(16.dp))
         OutlinedAuthField(
             label = "",
             value = uiState.query,
@@ -334,18 +324,13 @@ fun AdminParentLinkScreen(
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = stringResource(R.string.admin_parent_link_relationship),
-            fontWeight = FontWeight.Bold,
-            fontSize = 15.sp,
-            color = BrandBlack,
-            fontFamily = FontFamily.SansSerif,
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        AdminFilterRow(
-            labels = ParentRelationship.entries.map { it.label() },
+        InstitutionSelectorDropdown(
+            label = stringResource(R.string.admin_parent_link_relationship),
+            institutions = ParentRelationship.entries.map { it.label() },
             selectedIndex = ParentRelationship.entries.indexOf(uiState.relationship).coerceAtLeast(0),
             onSelect = onSelectRelationship,
+            icon = Icons.Outlined.FamilyRestroom,
+            filled = true,
         )
         Spacer(modifier = Modifier.height(12.dp))
         if (uiState.studentNeedsApproval) {
@@ -398,23 +383,51 @@ fun AdminParentLinkScreen(
                                 null
                             },
                         ) {
-                            Text(
-                                text = user.name,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 15.sp,
-                                color = if (selectable) BrandBlack else TextSecondary,
-                                fontFamily = FontFamily.SansSerif,
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            AdminMuted("${user.role.label()} · ${user.status.label()}")
-                            if (!selectable) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = stringResource(R.string.admin_parent_link_approve_student_first),
-                                    color = BrandOrange,
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.SansSerif,
-                                )
+                            val avatarUrl = user.avatar_url?.takeIf { it.isNotBlank() }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (avatarUrl != null) {
+                                    AsyncImage(
+                                        model = avatarUrl,
+                                        contentDescription = stringResource(R.string.cd_avatar),
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(CircleShape),
+                                        error = painterResource(R.drawable.ic_avatar_placeholder),
+                                        placeholder = painterResource(R.drawable.ic_avatar_placeholder),
+                                    )
+                                } else {
+                                    Image(
+                                        painter = painterResource(R.drawable.ic_avatar_placeholder),
+                                        contentDescription = stringResource(R.string.cd_avatar),
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(CircleShape),
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = user.name,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 15.sp,
+                                        color = if (selectable) BrandBlack else TextSecondary,
+                                        fontFamily = FontFamily.SansSerif,
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    AdminMuted("${user.role.label()} · ${user.status.label()}")
+                                    if (!selectable) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = stringResource(R.string.admin_parent_link_approve_student_first),
+                                            color = BrandOrange,
+                                            fontSize = 12.sp,
+                                            fontFamily = FontFamily.SansSerif,
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

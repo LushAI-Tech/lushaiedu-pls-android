@@ -11,12 +11,16 @@ enum class SchoolClass {
 data class ClassOption(
     val id: String,
     val name: String,
+    val institutionId: String = "",
+    val institutionName: String = "",
 )
 
 data class SelectClassUiState(
     val allowMultiSelect: Boolean = false,
     val classes: List<ClassOption> = emptyList(),
     val selectedClassIds: Set<String> = emptySet(),
+    val institutionName: String = "",
+    val showInstitutionContext: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
 ) {

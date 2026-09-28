@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -24,7 +23,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Info
@@ -67,7 +65,12 @@ import com.lushaiedupls.ui.auth.components.LushAiEduWordmark
 import com.lushaiedupls.ui.auth.components.OrContinueWithDivider
 import com.lushaiedupls.ui.auth.components.OutlinedAuthField
 import com.lushaiedupls.ui.auth.components.PrimaryButton
+import com.lushaiedupls.ui.auth.google.GoogleOauthErrorPanel
+import com.lushaiedupls.ui.auth.google.GoogleOauthLogger
 import com.lushaiedupls.ui.auth.google.rememberGoogleSignInAction
+import com.lushaiedupls.ui.auth.signin.DeviceConflictOverlay
+import com.lushaiedupls.ui.common.LushAuthContentWidth
+import com.lushaiedupls.ui.common.verticalScrollWithIme
 import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BrandBlack
@@ -122,6 +125,8 @@ fun CreateAccountRoute(
         onRegister = { viewModel.register(context) },
         onSignIn = onSignIn,
         onGoogle = googleSignIn,
+        onResolveDeviceConflict = { viewModel.resolveDeviceConflict(context) },
+        onDismissDeviceConflict = viewModel::dismissDeviceConflict,
         modifier = modifier,
     )
 }
@@ -140,6 +145,8 @@ fun CreateAccountScreen(
     onSignIn: () -> Unit,
     onGoogle: () -> Unit,
     modifier: Modifier = Modifier,
+    onResolveDeviceConflict: () -> Unit = {},
+    onDismissDeviceConflict: () -> Unit = {},
 ) {
     val photoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -149,24 +156,24 @@ fun CreateAccountScreen(
         modifier = modifier
             .fillMaxSize()
             .background(BgLight)
-            .systemBarsPadding()
-            .imePadding(),
+            .systemBarsPadding(),
     ) {
         val scrollState = rememberScrollState()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = maxHeight)
-                .verticalScroll(scrollState)
+                .verticalScrollWithIme(scrollState)
                 .padding(horizontal = 20.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = BgWhite),
-                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-            ) {
+            LushAuthContentWidth {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = BgWhite),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                ) {
                 Column(
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -282,7 +289,7 @@ fun CreateAccountScreen(
                                 message = error,
                                 onSignIn = onSignIn,
                             )
-                        } else {
+                        } else if (!GoogleOauthLogger.enabled) {
                             Text(
                                 text = error,
                                 color = BrandOrange,
@@ -308,6 +315,12 @@ fun CreateAccountScreen(
                     OrContinueWithDivider()
                     Spacer(modifier = Modifier.height(14.dp))
                     GoogleButton(onClick = onGoogle)
+                    if (!uiState.accountAlreadyExists && !uiState.googleLinkBlocked) {
+                        GoogleOauthErrorPanel(
+                            statusMessage = uiState.errorMessage,
+                            isError = true,
+                        )
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     AuthTextLink(
                         prefix = stringResource(R.string.already_have_account),
@@ -339,7 +352,19 @@ fun CreateAccountScreen(
                     )
                 }
             }
+            }
         }
+    }
+    if (uiState.showDeviceConflict) {
+        DeviceConflictOverlay(
+            message = uiState.deviceConflictMessage.orEmpty(),
+            accountLabel = uiState.deviceConflictAccount,
+            devices = uiState.deviceConflictDevices,
+            isResolving = uiState.isResolvingConflict,
+            errorMessage = uiState.conflictResolveError,
+            onResolve = onResolveDeviceConflict,
+            onDismiss = onDismissDeviceConflict,
+        )
     }
 }
 

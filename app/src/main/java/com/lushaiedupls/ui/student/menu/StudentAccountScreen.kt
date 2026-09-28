@@ -18,8 +18,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -27,10 +25,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Edit
@@ -55,12 +51,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -74,11 +70,12 @@ import com.lushaiedupls.data.mock.RegisteredDevice
 import com.lushaiedupls.data.mock.StudentMockRepository
 import com.lushaiedupls.data.remote.dto.Gender
 import com.lushaiedupls.data.remote.dto.LinkedStudentOut
+import com.lushaiedupls.data.remote.dto.TeacherInstitutionAssignment
+import com.lushaiedupls.data.remote.dto.TeacherInstitutionGroup
 import com.lushaiedupls.data.remote.dto.UserRole
 import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.data.repository.ParentRepository
 import com.lushaiedupls.data.repository.StudentRepository
-import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.data.session.UserSessionStore
 import com.lushaiedupls.ui.parent.home.label
 import com.lushaiedupls.ui.auth.components.OutlinedAuthField
@@ -88,6 +85,8 @@ import com.lushaiedupls.ui.common.LogoutButton
 import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
+import com.lushaiedupls.ui.common.OverlayScrimDialog
+import com.lushaiedupls.ui.common.verticalScrollWithIme
 import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
@@ -101,7 +100,6 @@ private val NestedCardShape = RoundedCornerShape(12.dp)
 private val IconShape = RoundedCornerShape(10.dp)
 private val PillShape = RoundedCornerShape(50)
 private val DangerRed = Color(0xFFF25F5C)
-private val VerifiedGreen = Color(0xFF22C55E)
 private val CardBorderAlpha = 0.65f
 
 @Composable
@@ -114,7 +112,6 @@ fun StudentAccountRoute(
     onDeleteAccountConfirmed: () -> Unit,
     modifier: Modifier = Modifier,
     parentRepository: ParentRepository? = null,
-    teacherRepository: TeacherRepository? = null,
     showStudentEnrollment: Boolean = false,
     showTeacherProfile: Boolean = false,
     showParentProfile: Boolean = false,
@@ -124,7 +121,6 @@ fun StudentAccountRoute(
             studentRepository,
             authRepository,
             parentRepository = parentRepository,
-            teacherRepository = teacherRepository,
             loadStudentEnrollment = showStudentEnrollment,
             loadTeacherEnrollment = showTeacherProfile,
             loadParentProfile = showParentProfile,
@@ -171,17 +167,20 @@ fun StudentAccountRoute(
         institutionName = uiState.institutionName,
         className = uiState.className,
         subjects = uiState.subjects,
+        teachingInstitutions = uiState.teachingInstitutions,
         linkedChildren = uiState.linkedChildren,
         showStudentEnrollment = showStudentEnrollment,
         showTeacherProfile = showTeacherProfile,
         showParentProfile = showParentProfile,
         avatarUrl = uiState.avatarUrl,
+        avatarRevision = uiState.avatarRevision,
         hasPassword = uiState.hasPassword,
         devices = uiState.devices,
         onBack = onBack,
         onEditProfile = viewModel::openEditProfile,
         onPassword = viewModel::openPassword,
         onSignOutAll = viewModel::openSignOutAllConfirm,
+        onSignOutDevice = viewModel::openSignOutDeviceConfirm,
         onLogOut = onLogOut,
         onDeleteAccountConfirmed = onDeleteAccountConfirmed,
         onRefresh = viewModel::refresh,
@@ -195,6 +194,7 @@ fun StudentAccountRoute(
             phone = uiState.editPhone,
             address = uiState.editAddress,
             currentAvatarUrl = uiState.avatarUrl,
+            avatarRevision = uiState.avatarRevision,
             pendingAvatarUri = uiState.editAvatarUri,
             isSaving = uiState.isSaving,
             errorMessage = uiState.formError,
@@ -229,6 +229,19 @@ fun StudentAccountRoute(
             onDismiss = viewModel::dismissSignOutAllConfirm,
         )
     }
+    val pendingSignOutDevice = uiState.devices.firstOrNull {
+        it.id == uiState.pendingSignOutDeviceId
+    }
+    if (pendingSignOutDevice != null) {
+        SignOutDeviceOverlay(
+            device = pendingSignOutDevice,
+            wipesAllSessions = uiState.role == UserRole.STUDENT,
+            isSigningOut = uiState.isSigningOutDevice,
+            errorMessage = uiState.signOutDeviceError,
+            onConfirm = viewModel::confirmSignOutDevice,
+            onDismiss = viewModel::dismissSignOutDeviceConfirm,
+        )
+    }
 }
 
 @Composable
@@ -246,15 +259,18 @@ fun StudentAccountScreen(
     institutionName: String? = null,
     className: String? = null,
     subjects: List<String> = emptyList(),
+    teachingInstitutions: List<TeacherInstitutionGroup> = emptyList(),
     linkedChildren: List<LinkedStudentOut> = emptyList(),
     showStudentEnrollment: Boolean = false,
     showTeacherProfile: Boolean = false,
     showParentProfile: Boolean = false,
     avatarUrl: String? = null,
+    avatarRevision: Long = 0L,
     hasPassword: Boolean = true,
     onEditProfile: () -> Unit = {},
     onPassword: () -> Unit = {},
     onSignOutAll: () -> Unit = {},
+    onSignOutDevice: (String) -> Unit = {},
     onRefresh: () -> Unit = {},
     isRefreshing: Boolean = false,
 ) {
@@ -270,8 +286,7 @@ fun StudentAccountScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(BgLight)
-                    .imePadding()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScrollWithIme(rememberScrollState())
                     .padding(bottom = 28.dp),
             ) {
                 Box(
@@ -306,8 +321,8 @@ fun StudentAccountScreen(
                     ProfileCard(
                         displayName = displayName,
                         email = email,
-                        emailVerified = emailVerified,
                         avatarUrl = avatarUrl,
+                        avatarRevision = avatarRevision,
                         onEditProfile = onEditProfile,
                     )
                     AuthAccountHint(
@@ -320,12 +335,12 @@ fun StudentAccountScreen(
                         AccountProfileDetailsCard(
                             role = role,
                             gender = gender,
-                            institutionName = institutionName.takeIf {
-                                showStudentEnrollment || showTeacherProfile
-                            },
-                            className = className.takeIf { showStudentEnrollment || showTeacherProfile },
-                            subjects = subjects.takeIf { showStudentEnrollment || showTeacherProfile }
+                            institutionName = institutionName.takeIf { showStudentEnrollment },
+                            className = className.takeIf { showStudentEnrollment },
+                            subjects = subjects.takeIf { showStudentEnrollment }.orEmpty(),
+                            teachingInstitutions = teachingInstitutions.takeIf { showTeacherProfile }
                                 .orEmpty(),
+                            showTeacherAssignments = showTeacherProfile,
                             linkedChildren = linkedChildren.takeIf { showParentProfile }.orEmpty(),
                             showLinkedStudents = showParentProfile,
                         )
@@ -346,9 +361,13 @@ fun StudentAccountScreen(
                     DevicesCard(
                         devices = devices,
                         onSignOutAll = onSignOutAll,
+                        onSignOutDevice = onSignOutDevice,
                     )
                     Spacer(modifier = Modifier.height(20.dp))
-                    LogoutButton(onClick = onLogOut)
+                    LogoutButton(
+                        onClick = onLogOut,
+                        text = stringResource(R.string.account_sign_out),
+                    )
                     Spacer(modifier = Modifier.height(12.dp))
                     LogoutButton(
                         onClick = { showDeleteOverlay = true },
@@ -380,7 +399,7 @@ private fun AuthAccountHint(
     val messageRes = when {
         !emailVerified -> R.string.account_verify_email_hint
         !hasPassword -> R.string.account_google_signin_hint
-        else -> R.string.account_google_link_hint
+        else -> return
     }
     Spacer(modifier = Modifier.height(12.dp))
     Text(
@@ -404,7 +423,7 @@ private fun ProfileCard(
     email: String,
     onEditProfile: () -> Unit,
     avatarUrl: String? = null,
-    emailVerified: Boolean = false,
+    avatarRevision: Long = 0L,
 ) {
     Row(
         modifier = Modifier
@@ -419,6 +438,7 @@ private fun ProfileCard(
             url = avatarUrl,
             uri = null,
             size = 52,
+            cacheKey = avatarRevision,
         )
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -431,20 +451,13 @@ private fun ProfileCard(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(modifier = Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = email,
-                    fontSize = 12.sp,
-                    color = TextSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                if (emailVerified && email.isNotBlank()) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    EmailVerifiedBadge()
-                }
-            }
+            Text(
+                text = email,
+                fontSize = 12.sp,
+                color = TextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         Spacer(modifier = Modifier.width(8.dp))
         Row(
@@ -470,32 +483,6 @@ private fun ProfileCard(
                 fontWeight = FontWeight.SemiBold,
             )
         }
-    }
-}
-
-@Composable
-private fun EmailVerifiedBadge() {
-    Row(
-        modifier = Modifier
-            .clip(PillShape)
-            .background(VerifiedGreen.copy(alpha = 0.12f))
-            .padding(horizontal = 7.dp, vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.Filled.Verified,
-            contentDescription = stringResource(R.string.account_email_verified),
-            tint = VerifiedGreen,
-            modifier = Modifier.size(13.dp),
-        )
-        Spacer(modifier = Modifier.width(3.dp))
-        Text(
-            text = stringResource(R.string.account_verified),
-            color = VerifiedGreen,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.SemiBold,
-            fontFamily = FontFamily.SansSerif,
-        )
     }
 }
 
@@ -550,14 +537,17 @@ private fun AccountProfileDetailsCard(
     institutionName: String?,
     className: String?,
     subjects: List<String>,
+    teachingInstitutions: List<TeacherInstitutionGroup> = emptyList(),
+    showTeacherAssignments: Boolean = false,
     linkedChildren: List<LinkedStudentOut>,
     showLinkedStudents: Boolean,
 ) {
     val roleText = role?.let { roleLabel(it) }
     val genderText = genderLabel(gender)
-    val institutionText = institutionName?.takeIf { it.isNotBlank() }
-    val classText = className?.takeIf { it.isNotBlank() }
-    val subjectsText = subjects.takeIf { it.isNotEmpty() }?.joinToString(", ")
+    val institutionText = institutionName?.takeIf { it.isNotBlank() && role != UserRole.TEACHER }
+    val classText = className?.takeIf { it.isNotBlank() && role != UserRole.TEACHER }
+    val subjectsText = subjects.takeIf { it.isNotEmpty() && role != UserRole.TEACHER }
+        ?.joinToString(", ")
 
     val infoRows = listOfNotNull(
         roleText?.let { stringResource(R.string.account_role) to it },
@@ -567,7 +557,8 @@ private fun AccountProfileDetailsCard(
         subjectsText?.let { stringResource(R.string.account_subjects) to it },
     )
 
-    if (infoRows.isEmpty() && !showLinkedStudents) return
+    val showAssignments = showTeacherAssignments
+    if (infoRows.isEmpty() && !showLinkedStudents && !showAssignments) return
 
     AccountSurfaceCard {
         AccountSectionHeader(
@@ -581,7 +572,7 @@ private fun AccountProfileDetailsCard(
                 ProfileInfoRow(label = label, value = value)
             }
         }
-        if (showLinkedStudents) {
+        if (showAssignments) {
             if (infoRows.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(14.dp))
                 HorizontalDivider(color = BorderGray.copy(alpha = 0.45f))
@@ -589,7 +580,70 @@ private fun AccountProfileDetailsCard(
             } else {
                 Spacer(modifier = Modifier.height(14.dp))
             }
+            TeacherAssignmentsSection(groups = teachingInstitutions)
+        }
+        if (showLinkedStudents) {
+            if (infoRows.isNotEmpty() || showAssignments) {
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = BorderGray.copy(alpha = 0.45f))
+                Spacer(modifier = Modifier.height(14.dp))
+            } else {
+                Spacer(modifier = Modifier.height(14.dp))
+            }
             LinkedStudentsSection(linkedChildren = linkedChildren)
+        }
+    }
+}
+
+@Composable
+private fun TeacherAssignmentsSection(groups: List<TeacherInstitutionGroup>) {
+    Text(
+        text = stringResource(R.string.account_assigned_classes),
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 14.sp,
+        color = BrandBlack,
+        fontFamily = FontFamily.SansSerif,
+    )
+    Spacer(modifier = Modifier.height(10.dp))
+    if (groups.isEmpty()) {
+        CenteredEmptyStateMuted(
+            message = stringResource(R.string.account_no_classes_assigned),
+            icon = Icons.Outlined.Person,
+        )
+        return
+    }
+    groups.forEachIndexed { groupIndex, group ->
+        if (groupIndex > 0) Spacer(modifier = Modifier.height(12.dp))
+        val institution = group.institution_name.takeIf { it.isNotBlank() }
+        if (institution != null) {
+            Text(
+                text = institution,
+                color = BrandBlack,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = FontFamily.SansSerif,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+        group.assignments.forEachIndexed { index, assignment ->
+            if (index > 0) Spacer(modifier = Modifier.height(8.dp))
+            val line = listOfNotNull(
+                assignment.class_name.takeIf { it.isNotBlank() },
+                assignment.subject_name.takeIf { it.isNotBlank() },
+            ).joinToString(" · ")
+            if (line.isBlank()) return@forEachIndexed
+            Text(
+                text = line,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(NestedCardShape)
+                    .background(BgLight)
+                    .padding(12.dp),
+                color = BrandBlack,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                fontFamily = FontFamily.SansSerif,
+            )
         }
     }
 }
@@ -778,6 +832,7 @@ private fun SimpleActionCard(
 private fun DevicesCard(
     devices: List<RegisteredDevice>,
     onSignOutAll: () -> Unit,
+    onSignOutDevice: (String) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -811,31 +866,21 @@ private fun DevicesCard(
             )
         }
         Spacer(modifier = Modifier.height(14.dp))
-        Row(modifier = Modifier.fillMaxWidth()) {
-            DeviceHeader(stringResource(R.string.account_platform), Modifier.weight(1f))
-            DeviceHeader(stringResource(R.string.account_last_active), Modifier.weight(1.4f))
-            DeviceHeader(stringResource(R.string.account_sessions), Modifier.weight(0.8f), TextAlign.End)
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        devices.forEachIndexed { index, device ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(text = device.platform, modifier = Modifier.weight(1f), fontSize = 13.sp, color = BrandBlack)
-                Text(text = device.lastActive, modifier = Modifier.weight(1.4f), fontSize = 12.sp, color = TextSecondary)
-                Text(
-                    text = device.sessions,
-                    modifier = Modifier.weight(0.8f),
-                    fontSize = 13.sp,
-                    color = BrandBlack,
-                    textAlign = TextAlign.End,
+        if (devices.isEmpty()) {
+            Text(
+                text = stringResource(R.string.account_no_devices),
+                color = TextSecondary,
+                fontSize = 13.sp,
+            )
+        } else {
+            devices.forEachIndexed { index, device ->
+                DeviceRow(
+                    device = device,
+                    onSignOut = { onSignOutDevice(device.id) },
                 )
-            }
-            if (index != devices.lastIndex) {
-                HorizontalDivider(color = BorderGray.copy(alpha = 0.5f))
+                if (index != devices.lastIndex) {
+                    HorizontalDivider(color = BorderGray.copy(alpha = 0.5f))
+                }
             }
         }
         Spacer(modifier = Modifier.height(12.dp))
@@ -864,19 +909,54 @@ private fun DevicesCard(
 }
 
 @Composable
-private fun DeviceHeader(
-    text: String,
-    modifier: Modifier,
-    align: TextAlign = TextAlign.Start,
+private fun DeviceRow(
+    device: RegisteredDevice,
+    onSignOut: () -> Unit,
 ) {
-    Text(
-        text = text,
-        modifier = modifier,
-        color = TextSecondary,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.SemiBold,
-        textAlign = align,
-    )
+    val title = device.deviceName?.takeIf { it.isNotBlank() } ?: device.platform
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = BrandBlack,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val subtitle = buildList {
+                if (!device.deviceName.isNullOrBlank() && device.deviceName != device.platform) {
+                    add(device.platform)
+                }
+                add(device.lastActive)
+                if (device.isCurrent) add(stringResource(R.string.account_this_device))
+            }.joinToString(" · ")
+            Text(
+                text = subtitle,
+                fontSize = 12.sp,
+                color = TextSecondary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (device.id.isNotBlank()) {
+            Text(
+                text = stringResource(R.string.account_sign_out_device),
+                color = BrandBlack,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clip(PillShape)
+                    .clickable(onClick = onSignOut)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+        }
+    }
 }
 
 @Composable
@@ -885,11 +965,23 @@ private fun AvatarImage(
     uri: Uri?,
     size: Int,
     modifier: Modifier = Modifier,
+    cacheKey: Long = 0L,
 ) {
+    val context = LocalContext.current
     val mod = modifier
         .size(size.dp)
         .clip(CircleShape)
-    val imageModel: Any? = uri ?: url?.takeIf { it.isNotBlank() }
+    val imageUrl = url?.takeIf { it.isNotBlank() }
+    val imageModel: Any? = when {
+        uri != null -> uri
+        imageUrl != null -> ImageRequest.Builder(context)
+            .data(imageUrl)
+            .memoryCacheKey("$imageUrl#$cacheKey")
+            .diskCacheKey("$imageUrl#$cacheKey")
+            .crossfade(true)
+            .build()
+        else -> null
+    }
     if (imageModel != null) {
         AsyncImage(
             model = imageModel,
@@ -912,31 +1004,15 @@ private fun AccountFormDialog(
     dismissEnabled: Boolean,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Dialog(
-        onDismissRequest = { if (dismissEnabled) onDismiss() },
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Box(
+    OverlayScrimDialog(onDismiss = onDismiss, dismissEnabled = dismissEnabled) {
+        Column(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.45f))
-                .clickable(enabled = dismissEnabled, onClick = onDismiss)
-                .imePadding()
-                .padding(horizontal = 20.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 560.dp)
-                    .clip(CardShape)
-                    .background(BgWhite)
-                    .clickable(enabled = false) {}
-                    .verticalScroll(rememberScrollState())
-                    .padding(20.dp),
-                content = content,
-            )
-        }
+                .fillMaxWidth()
+                .clip(CardShape)
+                .background(BgWhite)
+                .padding(20.dp),
+            content = content,
+        )
     }
 }
 
@@ -946,6 +1022,7 @@ private fun EditProfileOverlay(
     phone: String,
     address: String,
     currentAvatarUrl: String?,
+    avatarRevision: Long = 0L,
     pendingAvatarUri: Uri?,
     isSaving: Boolean,
     errorMessage: String?,
@@ -987,6 +1064,7 @@ private fun EditProfileOverlay(
                     url = currentAvatarUrl,
                     uri = pendingAvatarUri,
                     size = 84,
+                    cacheKey = avatarRevision,
                 )
                 // Camera badge
                 Box(
@@ -1162,82 +1240,161 @@ fun SignOutAllOverlay(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    Dialog(
-        onDismissRequest = { if (!isSigningOut) onDismiss() },
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+    OverlayScrimDialog(
+        onDismiss = onDismiss,
+        dismissEnabled = !isSigningOut,
     ) {
-        Box(
+        Column(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.45f))
-                .clickable(enabled = !isSigningOut, onClick = onDismiss),
-            contentAlignment = Alignment.Center,
+                .fillMaxWidth()
+                .clip(CardShape)
+                .border(1.dp, BorderGray, CardShape)
+                .background(BgWhite)
+                .padding(20.dp),
         ) {
-            Column(
+            Text(
+                text = stringResource(R.string.account_sign_out_all_title),
+                color = BrandBlack,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                fontFamily = FontFamily.SansSerif,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = stringResource(R.string.account_sign_out_all_body),
+                color = BrandBlack,
+                fontSize = 14.sp,
+                lineHeight = 21.sp,
+                fontFamily = FontFamily.SansSerif,
+            )
+            errorMessage?.let { error ->
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(text = error, color = BrandOrange, fontSize = 13.sp)
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .clip(CardShape)
-                    .border(1.dp, BorderGray, CardShape)
-                    .background(BgWhite)
-                    .padding(20.dp),
+                    .height(48.dp)
+                    .clip(PillShape)
+                    .background(BrandBlack)
+                    .clickable(enabled = !isSigningOut, onClick = onConfirm),
+                contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = stringResource(R.string.account_sign_out_all_title),
-                    color = BrandBlack,
+                    text = if (isSigningOut) {
+                        stringResource(R.string.loading)
+                    } else {
+                        stringResource(R.string.account_sign_out_all_confirm)
+                    },
+                    color = Color.White,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    fontFamily = FontFamily.SansSerif,
+                    fontSize = 16.sp,
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .clip(PillShape)
+                    .clickable(enabled = !isSigningOut, onClick = onDismiss),
+                contentAlignment = Alignment.Center,
+            ) {
                 Text(
-                    text = stringResource(R.string.account_sign_out_all_body),
-                    color = BrandBlack,
+                    text = stringResource(R.string.danger_zone_cancel),
+                    color = TextSecondary,
+                    fontWeight = FontWeight.SemiBold,
                     fontSize = 14.sp,
-                    lineHeight = 21.sp,
-                    fontFamily = FontFamily.SansSerif,
                 )
-                errorMessage?.let { error ->
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(text = error, color = BrandOrange, fontSize = 13.sp)
-                }
-                Spacer(modifier = Modifier.height(20.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .clip(PillShape)
-                        .background(BrandBlack)
-                        .clickable(enabled = !isSigningOut, onClick = onConfirm),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = if (isSigningOut) {
-                            stringResource(R.string.loading)
-                        } else {
-                            stringResource(R.string.account_sign_out_all_confirm)
-                        },
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                    )
-                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SignOutDeviceOverlay(
+    device: RegisteredDevice,
+    wipesAllSessions: Boolean,
+    isSigningOut: Boolean,
+    errorMessage: String?,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val title = device.deviceName?.takeIf { it.isNotBlank() } ?: device.platform
+    OverlayScrimDialog(
+        onDismiss = onDismiss,
+        dismissEnabled = !isSigningOut,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(CardShape)
+                .border(1.dp, BorderGray, CardShape)
+                .background(BgWhite)
+                .padding(20.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.account_sign_out_device_title, title),
+                color = BrandBlack,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                fontFamily = FontFamily.SansSerif,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = stringResource(
+                    if (wipesAllSessions) {
+                        R.string.account_sign_out_device_student_body
+                    } else {
+                        R.string.account_sign_out_device_body
+                    },
+                ),
+                color = BrandBlack,
+                fontSize = 14.sp,
+                lineHeight = 21.sp,
+                fontFamily = FontFamily.SansSerif,
+            )
+            errorMessage?.let { error ->
                 Spacer(modifier = Modifier.height(10.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp)
-                        .clip(PillShape)
-                        .clickable(enabled = !isSigningOut, onClick = onDismiss),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = stringResource(R.string.danger_zone_cancel),
-                        color = TextSecondary,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp,
-                    )
-                }
+                Text(text = error, color = BrandOrange, fontSize = 13.sp)
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .clip(PillShape)
+                    .background(BrandBlack)
+                    .clickable(enabled = !isSigningOut, onClick = onConfirm),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = if (isSigningOut) {
+                        stringResource(R.string.loading)
+                    } else {
+                        stringResource(R.string.account_sign_out_device)
+                    },
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .clip(PillShape)
+                    .clickable(enabled = !isSigningOut, onClick = onDismiss),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(R.string.danger_zone_cancel),
+                    color = TextSecondary,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                )
             }
         }
     }
@@ -1336,6 +1493,68 @@ private fun StudentAccountPreview() {
             className = "Class XII",
             subjects = listOf("Physics", "Chemistry", "Mathematics"),
             showStudentEnrollment = true,
+            devices = mock.registeredDevices(),
+            onBack = {},
+            onLogOut = {},
+            onDeleteAccountConfirmed = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, heightDp = 900)
+@Composable
+private fun TeacherAccountPreview() {
+    val mock = StudentMockRepository()
+    LushAIEdu_PLSTheme {
+        StudentAccountScreen(
+            displayName = "Lalruatfela",
+            email = "teacher@lushaiedu.example.com",
+            emailVerified = true,
+            role = UserRole.TEACHER,
+            gender = Gender.MALE,
+            teachingInstitutions = listOf(
+                TeacherInstitutionGroup(
+                    institution_id = "i1",
+                    institution_name = "Zion School",
+                    assignments = listOf(
+                        TeacherInstitutionAssignment(
+                            teaching_unit_id = "tu1",
+                            class_id = "c1",
+                            class_name = "Class 8A",
+                            subject_id = "s1",
+                            subject_name = "Math",
+                        ),
+                        TeacherInstitutionAssignment(
+                            teaching_unit_id = "tu2",
+                            class_id = "c1",
+                            class_name = "Class 8A",
+                            subject_id = "s2",
+                            subject_name = "Science",
+                        ),
+                        TeacherInstitutionAssignment(
+                            teaching_unit_id = "tu3",
+                            class_id = "c2",
+                            class_name = "Class 9B",
+                            subject_id = "s3",
+                            subject_name = "English",
+                        ),
+                    ),
+                ),
+                TeacherInstitutionGroup(
+                    institution_id = "i2",
+                    institution_name = "Aizawl Public School",
+                    assignments = listOf(
+                        TeacherInstitutionAssignment(
+                            teaching_unit_id = "tu4",
+                            class_id = "c3",
+                            class_name = "Class 6",
+                            subject_id = "s4",
+                            subject_name = "History",
+                        ),
+                    ),
+                ),
+            ),
+            showTeacherProfile = true,
             devices = mock.registeredDevices(),
             onBack = {},
             onLogOut = {},

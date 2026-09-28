@@ -105,12 +105,14 @@ fun AdminFilterRow(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    allowUnselected: Boolean = false,
 ) {
     AnimatedFilterChipRow(
         options = labels,
         selectedIndex = selectedIndex,
         onSelect = onSelect,
         modifier = modifier,
+        allowUnselected = allowUnselected,
     )
 }
 

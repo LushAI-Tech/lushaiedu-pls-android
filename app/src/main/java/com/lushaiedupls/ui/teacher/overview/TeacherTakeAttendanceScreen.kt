@@ -20,7 +20,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,6 +49,9 @@ import com.lushaiedupls.ui.common.LoadErrorPanel
 import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
+import com.lushaiedupls.ui.common.keepKeyboardOpen
+import com.lushaiedupls.ui.common.scrollIntoViewOnFocus
+import com.lushaiedupls.ui.common.verticalScrollWithIme
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
@@ -197,7 +199,7 @@ fun TeacherTakeAttendanceScreen(
         Column(
             modifier = Modifier
                 .weight(1f)
-                .verticalScroll(rememberScrollState()),
+                .verticalScrollWithIme(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             session.students.forEach { row ->
@@ -329,6 +331,9 @@ private fun AttendanceStudentCard(
                     color = BrandBlack,
                     fontFamily = FontFamily.SansSerif,
                 ),
+                modifier = Modifier
+                    .keepKeyboardOpen()
+                    .scrollIntoViewOnFocus(),
                 decorationBox = { inner ->
                     Box(
                         modifier = Modifier

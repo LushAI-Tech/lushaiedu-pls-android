@@ -46,6 +46,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lushaiedupls.R
+import com.lushaiedupls.ui.common.LushNavigationRail
+import com.lushaiedupls.ui.common.LushRailNavIcon
 import com.lushaiedupls.ui.common.navItemClickable
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
@@ -111,6 +113,42 @@ fun AdminBottomBar(
 }
 
 @Composable
+fun AdminNavigationRail(
+    selectedTab: AdminTab,
+    onTabSelected: (AdminTab) -> Unit,
+    modifier: Modifier = Modifier,
+    pendingUserCount: Int = 0,
+) {
+    LushNavigationRail(modifier = modifier) {
+        LushRailNavIcon(
+            icon = Icons.Outlined.Home,
+            label = stringResource(R.string.tab_home),
+            selected = selectedTab == AdminTab.Home,
+            onClick = { onTabSelected(AdminTab.Home) },
+        )
+        LushRailNavIcon(
+            icon = Icons.Outlined.People,
+            label = stringResource(R.string.admin_tab_users),
+            selected = selectedTab == AdminTab.Users,
+            onClick = { onTabSelected(AdminTab.Users) },
+            badgeCount = pendingUserCount,
+        )
+        LushRailNavIcon(
+            icon = Icons.Outlined.School,
+            label = stringResource(R.string.admin_tab_classes),
+            selected = selectedTab == AdminTab.Classes,
+            onClick = { onTabSelected(AdminTab.Classes) },
+        )
+        LushRailNavIcon(
+            icon = Icons.Outlined.Menu,
+            label = stringResource(R.string.tab_more),
+            selected = selectedTab == AdminTab.More,
+            onClick = { onTabSelected(AdminTab.More) },
+        )
+    }
+}
+
+@Composable
 private fun BottomNavIcon(
     icon: ImageVector,
     label: String,
@@ -137,7 +175,7 @@ private fun BottomNavIcon(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = BrandBlack,
+                tint = if (selected) BrandOrange else BrandBlack,
                 modifier = Modifier.size(26.dp),
             )
             if (badgeCount > 0) {
@@ -152,7 +190,7 @@ private fun BottomNavIcon(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = if (badgeCount > 99) "99+" else badgeCount.toString(),
+                        text = if (badgeCount > 9) "9+" else badgeCount.toString(),
                         color = Color.White,
                         fontSize = if (badgeCount > 9) 8.sp else 10.sp,
                         fontWeight = FontWeight.Bold,
@@ -180,7 +218,7 @@ private fun BottomNavIcon(
             modifier = Modifier
                 .size(width = indicatorWidth, height = 3.dp)
                 .clip(RoundedCornerShape(50))
-                .background(BrandBlack),
+                .background(BrandOrange),
         )
     }
 }

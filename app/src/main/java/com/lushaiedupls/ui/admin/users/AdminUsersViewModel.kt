@@ -8,11 +8,13 @@ import com.lushaiedupls.data.remote.dto.AdminUserCreateRequest
 import com.lushaiedupls.data.remote.dto.AdminUserEditRequest
 import com.lushaiedupls.data.remote.dto.ClassOut
 import com.lushaiedupls.data.remote.dto.Gender
+import com.lushaiedupls.data.remote.dto.TeacherInstitutionGroup
 import com.lushaiedupls.data.remote.dto.UserOut
 import com.lushaiedupls.data.remote.dto.UserRole
 import com.lushaiedupls.data.remote.dto.UserStatus
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.AdminRepository
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.viewModelFactory
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
@@ -32,8 +34,6 @@ enum class AdminUserFilter {
     Students,
     Teachers,
     Parents,
-    Admins,
-    All,
 }
 
 data class AdminUsersUiState(
@@ -141,11 +141,15 @@ class AdminUsersViewModel(
         }
         listJob?.cancel()
         val nextPage = if (reset) 1 else current.page + 1
-        val pullRefresh = reset && current.users.isNotEmpty()
+        val (loading, refreshing) = if (reset) {
+            reloadUiFlags(current.isLoading, current.users.isNotEmpty())
+        } else {
+            false to false
+        }
         _uiState.update {
             it.copy(
-                isLoading = reset && !pullRefresh,
-                isRefreshing = pullRefresh,
+                isLoading = loading,
+                isRefreshing = refreshing,
                 isLoadingMore = !reset,
                 errorMessage = null,
                 hasMore = if (reset) true else it.hasMore,
@@ -157,7 +161,6 @@ class AdminUsersViewModel(
                 AdminUserFilter.Students -> UserRole.STUDENT
                 AdminUserFilter.Teachers -> UserRole.TEACHER
                 AdminUserFilter.Parents -> UserRole.PARENT
-                AdminUserFilter.Admins -> UserRole.ADMIN
                 else -> null
             }
             val status = when (state.filter) {
@@ -276,7 +279,7 @@ class AdminUsersViewModel(
                 dob = "",
                 role = user.role,
                 gender = user.gender,
-                classId = user.class_id,
+                classId = user.class_id.takeIf { user.role == UserRole.STUDENT },
                 errorMessage = null,
             )
         }
@@ -438,15 +441,6 @@ class AdminUsersViewModel(
         when (val unitsResult = adminRepository.teachingUnits()) {
             is NetworkResult.Success -> {
                 val pendingIds = missing.map { it.id }.toSet()
-                for (unit in unitsResult.data) {
-                    val teacherId = unit.teacher?.id
-                    if (teacherId != null && teacherId in pendingIds) {
-                        subjectsByUser.getOrPut(teacherId) { mutableListOf() }.add(unit.subject_name)
-                        if (classByUser[teacherId].isNullOrBlank()) {
-                            classByUser[teacherId] = unit.class_name
-                        }
-                    }
-                }
                 val studentClassIds = missing
                     .filter { it.role == UserRole.STUDENT }
                     .mapNotNull { it.class_id }
@@ -472,7 +466,9 @@ class AdminUsersViewModel(
             else -> Unit
         }
         val withoutSubjects = missing.filter { user ->
-            subjectsByUser[user.id].isNullOrEmpty() && !user.class_id.isNullOrBlank()
+            user.role == UserRole.STUDENT &&
+                subjectsByUser[user.id].isNullOrEmpty() &&
+                !user.class_id.isNullOrBlank()
         }
         if (withoutSubjects.isNotEmpty()) {
             val subjectsByClass = coroutineScope {
@@ -500,13 +496,30 @@ class AdminUsersViewModel(
             }
         }
         val formatted = missing.mapNotNull { user ->
-            val line = formatEnrollment(
-                className = classByUser[user.id],
-                subjects = subjectsByUser[user.id].orEmpty().distinct(),
-            ) ?: return@mapNotNull null
+            val line = if (user.role == UserRole.TEACHER) {
+                formatTeacherInstitutions(user.teaching_institutions)
+            } else {
+                formatEnrollment(
+                    className = classByUser[user.id],
+                    subjects = subjectsByUser[user.id].orEmpty().distinct(),
+                )
+            } ?: return@mapNotNull null
             user.id to line
         }.toMap()
         return existing + formatted
+    }
+
+    private fun formatTeacherInstitutions(groups: List<TeacherInstitutionGroup>): String? {
+        val parts = groups.flatMap { group ->
+            group.assignments.map { row ->
+                listOfNotNull(
+                    group.institution_name.trim().takeIf { it.isNotEmpty() },
+                    row.class_name.trim().takeIf { it.isNotEmpty() },
+                    row.subject_name.trim().takeIf { it.isNotEmpty() },
+                ).joinToString(" · ")
+            }
+        }.filter { it.isNotBlank() }
+        return parts.joinToString(", ").takeIf { it.isNotBlank() }
     }
 
     private fun formatEnrollment(className: String?, subjects: List<String>): String? {

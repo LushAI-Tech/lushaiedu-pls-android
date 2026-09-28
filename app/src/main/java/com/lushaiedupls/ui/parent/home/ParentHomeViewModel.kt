@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.needsAdminApproval
 import com.lushaiedupls.data.remote.userMessage
+import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.data.repository.ParentRepository
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.session.UserSessionStore
@@ -26,6 +27,8 @@ class ParentHomeViewModel(
     private val _uiState = MutableStateFlow(
         ParentHomeUiState(
             displayName = userSessionStore.getDisplayName(),
+            avatarUrl = AuthRepository.normalizeAvatarUrl(userSessionStore.getAvatarUrl()),
+            avatarCacheKey = userSessionStore.getAvatarRevision(),
             isLoading = true,
         ),
     )
@@ -61,8 +64,14 @@ class ParentHomeViewModel(
             val keepStatusPanel = current.needsApproval ||
                 (current.errorMessage != null && current.children.isEmpty())
             when {
-                asPullRefresh && !keepStatusPanel ->
-                    _uiState.update { it.copy(isRefreshing = true, errorMessage = null) }
+                asPullRefresh ->
+                    _uiState.update {
+                        it.copy(
+                            isRefreshing = true,
+                            isLoading = keepStatusPanel,
+                            errorMessage = if (keepStatusPanel) it.errorMessage else null,
+                        )
+                    }
                 keepStatusPanel ->
                     _uiState.update { it.copy(isLoading = true, isRefreshing = false) }
                 current.children.isEmpty() ->
@@ -78,7 +87,7 @@ class ParentHomeViewModel(
                     _uiState.update { it.copy(errorMessage = null, isRefreshing = false) }
             }
             val month = YearMonth.now().toString()
-            when (val result = parentRepository.overview(month)) {
+            when (val result = parentRepository.overview(month, forceRefresh = asPullRefresh)) {
                 is NetworkResult.Success -> {
                     val overview = result.data
                     val children = overview.children
@@ -92,6 +101,8 @@ class ParentHomeViewModel(
                             displayName = overview.parent.name.ifBlank {
                                 userSessionStore.getDisplayName()
                             },
+                            avatarUrl = resolveAvatarUrl(overview.parent.avatar_url),
+                            avatarCacheKey = userSessionStore.getAvatarRevision(),
                             monthLabel = overview.month,
                             notificationCount = overview.unread_notifications,
                             totalChildren = overview.total_children.takeIf { count -> count > 0 }
@@ -120,6 +131,17 @@ class ParentHomeViewModel(
                 }
             }
         }
+    }
+
+    private fun resolveAvatarUrl(remote: String?): String? {
+        val sessionUrl = AuthRepository.normalizeAvatarUrl(userSessionStore.getAvatarUrl())
+        val remoteUrl = AuthRepository.normalizeAvatarUrl(remote)
+        if (sessionUrl != null && remoteUrl != null && sessionUrl != remoteUrl) {
+            return sessionUrl
+        }
+        val url = remoteUrl ?: sessionUrl
+        url?.let { userSessionStore.setAvatarUrl(it) }
+        return url
     }
 
     companion object {

@@ -167,11 +167,7 @@ fun ParentFeesScreen(
                                     compact = true,
                                 )
                                 else -> uiState.history?.let {
-                                    FeeHistorySections(
-                                        history = it,
-                                        showOverallTotals = false,
-                                        showMonthTotals = false,
-                                    )
+                                    FeeHistorySections(history = it)
                                 }
                             }
                         }

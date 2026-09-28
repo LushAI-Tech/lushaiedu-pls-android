@@ -7,6 +7,8 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -68,6 +70,7 @@ import com.lushaiedupls.data.remote.dto.UserStatus
 import com.lushaiedupls.data.repository.AdminRepository
 import com.lushaiedupls.ui.admin.AdminActionRow
 import com.lushaiedupls.ui.admin.AdminCard
+import com.lushaiedupls.ui.admin.AdminChipShape
 import com.lushaiedupls.ui.admin.AdminDeleteRed
 import com.lushaiedupls.ui.admin.AdminEmptyText
 import com.lushaiedupls.ui.admin.AdminFilterRow
@@ -80,6 +83,7 @@ import com.lushaiedupls.ui.common.FilterRowListLoading
 import com.lushaiedupls.ui.common.LoadErrorPanel
 import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.theme.BgWhite
+import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
 import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.TextSecondary
@@ -124,6 +128,7 @@ fun AdminUsersRoute(
             adminRepository = adminRepository,
             teacherId = assignmentTeacher.id,
             teacherName = assignmentTeacher.name,
+            initialUser = assignmentTeacher,
             onBack = { assignmentTeacherId = null },
             onSaved = {
                 assignmentTeacherId = null
@@ -236,7 +241,7 @@ fun AdminUsersScreen(
                         else -> stringResource(R.string.admin_users_title)
                     },
                     onBack = if (uiState.composing || uiState.createdPassword != null) onCancel else null,
-                    actions = if (showFab) {
+                    actions = if (showFab && uiState.users.isNotEmpty()) {
                         {
                             IconButton(
                                 onClick = { managing = !managing },
@@ -656,6 +661,23 @@ private fun UserCard(
                     AdminMuted(subtitle)
                 }
             }
+            val roleAction = when {
+                user.status != UserStatus.ACTIVE -> null
+                user.role == UserRole.TEACHER -> stringResource(R.string.admin_teacher_assign_action) to {
+                    onAssignInstitution(user)
+                }
+                user.role == UserRole.PARENT -> stringResource(R.string.admin_parent_link_action_parent) to {
+                    onParentLink(user)
+                }
+                user.role == UserRole.STUDENT -> stringResource(R.string.admin_parent_link_action_student) to {
+                    onParentLink(user)
+                }
+                else -> null
+            }
+            if (roleAction != null) {
+                Spacer(modifier = Modifier.width(8.dp))
+                UserTileActionChip(label = roleAction.first, onClick = roleAction.second)
+            }
             if (managing) {
                 UserEditSuspendIcons(
                     user = user,
@@ -673,33 +695,28 @@ private fun UserCard(
                 ),
                 destructiveIndex = 1,
             )
-        } else if (user.status == UserStatus.ACTIVE) {
-            when (user.role) {
-                UserRole.TEACHER -> AdminActionRow(
-                    actions = listOf(
-                        stringResource(R.string.admin_teacher_assign_action) to {
-                            onAssignInstitution(user)
-                        },
-                    ),
-                )
-                UserRole.PARENT -> AdminActionRow(
-                    actions = listOf(
-                        stringResource(R.string.admin_parent_link_action_parent) to {
-                            onParentLink(user)
-                        },
-                    ),
-                )
-                UserRole.STUDENT -> AdminActionRow(
-                    actions = listOf(
-                        stringResource(R.string.admin_parent_link_action_student) to {
-                            onParentLink(user)
-                        },
-                    ),
-                )
-                UserRole.ADMIN -> Unit
-            }
         }
     }
+}
+
+@Composable
+private fun UserTileActionChip(
+    label: String,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = label,
+        color = BrandBlack,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        fontFamily = FontFamily.SansSerif,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(AdminChipShape)
+            .border(1.dp, BorderGray, AdminChipShape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    )
 }
 
 @Composable
@@ -755,6 +772,4 @@ private fun AdminUserFilter.filterLabel(): String = when (this) {
     AdminUserFilter.Students -> stringResource(R.string.admin_stat_students)
     AdminUserFilter.Teachers -> stringResource(R.string.admin_stat_teachers)
     AdminUserFilter.Parents -> stringResource(R.string.admin_stat_parents)
-    AdminUserFilter.Admins -> stringResource(R.string.role_admin)
-    AdminUserFilter.All -> stringResource(R.string.admin_filter_all)
 }

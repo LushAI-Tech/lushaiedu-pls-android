@@ -310,6 +310,11 @@ fun AdminClassesScreen(
             var pendingDeleteClass by remember { mutableStateOf<ClassOut?>(null) }
             var pendingDeleteSubject by remember { mutableStateOf<SubjectOut?>(null) }
             val managing = if (selectedClass != null) managingSubjects else managingClasses
+            val canManage = if (selectedClass != null) {
+                uiState.subjects.isNotEmpty()
+            } else {
+                uiState.classes.isNotEmpty()
+            }
             LushPullToRefreshBox(
                 isRefreshing = uiState.isRefreshing,
                 onRefresh = onRetry,
@@ -345,7 +350,7 @@ fun AdminClassesScreen(
                             selectedClass != null -> onBackToClasses
                             else -> null
                         },
-                        actions = if (!composing) {
+                        actions = if (!composing && canManage) {
                             {
                                 IconButton(
                                     onClick = {
@@ -577,7 +582,7 @@ private fun SubjectList(
         )
     }
     uiState.subjects.forEach { item ->
-        AdminCard {
+        AdminCard(onClick = { onStartEditSubject(item) }) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -585,29 +590,15 @@ private fun SubjectList(
                 AdminSubjectLeadingIcon(name = item.name, code = item.code)
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = item.name,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = BrandBlack,
-                            fontFamily = FontFamily.SansSerif,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                        if (managing) {
-                            EditDeleteIcons(
-                                editDescription = stringResource(R.string.admin_edit_subject),
-                                deleteDescription = stringResource(R.string.admin_delete_subject),
-                                onEdit = { onStartEditSubject(item) },
-                                onDelete = { onDeleteSubject(item) },
-                            )
-                        }
-                    }
+                    Text(
+                        text = item.name,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = BrandBlack,
+                        fontFamily = FontFamily.SansSerif,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     val boundLabel = item.stem_subject_id?.let { uiState.stemLabels[it] }
                     val isBound = boundLabel != null || item.ai_enabled || item.stem_subject_id != null
                     Spacer(modifier = Modifier.height(4.dp))
@@ -622,6 +613,19 @@ private fun SubjectList(
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.SansSerif,
                     )
+                }
+                if (managing) {
+                    IconButton(
+                        onClick = { onDeleteSubject(item) },
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.DeleteOutline,
+                            contentDescription = stringResource(R.string.admin_delete_subject),
+                            tint = AdminDeleteRed,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
                 }
             }
         }

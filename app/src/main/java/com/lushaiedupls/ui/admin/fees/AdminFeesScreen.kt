@@ -16,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -23,8 +24,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -66,7 +66,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -107,6 +106,7 @@ import com.lushaiedupls.ui.common.AnimatedFilterChipRow
 import com.lushaiedupls.ui.common.FilterRowListLoading
 import com.lushaiedupls.ui.common.LoadErrorPanel
 import com.lushaiedupls.ui.common.LushPullToRefreshBox
+import com.lushaiedupls.ui.common.OverlayScrimDialog
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.teacher.components.InstitutionSelectorDropdown
@@ -938,9 +938,6 @@ private fun FeeTemplateFormOverlay(
         }
     }
 
-    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
-    val keyboardOpen = imeBottom > 0
-
     Dialog(
         onDismissRequest = ::requestDismiss,
         properties = DialogProperties(
@@ -961,40 +958,46 @@ private fun FeeTemplateFormOverlay(
                         .clickable(onClick = ::requestDismiss),
                 )
             }
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
-                    .imePadding()
-                    .padding(horizontal = 24.dp, vertical = 16.dp),
-                contentAlignment = if (keyboardOpen) Alignment.BottomCenter else Alignment.Center,
+                    .imePadding(),
             ) {
-                AnimatedVisibility(
-                    visible = visible,
-                    enter = scaleIn(
-                        initialScale = 0.88f,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessMedium,
-                        ),
-                    ) + fadeIn(animationSpec = tween(180)),
-                    exit = scaleOut(
-                        targetScale = 0.92f,
-                        animationSpec = tween(200),
-                    ) + fadeOut(animationSpec = tween(200)),
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = maxHeight)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 24.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(OverlayShape)
-                            .background(BgWhite)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = {},
-                            )
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 20.dp, vertical = 20.dp),
+                    AnimatedVisibility(
+                        visible = visible,
+                        enter = scaleIn(
+                            initialScale = 0.88f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessMedium,
+                            ),
+                        ) + fadeIn(animationSpec = tween(180)),
+                        exit = scaleOut(
+                            targetScale = 0.92f,
+                            animationSpec = tween(200),
+                        ) + fadeOut(animationSpec = tween(200)),
                     ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(OverlayShape)
+                                .background(BgWhite)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = {},
+                                )
+                                .padding(horizontal = 20.dp, vertical = 20.dp),
+                        ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -1078,6 +1081,7 @@ private fun FeeTemplateFormOverlay(
         }
     }
 }
+}
 
 @Composable
 private fun FeeLedgerBulkDeleteOverlay(
@@ -1086,30 +1090,17 @@ private fun FeeLedgerBulkDeleteOverlay(
     onToggleIncludePaid: (Boolean) -> Unit,
     onConfirm: () -> Unit,
 ) {
-    Dialog(
-        onDismissRequest = { if (!uiState.isSaving) onDismiss() },
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+    OverlayScrimDialog(
+        onDismiss = onDismiss,
+        dismissEnabled = !uiState.isSaving,
     ) {
-        Box(
+        Column(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.45f))
-                .clickable(enabled = !uiState.isSaving, onClick = onDismiss)
-                .padding(horizontal = 24.dp),
-            contentAlignment = Alignment.Center,
+                .fillMaxWidth()
+                .clip(OverlayShape)
+                .background(BgWhite)
+                .padding(horizontal = 20.dp, vertical = 20.dp),
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(OverlayShape)
-                    .background(BgWhite)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {},
-                    )
-                    .padding(horizontal = 20.dp, vertical = 20.dp),
-            ) {
                 Text(
                     text = stringResource(R.string.admin_fees_bulk_delete_title),
                     fontWeight = FontWeight.Bold,
@@ -1176,7 +1167,6 @@ private fun FeeLedgerBulkDeleteOverlay(
             }
         }
     }
-}
 
 @Composable
 private fun FeeMonthPickerOverlay(
@@ -1186,30 +1176,14 @@ private fun FeeMonthPickerOverlay(
 ) {
     var visibleYear by remember(selectedMonth) { mutableIntStateOf(selectedMonth.year) }
     val now = remember { YearMonth.now() }
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Box(
+    OverlayScrimDialog(onDismiss = onDismiss) {
+        Column(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.45f))
-                .clickable(onClick = onDismiss)
-                .padding(horizontal = 20.dp),
-            contentAlignment = Alignment.Center,
+                .fillMaxWidth()
+                .clip(OverlayShape)
+                .background(BgWhite)
+                .padding(horizontal = 18.dp, vertical = 20.dp),
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(OverlayShape)
-                    .background(BgWhite)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {},
-                    )
-                    .padding(horizontal = 18.dp, vertical = 20.dp),
-            ) {
                 Text(
                     text = stringResource(R.string.admin_fees_select_month),
                     fontWeight = FontWeight.Bold,
@@ -1288,7 +1262,6 @@ private fun FeeMonthPickerOverlay(
             }
         }
     }
-}
 
 @Composable
 private fun FeeStudentCard(

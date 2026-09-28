@@ -1,5 +1,7 @@
 package com.lushaiedupls.ui.auth.signup
 
+import com.lushaiedupls.data.remote.ActiveDeviceSession
+
 enum class GenderOption {
     Male,
     Female,
@@ -19,4 +21,11 @@ data class CreateAccountUiState(
     val accountAlreadyExists: Boolean = false,
     val googleLinkBlocked: Boolean = false,
     val successRoute: String? = null,
+    val showDeviceConflict: Boolean = false,
+    val deviceConflictMessage: String? = null,
+    val deviceConflictAccount: String? = null,
+    val deviceConflictDevices: List<ActiveDeviceSession> = emptyList(),
+    val deviceConflictToken: String? = null,
+    val isResolvingConflict: Boolean = false,
+    val conflictResolveError: String? = null,
 )

@@ -7,7 +7,7 @@ data class InstitutionOption(
 
 data class SelectInstitutionUiState(
     val institutions: List<InstitutionOption> = emptyList(),
-    val selectedInstitutionId: String? = null,
+    val selectedInstitutionIds: Set<String> = emptySet(),
     val isTeacher: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,

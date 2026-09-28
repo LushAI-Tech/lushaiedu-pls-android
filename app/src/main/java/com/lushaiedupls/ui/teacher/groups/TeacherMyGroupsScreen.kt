@@ -38,13 +38,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lushaiedupls.R
 import com.lushaiedupls.data.mock.TeacherGroup
 import com.lushaiedupls.data.mock.TeacherMockRepository
 import com.lushaiedupls.data.repository.TeacherRepository
+import com.lushaiedupls.data.session.UserSessionStore
 import com.lushaiedupls.ui.auth.components.LushAiEduWordmark
+import com.lushaiedupls.ui.common.AnimatedFilterChipRow
 import com.lushaiedupls.ui.common.CenteredEmptyState
 import com.lushaiedupls.ui.common.LoadErrorPanel
 import com.lushaiedupls.ui.common.LushPullToRefreshBox
@@ -64,15 +67,21 @@ fun TeacherMyGroupsRoute(
     teacherRepository: TeacherRepository,
     onGroupClick: (TeacherGroup) -> Unit = {},
     modifier: Modifier = Modifier,
+    userSessionStore: UserSessionStore? = null,
     viewModel: TeacherMyGroupsViewModel = viewModel(
-        factory = TeacherMyGroupsViewModel.provideFactory(teacherRepository),
+        factory = TeacherMyGroupsViewModel.provideFactory(teacherRepository, userSessionStore),
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    LifecycleResumeEffect(Unit) {
+        viewModel.syncSelectedInstitution()
+        onPauseOrDispose { }
+    }
     when {
-        uiState.isLoading && uiState.groups.isEmpty() && uiState.errorMessage == null ->
+        uiState.isLoading && uiState.groups.isEmpty() && uiState.institutions.isEmpty() &&
+            uiState.errorMessage == null ->
             StudentPageSkeleton(kind = StudentSkeletonKind.List, modifier = modifier)
-        uiState.errorMessage != null && uiState.groups.isEmpty() -> LoadErrorPanel(
+        uiState.errorMessage != null && uiState.groups.isEmpty() && uiState.institutions.isEmpty() -> LoadErrorPanel(
             screenTitle = stringResource(R.string.teacher_my_classes_title),
             message = uiState.errorMessage.orEmpty(),
             onRetry = viewModel::refresh,
@@ -83,6 +92,7 @@ fun TeacherMyGroupsRoute(
             uiState = uiState,
             onGroupClick = onGroupClick,
             onRefresh = viewModel::refresh,
+            onSelectInstitution = viewModel::selectInstitution,
             modifier = modifier,
         )
     }
@@ -93,6 +103,7 @@ fun TeacherMyGroupsScreen(
     uiState: TeacherMyGroupsUiState,
     onGroupClick: (TeacherGroup) -> Unit,
     onRefresh: () -> Unit = {},
+    onSelectInstitution: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     LushPullToRefreshBox(
@@ -122,18 +133,22 @@ fun TeacherMyGroupsScreen(
                     fontFamily = FontFamily.SansSerif,
                     letterSpacing = 0.6.sp,
                 )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = stringResource(R.string.teacher_my_classes_subtitle),
-                    fontSize = 14.sp,
-                    color = TextSecondary,
-                    fontFamily = FontFamily.SansSerif,
-                )
             }
             LushAiEduWordmark(fontSizeSp = 16)
         }
 
-        Spacer(modifier = Modifier.height(22.dp))
+        Spacer(modifier = Modifier.height(18.dp))
+
+        if (uiState.institutions.isNotEmpty()) {
+            AnimatedFilterChipRow(
+                options = uiState.institutions,
+                selectedIndex = uiState.institutionIds
+                    .indexOf(uiState.selectedInstitutionId)
+                    .coerceAtLeast(0),
+                onSelect = onSelectInstitution,
+            )
+            Spacer(modifier = Modifier.height(18.dp))
+        }
 
         if (uiState.groups.isEmpty()) {
             CenteredEmptyState(
@@ -226,6 +241,9 @@ private fun TeacherMyGroupsPreview() {
         TeacherMyGroupsScreen(
             uiState = TeacherMyGroupsUiState(
                 groups = TeacherMockRepository().groups(),
+                institutions = listOf("LushaiEdu", "North Campus"),
+                institutionIds = listOf("1", "2"),
+                selectedInstitutionId = "1",
             ),
             onGroupClick = {},
         )

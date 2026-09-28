@@ -14,6 +14,10 @@ class DeviceIdProvider(
 ) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    /**
+     * Stable per-install id. Reused on every login so the same phone can re-enter
+     * without occupying a second device slot.
+     */
     fun deviceId(): String {
         val existing = prefs.getString(KEY_DEVICE_ID, null)
         if (!existing.isNullOrBlank()) return existing

@@ -24,6 +24,8 @@ import com.lushaiedupls.ui.auth.components.LushAiEduBrandHeader
 import com.lushaiedupls.ui.auth.components.OrContinueWithDivider
 import com.lushaiedupls.ui.auth.components.PoweredByFooter
 import com.lushaiedupls.ui.auth.components.PrimaryButton
+import com.lushaiedupls.ui.auth.google.GoogleOauthErrorPanel
+import com.lushaiedupls.ui.common.LushAuthContentWidth
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.LushAIEdu_PLSTheme
@@ -35,12 +37,16 @@ fun WelcomeRoute(
     onGoogle: () -> Unit,
     onParent: () -> Unit,
     modifier: Modifier = Modifier,
+    oauthStatusMessage: String? = null,
+    oauthStatusIsError: Boolean = true,
 ) {
     WelcomeScreen(
         onCreateAccount = onCreateAccount,
         onSignIn = onSignIn,
         onGoogle = onGoogle,
         onParent = onParent,
+        oauthStatusMessage = oauthStatusMessage,
+        oauthStatusIsError = oauthStatusIsError,
         modifier = modifier,
     )
 }
@@ -51,6 +57,8 @@ fun WelcomeScreen(
     onSignIn: () -> Unit,
     onGoogle: () -> Unit,
     onParent: () -> Unit = {},
+    oauthStatusMessage: String? = null,
+    oauthStatusIsError: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -68,30 +76,41 @@ fun WelcomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            LushAiEduBrandHeader(
-                subtitle = stringResource(R.string.welcome_tagline),
-                logoSize = 120.dp,
-                showAtomOrbit = true,
-            )
-            Spacer(modifier = Modifier.height(36.dp))
-            PrimaryButton(
-                text = stringResource(R.string.sign_in),
-                onClick = onSignIn,
-                fullyRounded = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(modifier = Modifier.height(20.dp))
-            OrContinueWithDivider()
-            Spacer(modifier = Modifier.height(16.dp))
-            GoogleButton(onClick = onGoogle)
-            Spacer(modifier = Modifier.height(18.dp))
-            AuthTextLink(
-                prefix = stringResource(R.string.dont_have_account),
-                link = stringResource(R.string.sign_up),
-                onClick = onCreateAccount,
-                linkColor = BrandOrange,
-            )
-            Spacer(modifier = Modifier.height(24.dp))
+            LushAuthContentWidth {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    LushAiEduBrandHeader(
+                        subtitle = stringResource(R.string.welcome_tagline),
+                        logoSize = 120.dp,
+                        showAtomOrbit = true,
+                    )
+                    Spacer(modifier = Modifier.height(36.dp))
+                    PrimaryButton(
+                        text = stringResource(R.string.sign_in),
+                        onClick = onSignIn,
+                        fullyRounded = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    OrContinueWithDivider()
+                    Spacer(modifier = Modifier.height(16.dp))
+                    GoogleButton(onClick = onGoogle)
+                    GoogleOauthErrorPanel(
+                        statusMessage = oauthStatusMessage,
+                        isError = oauthStatusIsError,
+                    )
+                    Spacer(modifier = Modifier.height(18.dp))
+                    AuthTextLink(
+                        prefix = stringResource(R.string.dont_have_account),
+                        link = stringResource(R.string.sign_up),
+                        onClick = onCreateAccount,
+                        linkColor = BrandOrange,
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+            }
         }
 
         PoweredByFooter(

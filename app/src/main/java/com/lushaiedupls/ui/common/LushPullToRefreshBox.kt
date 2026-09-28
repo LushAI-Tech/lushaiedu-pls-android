@@ -10,23 +10,38 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BrandOrange
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
+ * Loading vs pull-refresh flags for a reload.
+ *
+ * The initial skeleton stays [Pair.first] (`isLoading`). Any later reload — including an
+ * empty list the user can still pull — uses [Pair.second] (`isRefreshing`) so the indicator
+ * tracks the API instead of swapping back to a skeleton.
+ */
+fun reloadUiFlags(
+    currentlyLoading: Boolean,
+    hasContent: Boolean,
+): Pair<Boolean, Boolean> {
+    val pullRefresh = hasContent || !currentlyLoading
+    return (!pullRefresh) to pullRefresh
+}
+
+/**
  * App-wide pull-to-refresh host.
  *
- * Owns the indicator locally so Compose always sees a true → false transition.
- * Fast network responses can collapse ViewModel `isRefreshing` updates into a
- * single frame, which leaves Material3's default indicator stuck mid-pull.
- * Only user pulls drive the spinner — silent/resume refreshes stay invisible.
+ * The spinner is shown on user pull and hidden as soon as [isRefreshing] returns to false
+ * (the API finished). Silent/resume refreshes do not show the indicator. A local gesture
+ * flag covers the first frames so a fast ViewModel update cannot skip the true → false
+ * transition Material3 needs.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,44 +53,28 @@ fun LushPullToRefreshBox(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val state = rememberPullToRefreshState()
-    var showIndicator by remember { mutableStateOf(false) }
     var pullRequested by remember { mutableStateOf(false) }
+    val refreshing by rememberUpdatedState(isRefreshing)
 
     LaunchedEffect(pullRequested) {
         if (!pullRequested) return@LaunchedEffect
-        showIndicator = true
 
-        // Wait for the ViewModel to report busy (skipped if the reload is instant).
-        val sawBusy = withTimeoutOrNull(700) {
-            snapshotFlow { isRefreshing }.first { it }
-        } != null
-
-        if (sawBusy || isRefreshing) {
-            snapshotFlow { isRefreshing }.first { !it }
-        } else {
-            delay(280)
+        if (!refreshing) {
+            withTimeoutOrNull(100) {
+                snapshotFlow { refreshing }.first { it }
+            }
         }
-
-        // Brief settle so the ring doesn't snap away or stick at threshold.
-        delay(220)
-        showIndicator = false
-        pullRequested = false
-    }
-
-    // Hard safety if a refresh never reports completion.
-    LaunchedEffect(pullRequested) {
-        if (!pullRequested) return@LaunchedEffect
-        delay(12_000)
-        showIndicator = false
+        if (refreshing) {
+            snapshotFlow { refreshing }.first { !it }
+        }
         pullRequested = false
     }
 
     PullToRefreshBox(
-        isRefreshing = showIndicator,
+        isRefreshing = pullRequested,
         onRefresh = {
             if (pullRequested) return@PullToRefreshBox
             pullRequested = true
-            showIndicator = true
             onRefresh()
         },
         modifier = modifier,
@@ -84,7 +83,7 @@ fun LushPullToRefreshBox(
         indicator = {
             PullToRefreshDefaults.Indicator(
                 modifier = Modifier.align(Alignment.TopCenter),
-                isRefreshing = showIndicator,
+                isRefreshing = pullRequested,
                 state = state,
                 containerColor = BgWhite,
                 color = BrandOrange,

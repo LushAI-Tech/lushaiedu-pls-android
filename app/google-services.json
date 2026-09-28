@@ -14,11 +14,19 @@
       },
       "oauth_client": [
         {
-          "client_id": "502520884584-lkc42f31u07oa3iits26vkk89vsrplap.apps.googleusercontent.com",
+          "client_id": "502520884584-avd1ccr18us0posrsccdri04n3i6jdvu.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.lushaiedupls",
             "certificate_hash": "e0a21710f60b886791d3c5cc70b5b833644b0598"
+          }
+        },
+        {
+          "client_id": "502520884584-b2o02p68n8qtrvg5nmnqlui114cdrcs0.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.lushaiedupls",
+            "certificate_hash": "45523473de8c35dbf049ec2261a06046c1f80593"
           }
         },
         {
@@ -37,6 +45,14 @@
             {
               "client_id": "502520884584-8fjhsif2pq1qakn76k4eb1j628p6n4mp.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "502520884584-520u3hlppkg1o7b6s5kee95hrl6rvgv1.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.lushaiedupls.ios",
+                "app_store_id": "6754088285"
+              }
             }
           ]
         }

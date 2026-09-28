@@ -101,12 +101,31 @@ class MarkdownLatexNormalizerTest {
     }
 
     @Test
-    fun normalizesTextCommandsToMboxForJLatexMath() {
+    fun normalizesMboxCommandsToTextForKatex() {
+        val source = "\$m = \\frac{\\mbox{moles of solute}}{\\mbox{mass of solvent in kg}}\$"
+        val out = MarkdownLatexNormalizer.normalize(source)
+        assertTrue(out.contains("\\text{moles of solute}"))
+        assertTrue(out.contains("\\text{mass of solvent in kg}"))
+        assertFalse(out.contains("\\mbox{"))
+    }
+
+    @Test
+    fun keepsTextCommandsForKatex() {
         val source = "\$\\text{speed} = \\frac{\\text{distance}}{\\text{time}}\$"
         val out = MarkdownLatexNormalizer.normalize(source)
-        assertTrue(out.contains("\\mbox{speed}"))
-        assertTrue(out.contains("\\mbox{distance}"))
-        assertTrue(out.contains("\\mbox{time}"))
+        assertTrue(out.contains("\\text{speed}"))
+        assertTrue(out.contains("\\text{distance}"))
+        assertTrue(out.contains("\\text{time}"))
+        assertFalse(out.contains("\\mbox{"))
+    }
+
+    @Test
+    fun collapsesMultilineInlineMath() {
+        val source = "\$m = \\frac{\\mbox{moles of solute}}\n{\\mbox{mass of solvent in kg}}\$"
+        val out = MarkdownLatexNormalizer.normalize(source)
+        assertFalse(out.contains("\n"))
+        assertTrue(out.contains("\$m = \\frac{\\text{moles of solute}} {\\text{mass of solvent in kg}}\$") ||
+            out.contains("\$m = \\frac{\\text{moles of solute}}{\\text{mass of solvent in kg}}\$"))
     }
 
     @Test

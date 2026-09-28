@@ -39,12 +39,15 @@ import com.lushaiedupls.data.remote.dto.SubjectOut
 import com.lushaiedupls.data.remote.dto.TeacherOverview
 import com.lushaiedupls.data.remote.dto.TeachingUnitOut
 import com.lushaiedupls.data.remote.dto.UnitAttendanceSummary
+import com.lushaiedupls.data.remote.dto.UnitMonthAttendance
 import com.lushaiedupls.data.remote.dto.UnreadCountResponse
 import com.lushaiedupls.data.remote.dto.UpsertRollRequest
 import com.lushaiedupls.data.remote.dto.UserOut
 import com.lushaiedupls.data.remote.dto.UserSummary
 import com.lushaiedupls.data.remote.dto.WeekView
 import com.lushaiedupls.data.remote.safeApiCall
+import java.time.YearMonth
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -62,6 +65,7 @@ class TeacherRepository(
     val unreadNotificationCount: StateFlow<Int?> = _unreadNotificationCount.asStateFlow()
     private val coalescer = RequestCoalescer()
     private val catalogCache = TtlCache(CATALOG_TTL_MS)
+    private val markedRollDatesByUnit = ConcurrentHashMap<String, MutableSet<String>>()
 
     fun setUnreadNotificationCount(count: Int) {
         _unreadNotificationCount.value = count.coerceAtLeast(0)
@@ -147,6 +151,13 @@ class TeacherRepository(
         attendanceApi.unitSummary(unitId, month)
     }
 
+    suspend fun unitMonth(
+        unitId: String,
+        month: String,
+    ): NetworkResult<UnitMonthAttendance> = safeApiCall {
+        attendanceApi.unitMonth(unitId, month)
+    }
+
     suspend fun unitDay(unitId: String, date: String): NetworkResult<DayView> =
         safeApiCall { attendanceApi.unitDay(unitId, date) }
 
@@ -192,8 +203,25 @@ class TeacherRepository(
                 ),
             )
         }
-        if (result is NetworkResult.Success) catalogCache.removePrefix("overview_")
+        if (result is NetworkResult.Success) {
+            catalogCache.removePrefix("overview_")
+            rememberMarkedRoll(unitId, result.data.attendance_date.ifBlank { date })
+        }
         return result
+    }
+
+    fun rememberMarkedRoll(unitId: String, date: String) {
+        if (unitId.isBlank() || date.isBlank()) return
+        markedRollDatesByUnit
+            .getOrPut(unitId) { ConcurrentHashMap.newKeySet() }
+            .add(date)
+    }
+
+    fun markedRollDays(unitId: String, month: YearMonth): Set<Int> {
+        val prefix = "%04d-%02d-".format(month.year, month.monthValue)
+        return markedRollDatesByUnit[unitId].orEmpty().mapNotNull { date ->
+            if (date.startsWith(prefix)) date.substringAfterLast('-').toIntOrNull() else null
+        }.toSet()
     }
 
     suspend fun calendarEvents(
@@ -346,13 +374,19 @@ class TeacherRepository(
         body: String,
         audience: NotificationAudience = NotificationAudience.STUDENTS,
         teachingUnitId: String? = null,
+        institutionId: String? = null,
     ): NetworkResult<NotificationOut> = safeApiCall {
+        val scoped = audience == NotificationAudience.ALL ||
+            audience == NotificationAudience.STUDENTS ||
+            audience == NotificationAudience.TEACHERS ||
+            audience == NotificationAudience.PARENTS
         notificationsApi.create(
             NotificationCreate(
                 title = title,
                 body = body,
                 audience = audience,
-                teaching_unit_id = teachingUnitId,
+                institution_id = if (scoped) institutionId else null,
+                teaching_unit_id = if (audience == NotificationAudience.TEACHING_UNIT) teachingUnitId else null,
             ),
         )
     }

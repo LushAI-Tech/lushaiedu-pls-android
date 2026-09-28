@@ -8,6 +8,7 @@ import com.lushaiedupls.data.mock.TeacherAttendanceMark
 import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.TeacherRepository
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.viewModelFactory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -98,12 +99,13 @@ class TeacherTakeAttendanceViewModel(
     fun refresh() {
         viewModelScope.launch {
             val hasContent = _uiState.value.session != null
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoading, hasContent)
             _uiState.update {
-                if (hasContent) {
-                    it.copy(isRefreshing = true, isLoading = false, errorMessage = null)
-                } else {
-                    it.copy(isLoading = true, isRefreshing = false, errorMessage = null)
-                }
+                it.copy(
+                    isRefreshing = refreshing,
+                    isLoading = loading,
+                    errorMessage = null,
+                )
             }
             val rosterResult = teacherRepository.unitRoster(
                 unitId = unitId,

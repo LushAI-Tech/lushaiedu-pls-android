@@ -70,6 +70,7 @@ import com.lushaiedupls.ui.common.AcademicCalendarLegend
 import com.lushaiedupls.ui.common.AcademicCalendarMonthCard
 import com.lushaiedupls.ui.common.LoadErrorPanel
 import com.lushaiedupls.ui.common.LushPullToRefreshBox
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.common.viewModelFactory
@@ -151,10 +152,11 @@ class AdminCalendarViewModel(
             val hasContent = _uiState.value.items.isNotEmpty() ||
                 _uiState.value.allEvents.isNotEmpty() ||
                 _uiState.value.dayMarks.isNotEmpty()
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoading, hasContent)
             _uiState.update {
                 it.copy(
-                    isLoading = !hasContent,
-                    isRefreshing = hasContent,
+                    isLoading = loading,
+                    isRefreshing = refreshing,
                     errorMessage = null,
                     visibleMonth = month,
                     selectedDay = selectedDay,
@@ -368,7 +370,7 @@ fun AdminCalendarScreen(
                     AdminScreenHeader(
                         title = stringResource(R.string.admin_calendar_title),
                         onBack = onBack,
-                        actions = if (!uiState.composing) {
+                        actions = if (!uiState.composing && uiState.items.isNotEmpty()) {
                             {
                                 IconButton(
                                     onClick = { managing = !managing },

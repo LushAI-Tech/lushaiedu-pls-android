@@ -188,17 +188,19 @@ class ParentFeedbackViewModel(
         }
     }
 
-    fun deleteCurrent() {
-        val id = _uiState.value.editingId ?: return
+    fun deleteItem(item: ParentFeedbackOut) {
+        deleteFeedback(item.id)
+    }
+
+    private fun deleteFeedback(id: String) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isSaving = true, errorMessage = null) }
             when (val result = parentRepository.deleteFeedback(id)) {
                 is NetworkResult.Success -> {
-                    cancelComposer()
+                    if (_uiState.value.editingId == id) cancelComposer()
                     refresh()
                 }
                 else -> _uiState.update {
-                    it.copy(isSaving = false, errorMessage = result.userMessage())
+                    it.copy(errorMessage = result.userMessage())
                 }
             }
         }

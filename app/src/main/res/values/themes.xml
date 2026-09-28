@@ -7,6 +7,7 @@
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar">true</item>
         <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:forceDarkAllowed">false</item>
     </style>
 
     <!-- Shown at launch; plain white until Compose splash is ready. -->
@@ -16,6 +17,7 @@
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_transparent</item>
         <item name="windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
         <item name="postSplashScreenTheme">@style/Theme.LushAIEdu_PLS</item>
+        <item name="android:forceDarkAllowed">false</item>
     </style>
 
 </resources>

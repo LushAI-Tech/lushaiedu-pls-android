@@ -22,6 +22,8 @@ import com.lushaiedupls.data.remote.needsAdminApproval
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.repository.TeacherRepository
+import com.lushaiedupls.data.session.UserSessionStore
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.viewModelFactory
 import com.lushaiedupls.ui.student.ai.PendingAsk
 import com.lushaiedupls.ui.student.ai.StudentAiChatScreen
@@ -40,6 +42,7 @@ import kotlinx.coroutines.launch
 class TeacherAiHubViewModel(
     private val studentRepository: StudentRepository,
     private val teacherRepository: TeacherRepository,
+    private val userSessionStore: UserSessionStore? = null,
 ) : ViewModel() {
 
     private var allSubjects: List<AiSubjectItem> = emptyList()
@@ -55,51 +58,134 @@ class TeacherAiHubViewModel(
         applyFilter(_uiState.value.copy(selectedClass = classLabel))
     }
 
-    fun refresh() {
+    fun selectInstitution(index: Int) {
+        val institutionId = _uiState.value.institutionIds.getOrNull(index) ?: return
+        if (institutionId == _uiState.value.selectedInstitutionId) return
+        userSessionStore?.setInstitutionId(institutionId)
+        _uiState.update {
+            it.copy(
+                selectedInstitutionId = institutionId,
+                selectedClass = "",
+                subjects = emptyList(),
+                isLoading = true,
+                errorMessage = null,
+            )
+        }
+        refresh()
+    }
+
+    fun refresh(forceRefresh: Boolean = false) {
         viewModelScope.launch {
             val hasContent = allSubjects.isNotEmpty() ||
                 _uiState.value.subjects.isNotEmpty() ||
                 _uiState.value.classOptions.isNotEmpty()
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoading, hasContent)
+            val bypassCache = forceRefresh || refreshing
             _uiState.update {
-                if (hasContent) {
-                    it.copy(isRefreshing = true, isLoading = false, errorMessage = null)
-                } else {
-                    it.copy(isLoading = true, isRefreshing = false, errorMessage = null)
-                }
+                it.copy(
+                    isRefreshing = refreshing,
+                    isLoading = loading,
+                    errorMessage = null,
+                )
             }
             coroutineScope {
-                val statsDeferred = async { studentRepository.progressDashboard() }
-                val aiSubjectsDeferred = async { studentRepository.aiSubjects() }
-                val unitsDeferred = async { teacherRepository.teachingUnits() }
-                val statsResult = statsDeferred.await()
-                val aiSubjectsResult = aiSubjectsDeferred.await()
+                val sessionInstitutions = userSessionStore?.getInstitutionIds().orEmpty()
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .map { id -> id to "Institution" }
+                val knownIds = _uiState.value.institutionIds.ifEmpty { sessionInstitutions.map { it.first } }
+                val selectedHint = _uiState.value.selectedInstitutionId
+                    ?: userSessionStore?.getInstitutionId()?.takeIf { it in knownIds }
+                    ?: knownIds.firstOrNull()
+                val initialQuery = StudentUiMappers.queryInstitutionId(knownIds, selectedHint)
+                val statsDeferred = async {
+                    studentRepository.progressOverview(
+                        forceRefresh = bypassCache,
+                        institutionId = initialQuery,
+                    )
+                }
+                val aiSubjectsDeferred = async {
+                    studentRepository.aiSubjects(
+                        forceRefresh = bypassCache,
+                        institutionId = initialQuery,
+                    )
+                }
+                val unitsDeferred = async { teacherRepository.teachingUnits(forceRefresh = bypassCache) }
+                var statsResult = statsDeferred.await()
+                var aiSubjectsResult = aiSubjectsDeferred.await()
                 val unitsResult = unitsDeferred.await()
 
+                val units = (unitsResult as? NetworkResult.Success)?.data.orEmpty()
+                var aiSubjects = (aiSubjectsResult as? NetworkResult.Success)?.data.orEmpty()
+                var fromAi = if (aiSubjectsResult is NetworkResult.Success) {
+                    StudentUiMappers.aiSubjects(aiSubjects)
+                } else {
+                    emptyList()
+                }
+                val fromUnits = StudentUiMappers.teachingUnitSubjects(units)
+                var institutions = StudentUiMappers.mergeInstitutionOptions(
+                    TeacherUiMappers.institutionChips(units).map { it.id to it.name },
+                    StudentUiMappers.institutionOptions(fromAi.ifEmpty { fromUnits }),
+                    sessionInstitutions,
+                )
+                val selectedInstitutionId = _uiState.value.selectedInstitutionId
+                    ?.takeIf { id -> institutions.any { it.first == id } }
+                    ?: userSessionStore?.getInstitutionId()
+                        ?.takeIf { id -> institutions.any { it.first == id } }
+                    ?: institutions.firstOrNull()?.first
+                val scopedQuery = StudentUiMappers.queryInstitutionId(
+                    institutionIds = institutions.map { it.first },
+                    selectedInstitutionId = selectedInstitutionId,
+                )
+                if (scopedQuery != null && scopedQuery != initialQuery) {
+                    aiSubjectsResult = studentRepository.aiSubjects(
+                        forceRefresh = bypassCache,
+                        institutionId = scopedQuery,
+                    )
+                    aiSubjects = (aiSubjectsResult as? NetworkResult.Success)?.data.orEmpty()
+                    fromAi = if (aiSubjectsResult is NetworkResult.Success) {
+                        StudentUiMappers.aiSubjects(aiSubjects)
+                    } else {
+                        emptyList()
+                    }
+                    statsResult = studentRepository.progressOverview(
+                        forceRefresh = bypassCache,
+                        institutionId = scopedQuery,
+                    )
+                    institutions = StudentUiMappers.mergeInstitutionOptions(
+                        institutions,
+                        StudentUiMappers.institutionOptions(fromAi),
+                    )
+                }
+                if (selectedInstitutionId != null) {
+                    userSessionStore?.setInstitutionId(selectedInstitutionId)
+                }
+                val scopedUnits = TeacherUiMappers.unitsForInstitution(units, scopedQuery)
+                allSubjects = when {
+                    aiSubjectsResult is NetworkResult.Success -> fromAi
+                    fromUnits.isNotEmpty() -> StudentUiMappers.teachingUnitSubjects(scopedUnits)
+                    else -> emptyList()
+                }.filter { it.name.isNotBlank() }
+                    .distinctBy { "${it.institutionId}|${it.classId}|${it.id}" }
+                val visibleInstitutions = institutions.takeIf { it.size > 1 }.orEmpty()
+                val classes = allSubjects.map { it.className }.filter { it.isNotBlank() }.distinct()
+                    .ifEmpty {
+                        if (aiSubjectsResult is NetworkResult.Success) {
+                            emptyList()
+                        } else {
+                            TeacherUiMappers.classChips(scopedUnits).map { it.label }
+                        }
+                    }
+                val selectedClass = _uiState.value.selectedClass.takeIf { it in classes }
+                    ?: classes.firstOrNull().orEmpty()
                 val stats = when (statsResult) {
                     is NetworkResult.Success -> StudentUiMappers.aiHubStats(statsResult.data)
                     else -> StudentUiMappers.emptyAiHubStats()
                 }
-                val aiSubjects = (aiSubjectsResult as? NetworkResult.Success)?.data.orEmpty()
-                val units = (unitsResult as? NetworkResult.Success)?.data.orEmpty()
-                val fromAi = StudentUiMappers.aiSubjects(aiSubjects)
-                val fromUnits = StudentUiMappers.teachingUnitSubjects(units)
-                allSubjects = (fromAi + fromUnits)
-                    .filter { it.name.isNotBlank() }
-                    .distinctBy { "${it.className}|${it.id}" }
-                val classes = TeacherUiMappers.classChips(units)
-                    .map { it.label }
-                    .ifEmpty {
-                        allSubjects.map { it.className }.filter { it.isNotBlank() }.distinct()
-                    }
-                val selected = _uiState.value.selectedClass.takeIf { it in classes }
-                    ?: classes.firstOrNull().orEmpty()
                 val error = when {
-                    allSubjects.isNotEmpty() -> null
-                    aiSubjectsResult !is NetworkResult.Success &&
-                        unitsResult !is NetworkResult.Success -> {
-                        unitsResult.userMessage().ifBlank { aiSubjectsResult.userMessage() }
-                    }
-                    else -> null
+                    aiSubjectsResult is NetworkResult.Success ||
+                        unitsResult is NetworkResult.Success -> null
+                    else -> unitsResult.userMessage().ifBlank { aiSubjectsResult.userMessage() }
                 }
                 val needsApproval = listOf(aiSubjectsResult, unitsResult, statsResult)
                     .any { it.needsAdminApproval() }
@@ -109,15 +195,26 @@ class TeacherAiHubViewModel(
                         isRefreshing = false,
                         stats = stats,
                         classOptions = classes,
-                        selectedClass = selected,
+                        selectedClass = selectedClass,
+                        institutions = visibleInstitutions.map { it.second },
+                        institutionIds = visibleInstitutions.map { it.first },
+                        selectedInstitutionId = selectedInstitutionId.takeIf {
+                            visibleInstitutions.isNotEmpty()
+                        },
                         needsApproval = needsApproval,
                         errorMessage = if (needsApproval) null else error,
                     ),
                 )
                 val firstSubjectId = allSubjects.firstOrNull()?.id
                 if (!firstSubjectId.isNullOrBlank()) {
-                    val chResult = studentRepository.chapters(firstSubjectId)
+                    val chResult = studentRepository.chapters(firstSubjectId, forceRefresh = bypassCache)
                     if (chResult is NetworkResult.Success) {
+                        val textbookId = chResult.data
+                            .firstOrNull { it.textbook_id.isNotBlank() }
+                            ?.textbook_id
+                        if (!textbookId.isNullOrBlank()) {
+                            studentRepository.progressResume(textbookId, forceRefresh = bypassCache)
+                        }
                         val activeChapterIds = chResult.data.filter { it.is_active }.map { it.id }
                         studentRepository.preferredChatPrefetchChapterId(activeChapterIds)
                             ?.let { studentRepository.prefetchAiChat(listOf(it)) }
@@ -141,8 +238,9 @@ class TeacherAiHubViewModel(
         fun provideFactory(
             studentRepository: StudentRepository,
             teacherRepository: TeacherRepository,
+            userSessionStore: UserSessionStore? = null,
         ): ViewModelProvider.Factory = viewModelFactory {
-            TeacherAiHubViewModel(studentRepository, teacherRepository)
+            TeacherAiHubViewModel(studentRepository, teacherRepository, userSessionStore)
         }
     }
 }
@@ -375,8 +473,13 @@ fun TeacherAiHubRoute(
     teacherRepository: TeacherRepository,
     onSubjectClick: (AiSubjectItem) -> Unit,
     modifier: Modifier = Modifier,
+    userSessionStore: UserSessionStore? = null,
     viewModel: TeacherAiHubViewModel = viewModel(
-        factory = TeacherAiHubViewModel.provideFactory(studentRepository, teacherRepository),
+        factory = TeacherAiHubViewModel.provideFactory(
+            studentRepository,
+            teacherRepository,
+            userSessionStore,
+        ),
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -384,7 +487,8 @@ fun TeacherAiHubRoute(
         uiState = uiState,
         onSubjectClick = onSubjectClick,
         onClassSelected = viewModel::onClassSelected,
-        onRefresh = viewModel::refresh,
+        onInstitutionSelected = viewModel::selectInstitution,
+        onRefresh = { viewModel.refresh(forceRefresh = true) },
         modifier = modifier,
     )
 }

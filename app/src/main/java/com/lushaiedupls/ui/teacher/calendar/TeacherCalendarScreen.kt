@@ -168,13 +168,6 @@ fun TeacherCalendarScreen(
             color = BrandBlack,
             fontFamily = FontFamily.SansSerif,
         )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = stringResource(R.string.teacher_calendar_subtitle),
-            fontSize = 14.sp,
-            color = TextSecondary,
-            fontFamily = FontFamily.SansSerif,
-        )
 
         Spacer(modifier = Modifier.height(22.dp))
         Text(

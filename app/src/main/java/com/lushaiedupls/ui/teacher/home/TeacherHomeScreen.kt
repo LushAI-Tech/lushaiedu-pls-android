@@ -139,6 +139,8 @@ fun TeacherHomeScreen(
         ) {
         AppTopBar(
             displayName = uiState.displayName,
+            avatarUrl = uiState.avatarUrl,
+            avatarCacheKey = uiState.avatarCacheKey,
             notificationCount = uiState.notificationCount,
             onNotificationClick = onNotificationsClick,
             onProfileClick = onProfileClick,

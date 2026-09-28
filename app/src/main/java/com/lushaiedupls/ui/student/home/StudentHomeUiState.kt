@@ -6,6 +6,8 @@ import com.lushaiedupls.data.mock.SessionSummary
 
 data class StudentHomeUiState(
     val displayName: String = "",
+    val avatarUrl: String? = null,
+    val avatarCacheKey: Long = 0L,
     val notificationCount: Int = 0,
     val overviewMetrics: List<OverviewMetric> = emptyList(),
     val sessionSummary: SessionSummary? = null,

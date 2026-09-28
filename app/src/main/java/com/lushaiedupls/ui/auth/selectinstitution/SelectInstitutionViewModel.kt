@@ -20,11 +20,13 @@ class SelectInstitutionViewModel(
     private val studentRepository: StudentRepository,
 ) : ViewModel() {
 
+    private val isTeacher = userSessionStore.getRole() == UserRole.Teacher
+
     private val _uiState = MutableStateFlow(
         SelectInstitutionUiState(
             isLoading = true,
-            isTeacher = userSessionStore.getRole() == UserRole.Teacher,
-            selectedInstitutionId = userSessionStore.getInstitutionId(),
+            isTeacher = isTeacher,
+            selectedInstitutionIds = userSessionStore.getInstitutionIds().toSet(),
         ),
     )
     val uiState: StateFlow<SelectInstitutionUiState> = _uiState.asStateFlow()
@@ -42,14 +44,19 @@ class SelectInstitutionViewModel(
                         .filter { it.is_active }
                         .sortedWith(compareBy({ it.sort_order }, { it.name }))
                         .map { InstitutionOption(it.id, it.name) }
-                    val selected = _uiState.value.selectedInstitutionId
-                        ?.takeIf { id -> options.any { it.id == id } }
-                        ?: options.singleOrNull()?.id
+                    val retained = _uiState.value.selectedInstitutionIds
+                        .filter { id -> options.any { it.id == id } }
+                        .toSet()
+                    val selected = when {
+                        retained.isNotEmpty() -> retained
+                        options.size == 1 -> setOf(options.first().id)
+                        else -> emptySet()
+                    }
                     _uiState.update {
                         it.copy(
                             isLoading = false,
                             institutions = options,
-                            selectedInstitutionId = selected,
+                            selectedInstitutionIds = selected,
                             errorMessage = if (options.isEmpty()) {
                                 "No institutions are available yet."
                             } else {
@@ -66,20 +73,41 @@ class SelectInstitutionViewModel(
     }
 
     fun onInstitutionSelected(institutionId: String) {
-        _uiState.update { it.copy(selectedInstitutionId = institutionId, errorMessage = null) }
+        _uiState.update { state ->
+            val next = if (state.isTeacher) {
+                if (institutionId in state.selectedInstitutionIds) {
+                    state.selectedInstitutionIds - institutionId
+                } else {
+                    state.selectedInstitutionIds + institutionId
+                }
+            } else {
+                setOf(institutionId)
+            }
+            state.copy(selectedInstitutionIds = next, errorMessage = null)
+        }
     }
 
     fun validateAndSave(): Boolean {
-        val selected = _uiState.value.selectedInstitutionId
-        return if (selected.isNullOrBlank()) {
-            _uiState.update { it.copy(errorMessage = "Please select an institution.") }
+        val selected = _uiState.value.selectedInstitutionIds
+        return if (selected.isEmpty()) {
+            _uiState.update {
+                it.copy(
+                    errorMessage = if (it.isTeacher) {
+                        "Please select at least one institution."
+                    } else {
+                        "Please select an institution."
+                    },
+                )
+            }
             false
         } else {
-            val previous = userSessionStore.getInstitutionId()
-            userSessionStore.setInstitutionId(selected)
+            val previous = userSessionStore.getInstitutionIds().toSet()
+            userSessionStore.setInstitutionIds(selected.toList())
             if (previous != selected) {
                 userSessionStore.setClassIds(emptyList())
                 userSessionStore.setSubjectIds(emptyList())
+                userSessionStore.setClassInstitutionIds(emptyMap())
+                userSessionStore.setPendingTeacherAssignments(emptyList())
             }
             true
         }

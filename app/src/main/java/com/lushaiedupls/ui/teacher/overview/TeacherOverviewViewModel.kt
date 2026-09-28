@@ -7,6 +7,8 @@ import com.lushaiedupls.data.mapper.TeacherUiMappers
 import com.lushaiedupls.data.mock.TeacherOverviewDashboard
 import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.dto.InstitutionOut
+import com.lushaiedupls.data.remote.dto.PeriodCard
+import com.lushaiedupls.data.remote.dto.RollOut
 import com.lushaiedupls.data.remote.dto.TeachingUnitOut
 import com.lushaiedupls.data.remote.dto.TeachingUnitStatus
 import com.lushaiedupls.data.remote.userMessage
@@ -14,6 +16,7 @@ import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.data.session.UserSessionStore
 import com.lushaiedupls.ui.common.viewModelFactory
 import com.lushaiedupls.ui.teacher.overlays.AttendancePeriodOption
+import java.time.LocalDate
 import java.time.YearMonth
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -38,6 +41,8 @@ class TeacherOverviewViewModel(
 
     private data class CacheEntry(
         val dashboard: TeacherOverviewDashboard,
+        val markedRollDays: Set<Int> = emptySet(),
+        val markedDaysFetched: Boolean = false,
     )
 
     private val overviewCache = linkedMapOf<CacheKey, CacheEntry>()
@@ -45,6 +50,7 @@ class TeacherOverviewViewModel(
     private var cachedInstitutions: List<InstitutionOut>? = null
     private var refreshJob: Job? = null
     private var pickerJob: Job? = null
+    private var markedDaysJob: Job? = null
 
     init {
         refresh(forceNetwork = false)
@@ -60,6 +66,7 @@ class TeacherOverviewViewModel(
         userSessionStore?.setInstitutionId(institutionId)
         overviewCache.clear()
         pickerJob?.cancel()
+        markedDaysJob?.cancel()
         pickerJob = viewModelScope.launch {
             val unitId = syncAttendancePicker(
                 institutionId = institutionId,
@@ -193,6 +200,18 @@ class TeacherOverviewViewModel(
         )
     }
 
+    fun refreshMarkedDays() {
+        val state = _uiState.value
+        if (state.isLoading) return
+        val unitId = state.selectedUnitId ?: return
+        applySavedMarkedDays(state.attendanceMonth, unitId)
+        scheduleMarkedRollDays(
+            month = state.attendanceMonth,
+            unitId = unitId,
+            force = true,
+        )
+    }
+
     fun refresh(
         month: YearMonth = _uiState.value.attendanceMonth,
         unitId: String? = _uiState.value.selectedUnitId,
@@ -213,6 +232,7 @@ class TeacherOverviewViewModel(
         if (cached != null) {
             refreshJob?.cancel()
             applyCacheEntry(month, cached, clearSelectedDay = true)
+            scheduleMarkedRollDays(month, unitId, force = false)
             return
         }
         loadMonth(
@@ -240,6 +260,7 @@ class TeacherOverviewViewModel(
                     entry = cached,
                     clearSelectedDay = showSkeleton,
                 )
+                scheduleMarkedRollDays(month, unitId, force = false)
                 return
             }
         }
@@ -261,6 +282,7 @@ class TeacherOverviewViewModel(
                         errorMessage = null,
                         attendanceMonth = month,
                         selectedAttendanceDay = null,
+                        markedRollDays = emptySet(),
                     )
                     else -> state.copy(
                         isLoading = state.dashboard == null,
@@ -282,6 +304,11 @@ class TeacherOverviewViewModel(
 
             if (entry != null) {
                 applyCacheEntry(month, entry)
+                scheduleMarkedRollDays(
+                    month = month,
+                    unitId = _uiState.value.selectedUnitId,
+                    force = forceNetwork,
+                )
             } else {
                 _uiState.update {
                     it.copy(
@@ -330,16 +357,29 @@ class TeacherOverviewViewModel(
                     null
                 }
             }
+            val unitMonthDeferred = async {
+                if (resolvedUnitId != null) {
+                    teacherRepository.unitMonth(resolvedUnitId, monthKey)
+                } else {
+                    null
+                }
+            }
             val overviewResult = overviewDeferred.await()
             val unitSummary = unitSummaryDeferred.await()
+            val unitMonth = unitMonthDeferred.await()
 
             when (overviewResult) {
                 is NetworkResult.Success -> {
+                    val markedDays = (unitMonth as? NetworkResult.Success)?.data
+                        ?.let { TeacherUiMappers.markedRollDays(it, month) }
+                        .orEmpty()
                     val entry = CacheEntry(
                         dashboard = TeacherUiMappers.overviewDashboard(
                             overviewResult.data,
                             (unitSummary as? NetworkResult.Success)?.data,
                         ),
+                        markedRollDays = markedDays,
+                        markedDaysFetched = unitMonth is NetworkResult.Success,
                     )
                     putCache(resolvedKey, entry)
                     entry
@@ -540,6 +580,8 @@ class TeacherOverviewViewModel(
         entry: CacheEntry,
         clearSelectedDay: Boolean = false,
     ) {
+        val unitId = _uiState.value.selectedUnitId
+        val savedDays = unitId?.let { teacherRepository.markedRollDays(it, month) }.orEmpty()
         _uiState.update {
             it.copy(
                 isLoading = false,
@@ -548,8 +590,85 @@ class TeacherOverviewViewModel(
                 dashboard = entry.dashboard,
                 attendanceMonth = month,
                 selectedAttendanceDay = if (clearSelectedDay) null else it.selectedAttendanceDay,
+                markedRollDays = entry.markedRollDays + savedDays,
             )
         }
+    }
+
+    private fun applySavedMarkedDays(month: YearMonth, unitId: String) {
+        val savedDays = teacherRepository.markedRollDays(unitId, month)
+        if (savedDays.isEmpty()) return
+        overviewCache[CacheKey(month, unitId)]?.let { cached ->
+            putCache(CacheKey(month, unitId), cached.copy(markedRollDays = cached.markedRollDays + savedDays))
+        }
+        _uiState.update { it.copy(markedRollDays = it.markedRollDays + savedDays) }
+    }
+
+    private fun scheduleMarkedRollDays(
+        month: YearMonth,
+        unitId: String?,
+        force: Boolean,
+    ) {
+        if (unitId.isNullOrBlank()) {
+            markedDaysJob?.cancel()
+            _uiState.update { it.copy(markedRollDays = emptySet()) }
+            return
+        }
+        applySavedMarkedDays(month, unitId)
+        val cacheKey = CacheKey(month, unitId)
+        if (!force && overviewCache[cacheKey]?.markedDaysFetched == true) {
+            _uiState.update {
+                it.copy(
+                    markedRollDays = overviewCache[cacheKey]?.markedRollDays.orEmpty() +
+                        teacherRepository.markedRollDays(unitId, month),
+                )
+            }
+            return
+        }
+        markedDaysJob?.cancel()
+        markedDaysJob = viewModelScope.launch {
+            when (val result = teacherRepository.unitMonth(unitId, month.toString())) {
+                is NetworkResult.Success -> {
+                    if (_uiState.value.attendanceMonth != month ||
+                        _uiState.value.selectedUnitId != unitId
+                    ) {
+                        return@launch
+                    }
+                    val days = TeacherUiMappers.markedRollDays(result.data, month)
+                    val merged = days + teacherRepository.markedRollDays(unitId, month)
+                    overviewCache[cacheKey]?.let { cached ->
+                        putCache(
+                            cacheKey,
+                            cached.copy(markedRollDays = merged, markedDaysFetched = true),
+                        )
+                    }
+                    _uiState.update { it.copy(markedRollDays = merged) }
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    private fun patchMarkedDay(unitId: String, dateLabel: String) {
+        val date = runCatching { LocalDate.parse(dateLabel) }.getOrNull() ?: return
+        val month = YearMonth.from(date)
+        val day = date.dayOfMonth
+        val key = CacheKey(month, unitId)
+        overviewCache[key]?.let { cached ->
+            putCache(key, cached.copy(markedRollDays = cached.markedRollDays + day))
+        }
+        if (_uiState.value.attendanceMonth == month &&
+            _uiState.value.selectedUnitId == unitId
+        ) {
+            _uiState.update { it.copy(markedRollDays = it.markedRollDays + day) }
+        }
+    }
+
+    private fun dayHasCalledRoll(
+        periods: List<PeriodCard>,
+        extraClasses: List<RollOut>,
+    ): Boolean = extraClasses.isNotEmpty() || periods.any { period ->
+        period.is_marked || !period.roll_id.isNullOrBlank()
     }
 
     private fun loadSetupPeriods(
@@ -608,6 +727,13 @@ class TeacherOverviewViewModel(
                     scheduledPeriods.isEmpty() && institutePeriods.isEmpty() ->
                         "No periods available."
                     else -> null
+                }
+
+                if (dayResult is NetworkResult.Success &&
+                    dayHasCalledRoll(dayResult.data.periods, dayResult.data.extra_classes)
+                ) {
+                    teacherRepository.rememberMarkedRoll(unitId, dateLabel)
+                    patchMarkedDay(unitId, dateLabel)
                 }
 
                 _uiState.update {

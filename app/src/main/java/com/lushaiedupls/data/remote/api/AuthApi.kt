@@ -2,6 +2,7 @@ package com.lushaiedupls.data.remote.api
 
 import com.lushaiedupls.data.remote.dto.ChangePasswordRequest
 import com.lushaiedupls.data.remote.dto.CompleteOnboardingRequest
+import com.lushaiedupls.data.remote.dto.DeviceConflictResolveRequest
 import com.lushaiedupls.data.remote.dto.GoogleLoginRequest
 import com.lushaiedupls.data.remote.dto.LoginRequest
 import com.lushaiedupls.data.remote.dto.LogoutRequest
@@ -27,12 +28,21 @@ interface AuthApi {
     @POST("api/v1/auth/google")
     suspend fun google(@Body body: GoogleLoginRequest): TokenPair
 
+    /**
+     * Resolves a login/Google 409 device conflict.
+     * Body: `conflict_token` from the 409 detail object + the same `device` as login.
+     * Response is a normal [TokenPair]. No Authorization header.
+     */
+    @POST("api/v1/auth/device-conflict/resolve")
+    suspend fun resolveDeviceConflict(@Body body: DeviceConflictResolveRequest): TokenPair
+
     @POST("api/v1/auth/refresh")
     suspend fun refresh(@Body body: RefreshRequest): TokenPair
 
     @POST("api/v1/auth/logout")
     suspend fun logout(@Body body: LogoutRequest): MessageResponse
 
+    /** No body. Requires `Authorization: Bearer <access token>`. */
     @POST("api/v1/auth/logout-all")
     suspend fun logoutAll(): MessageResponse
 

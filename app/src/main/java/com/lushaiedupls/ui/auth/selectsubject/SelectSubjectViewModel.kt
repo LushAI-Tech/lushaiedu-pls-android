@@ -11,6 +11,7 @@ import com.lushaiedupls.data.remote.dto.UserRole as ApiUserRole
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.data.repository.StudentRepository
+import com.lushaiedupls.data.session.PendingTeacherAssignment
 import com.lushaiedupls.data.session.UserSessionStore
 import com.lushaiedupls.ui.auth.selectrole.UserRole
 import com.lushaiedupls.ui.common.viewModelFactory
@@ -27,31 +28,51 @@ class SelectSubjectViewModel(
     private val userSessionStore: UserSessionStore,
     private val studentRepository: StudentRepository,
     private val authRepository: AuthRepository,
+    private val institutionId: String,
 ) : ViewModel() {
 
-    private val classIds = userSessionStore.getClassIds()
     private val appRole = userSessionStore.getRole()
 
-    private val _uiState = MutableStateFlow(SelectSubjectUiState(isLoading = true))
+    private val _uiState = MutableStateFlow(
+        SelectSubjectUiState(
+            isLoading = true,
+            showInstitutionContext = appRole == UserRole.Teacher &&
+                userSessionStore.getInstitutionIds().size > 1,
+        ),
+    )
     val uiState: StateFlow<SelectSubjectUiState> = _uiState.asStateFlow()
 
     init {
         loadSubjects()
     }
 
+    private fun classIdsForInstitution(): List<String> {
+        val mapped = userSessionStore.getClassInstitutionIds()
+            .filter { it.value == institutionId }
+            .keys
+            .toList()
+        if (mapped.isNotEmpty()) return mapped
+        return userSessionStore.getClassIds()
+    }
+
     fun loadSubjects() {
+        val classIds = classIdsForInstitution()
         if (classIds.isEmpty()) {
             _uiState.update { it.copy(isLoading = false, errorMessage = "No class selected.") }
             return
         }
+        if (institutionId.isBlank()) {
+            _uiState.update {
+                it.copy(isLoading = false, errorMessage = "Please select an institution first.")
+            }
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            val institutionId = userSessionStore.getInstitutionId()
-            if (institutionId.isNullOrBlank()) {
-                _uiState.update {
-                    it.copy(isLoading = false, errorMessage = "Please select an institution first.")
-                }
-                return@launch
+            val institutionName = when (val institutions = studentRepository.institutions()) {
+                is NetworkResult.Success ->
+                    institutions.data.firstOrNull { it.id == institutionId }?.name.orEmpty()
+                else -> ""
             }
             val classNames = when (val classes = studentRepository.classes(institutionId)) {
                 is NetworkResult.Success -> classes.data.associate { it.id to it.name }
@@ -59,9 +80,7 @@ class SelectSubjectViewModel(
             }
             val loaded = coroutineScope {
                 classIds.map { classId ->
-                    async {
-                        classId to studentRepository.subjects(classId, institutionId)
-                    }
+                    async { classId to studentRepository.subjects(classId, institutionId) }
                 }.awaitAll()
             }
             val subjects = mutableListOf<SubjectChoice>()
@@ -78,19 +97,24 @@ class SelectSubjectViewModel(
                                     name = subject.name,
                                     classId = classId,
                                     className = classNames[classId].orEmpty(),
+                                    institutionId = institutionId,
+                                    institutionName = institutionName,
                                 )
                             }
                     }
                     else -> error = result.userMessage()
                 }
             }
+            val restored = userSessionStore.getPendingTeacherAssignments()
+                .filter { it.institutionId == institutionId }
+                .map { it.subjectId }
+                .ifEmpty { userSessionStore.getSubjectIds() }
             _uiState.update {
                 it.copy(
                     isLoading = false,
                     subjects = subjects,
-                    selectedSubjectIds = userSessionStore.getSubjectIds()
-                        .filter { id -> subjects.any { s -> s.id == id } }
-                        .toSet(),
+                    institutionName = institutionName,
+                    selectedSubjectIds = restored.filter { id -> subjects.any { s -> s.id == id } }.toSet(),
                     errorMessage = error.takeIf { subjects.isEmpty() },
                 )
             }
@@ -131,19 +155,28 @@ class SelectSubjectViewModel(
             "OTHER" -> Gender.OTHER
             else -> null
         }
+        val institutionIds = userSessionStore.getInstitutionIds()
         val invite = userSessionStore.getPendingInviteCode()
-        val institutionId = userSessionStore.getInstitutionId()
         if (apiRole == ApiUserRole.TEACHER && invite.isNullOrBlank()) {
             _uiState.update { it.copy(errorMessage = "Invite code is required for teachers.") }
             return
         }
-        if (apiRole == ApiUserRole.STUDENT && institutionId.isNullOrBlank()) {
+        if (institutionIds.isEmpty() &&
+            (apiRole == ApiUserRole.STUDENT || apiRole == ApiUserRole.TEACHER)
+        ) {
             _uiState.update { it.copy(errorMessage = "Please select an institution first.") }
             return
         }
-        if (apiRole == ApiUserRole.TEACHER && institutionId.isNullOrBlank()) {
-            _uiState.update { it.copy(errorMessage = "Please select an institution first.") }
-            return
+
+        if (apiRole == ApiUserRole.TEACHER) {
+            persistCurrentAssignments(selected)
+            val nextId = nextInstitutionId()
+            if (nextId != null) {
+                _uiState.update {
+                    it.copy(isSubmitting = false, done = true, nextInstitutionId = nextId)
+                }
+                return
+            }
         }
 
         viewModelScope.launch {
@@ -155,22 +188,27 @@ class SelectSubjectViewModel(
                     phone = userSessionStore.getPendingPhone(),
                     gender = gender,
                     address = userSessionStore.getPendingAddress(),
-                    institution_id = institutionId,
-                    class_id = classIds.first(),
+                    institution_id = institutionIds.singleOrNull()
+                        ?: userSessionStore.getInstitutionId(),
+                    class_id = classIdsForInstitution().first(),
                     subject_ids = selected.map { it.id },
                 )
-                ApiUserRole.TEACHER -> CompleteOnboardingRequest(
-                    role = apiRole,
-                    name = name,
-                    invite_code = invite,
-                    phone = userSessionStore.getPendingPhone(),
-                    gender = gender,
-                    address = userSessionStore.getPendingAddress(),
-                    institution_id = institutionId,
-                    assignments = selected.map {
-                        TeacherAssignment(class_id = it.classId, subject_id = it.id)
-                    },
-                )
+                ApiUserRole.TEACHER -> {
+                    persistCurrentAssignments(selected)
+                    val assignments = userSessionStore.getPendingTeacherAssignments()
+                    CompleteOnboardingRequest(
+                        role = apiRole,
+                        name = name,
+                        invite_code = invite,
+                        phone = userSessionStore.getPendingPhone(),
+                        gender = gender,
+                        address = userSessionStore.getPendingAddress(),
+                        institution_ids = institutionIds,
+                        assignments = assignments.map {
+                            TeacherAssignment(class_id = it.classId, subject_id = it.subjectId)
+                        },
+                    )
+                }
                 else -> CompleteOnboardingRequest(
                     role = apiRole,
                     name = name,
@@ -183,7 +221,9 @@ class SelectSubjectViewModel(
             when (val result = authRepository.completeOnboarding(request)) {
                 is NetworkResult.Success -> {
                     userSessionStore.setSubjectIds(selected.map { it.id })
-                    _uiState.update { it.copy(isSubmitting = false, done = true) }
+                    _uiState.update {
+                        it.copy(isSubmitting = false, done = true, nextInstitutionId = null)
+                    }
                 }
                 else -> _uiState.update {
                     it.copy(isSubmitting = false, errorMessage = result.userMessage())
@@ -193,7 +233,29 @@ class SelectSubjectViewModel(
     }
 
     fun clearDone() {
-        _uiState.update { it.copy(done = false) }
+        _uiState.update { it.copy(done = false, nextInstitutionId = null) }
+    }
+
+    private fun persistCurrentAssignments(selected: List<SubjectChoice>) {
+        val current = selected.map {
+            PendingTeacherAssignment(
+                classId = it.classId,
+                subjectId = it.id,
+                institutionId = it.institutionId.ifBlank { institutionId },
+            )
+        }
+        val others = userSessionStore.getPendingTeacherAssignments()
+            .filter { it.institutionId != institutionId }
+        userSessionStore.setPendingTeacherAssignments(others + current)
+        userSessionStore.setSubjectIds(
+            userSessionStore.getPendingTeacherAssignments().map { it.subjectId },
+        )
+    }
+
+    private fun nextInstitutionId(): String? {
+        val ids = userSessionStore.getInstitutionIds()
+        val index = ids.indexOf(institutionId)
+        return ids.getOrNull(index + 1)
     }
 
     companion object {
@@ -201,8 +263,14 @@ class SelectSubjectViewModel(
             userSessionStore: UserSessionStore,
             studentRepository: StudentRepository,
             authRepository: AuthRepository,
+            institutionId: String,
         ): ViewModelProvider.Factory = viewModelFactory {
-            SelectSubjectViewModel(userSessionStore, studentRepository, authRepository)
+            SelectSubjectViewModel(
+                userSessionStore,
+                studentRepository,
+                authRepository,
+                institutionId,
+            )
         }
     }
 }

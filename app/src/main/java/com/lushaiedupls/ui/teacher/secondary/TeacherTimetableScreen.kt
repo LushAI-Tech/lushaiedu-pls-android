@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -377,8 +378,9 @@ private fun TeacherTimetableGrid(
     val tableBorderColor = BorderGray
     val cellDividerColor = BorderGray
     val headerLine = Color.White.copy(alpha = 0.2f)
+    val hScroll = rememberScrollState()
 
-    Column(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .shadow(2.dp, TableShape, clip = false)
@@ -386,14 +388,22 @@ private fun TeacherTimetableGrid(
             .border(1.dp, tableBorderColor, TableShape)
             .background(BgWhite),
     ) {
+        val periodCount = timetable.timeSlots.size.coerceAtLeast(1)
+        val containerWidth = maxWidth
+        val availableForPeriods = (containerWidth - DayColWidth).coerceAtLeast(0.dp)
+        val periodWidth = maxOf(PeriodColWidth, availableForPeriods / periodCount)
+        val tableWidth = DayColWidth + periodWidth * periodCount
+        val needsScroll = tableWidth > containerWidth
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
+                .then(if (needsScroll) Modifier.horizontalScroll(hScroll) else Modifier),
         ) {
-            Column {
+            Column(modifier = Modifier.width(tableWidth.coerceAtLeast(containerWidth))) {
                 Row(
                     modifier = Modifier
+                        .fillMaxWidth()
                         .background(HeaderBg)
                         .height(HeaderHeight),
                     verticalAlignment = Alignment.CenterVertically,
@@ -408,7 +418,7 @@ private fun TeacherTimetableGrid(
                     timetable.timeSlots.forEachIndexed { index, time ->
                         HeaderCell(
                             text = time,
-                            modifier = Modifier.width(PeriodColWidth),
+                            modifier = Modifier.width(periodWidth),
                             dividerColor = headerLine,
                             bottomDividerColor = tableBorderColor,
                             showEndDivider = index != timetable.timeSlots.lastIndex,
@@ -420,7 +430,9 @@ private fun TeacherTimetableGrid(
                 timetable.days.forEachIndexed { dayIndex, day ->
                     val isLastRow = dayIndex == timetable.days.lastIndex
                     Row(
-                        modifier = Modifier.height(RowHeight),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(RowHeight),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         DayCell(
@@ -438,7 +450,7 @@ private fun TeacherTimetableGrid(
                                 editable = editable,
                                 canInteract = canEditCell,
                                 onClick = { onCellTap(timeIndex, dayIndex) },
-                                modifier = Modifier.width(PeriodColWidth),
+                                modifier = Modifier.width(periodWidth),
                                 dividerColor = cellDividerColor,
                                 showEndDivider = timeIndex != timetable.timeSlots.lastIndex,
                                 showBottomDivider = !isLastRow,

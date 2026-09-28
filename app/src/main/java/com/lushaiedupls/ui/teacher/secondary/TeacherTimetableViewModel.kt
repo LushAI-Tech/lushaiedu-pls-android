@@ -19,6 +19,7 @@ import com.lushaiedupls.data.remote.dto.WeekSlot
 import com.lushaiedupls.data.remote.dto.WeekView
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.TeacherRepository
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.viewModelFactory
 import com.lushaiedupls.ui.teacher.overlays.SessionSubjectOption
 import kotlinx.coroutines.async
@@ -69,12 +70,13 @@ class TeacherTimetableViewModel(
         viewModelScope.launch {
             val hasContent = _uiState.value.timetable != null ||
                 _uiState.value.institutions.isNotEmpty()
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoading, hasContent)
             _uiState.update {
-                if (hasContent) {
-                    it.copy(isRefreshing = true, isLoading = false, errorMessage = null)
-                } else {
-                    it.copy(isLoading = true, isRefreshing = false, errorMessage = null)
-                }
+                it.copy(
+                    isRefreshing = refreshing,
+                    isLoading = loading,
+                    errorMessage = null,
+                )
             }
             val institutions = loadInstitutions()
             if (institutions == null) {
@@ -93,7 +95,11 @@ class TeacherTimetableViewModel(
                         classes = emptyList(),
                         selectedClassId = null,
                         timetable = emptyTimetable(),
-                        errorMessage = "Please select an institution.",
+                        errorMessage = if (institutions.isEmpty()) {
+                            "No assigned institutions yet."
+                        } else {
+                            "Please select an institution."
+                        },
                     )
                 }
                 return@launch
@@ -425,17 +431,26 @@ class TeacherTimetableViewModel(
     }
 
     private suspend fun loadInstitutions(): List<InstitutionOut>? {
-        return when (val result = teacherRepository.institutions()) {
+        val catalog = when (val result = teacherRepository.institutions()) {
             is NetworkResult.Success -> result.data
                 .filter { it.is_active }
                 .sortedWith(compareBy({ it.sort_order }, { it.name }))
             else -> {
                 _uiState.update {
-                    it.copy(isLoading = false, isRefreshing = false, errorMessage = result.userMessage())
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        errorMessage = result.userMessage(),
+                    )
                 }
-                null
+                return null
             }
         }
+        val units = when (val result = teacherRepository.teachingUnits()) {
+            is NetworkResult.Success -> result.data
+            else -> emptyList()
+        }
+        return TeacherUiMappers.assignedInstitutions(units, catalog)
     }
 
     private fun resolveInstitutionId(institutions: List<InstitutionOut>): String? {
@@ -453,11 +468,9 @@ class TeacherTimetableViewModel(
     )
 
     private suspend fun loadSetSnapshot(institutionId: String): SetSnapshot? = coroutineScope {
-        val classesDeferred = async { teacherRepository.timetableClasses(institutionId) }
         val unitsDeferred = async { teacherRepository.teachingUnits() }
         val weekDeferred = async { teacherRepository.weekTimetable(institutionId) }
         val periodsDeferred = async { teacherRepository.periods(institutionId) }
-        val classesResult = classesDeferred.await()
         val unitsResult = unitsDeferred.await()
         val weekResult = weekDeferred.await()
         val periodsResult = periodsDeferred.await()
@@ -465,10 +478,10 @@ class TeacherTimetableViewModel(
         val units = (unitsResult as? NetworkResult.Success)?.data.orEmpty()
             .filter { it.status == TeachingUnitStatus.ACTIVE }
             .filter { sameInstitution(it.institution_id, institutionId) }
-        val listedClasses = (classesResult as? NetworkResult.Success)?.data.orEmpty()
-            .filter { it.is_active }
-            .sortedBy { it.sort_order }
-        val classes = mergeClasses(listedClasses, units, institutionId)
+        val classes = TeacherUiMappers.assignedClasses(
+            units = (unitsResult as? NetworkResult.Success)?.data.orEmpty(),
+            institutionId = institutionId,
+        )
         val listedPeriods = (periodsResult as? NetworkResult.Success)?.data.orEmpty()
             .filter { it.is_active }
             .sortedBy { it.sort_order }
@@ -480,10 +493,9 @@ class TeacherTimetableViewModel(
             .ifEmpty { listedPeriods }
         if (weekResult !is NetworkResult.Success &&
             periodsResult !is NetworkResult.Success &&
-            classesResult !is NetworkResult.Success &&
             unitsResult !is NetworkResult.Success
         ) {
-            val message = listOf(weekResult, periodsResult, classesResult, unitsResult)
+            val message = listOf(weekResult, periodsResult, unitsResult)
                 .firstOrNull { it !is NetworkResult.Success }
                 ?.userMessage()
                 .orEmpty()
@@ -588,28 +600,6 @@ class TeacherTimetableViewModel(
             else -> _uiState.value.rawWeekView
                 ?: WeekView(periods = _uiState.value.rawPeriods, days = emptyMap())
         }
-    }
-
-    private fun mergeClasses(
-        listed: List<ClassOut>,
-        units: List<TeachingUnitOut>,
-        institutionId: String,
-    ): List<ClassOut> {
-        val extras = units
-            .filter { sameInstitution(it.institution_id, institutionId) }
-            .map {
-                ClassOut(
-                    id = it.class_id,
-                    name = it.class_name,
-                    sort_order = Int.MAX_VALUE,
-                    is_active = true,
-                    institution_id = it.institution_id.orEmpty().ifBlank { institutionId },
-                    institution_name = it.institution_name,
-                )
-            }
-            .distinctBy { it.id }
-            .filter { extra -> listed.none { it.id == extra.id } }
-        return listed + extras
     }
 
     private fun mapClassTimetable(

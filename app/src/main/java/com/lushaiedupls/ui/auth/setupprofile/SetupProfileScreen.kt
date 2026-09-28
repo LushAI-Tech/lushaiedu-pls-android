@@ -15,13 +15,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Phone
@@ -52,6 +50,8 @@ import com.lushaiedupls.ui.auth.components.LushAiEduWordmark
 import com.lushaiedupls.ui.auth.components.OutlinedAuthField
 import com.lushaiedupls.ui.auth.components.PrimaryButton
 import com.lushaiedupls.ui.auth.signup.GenderOption
+import com.lushaiedupls.ui.common.LushAuthContentWidth
+import com.lushaiedupls.ui.common.verticalScrollWithIme
 import com.lushaiedupls.ui.theme.BgLight
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BrandBlack
@@ -119,24 +119,24 @@ fun SetupProfileScreen(
         modifier = modifier
             .fillMaxSize()
             .background(BgLight)
-            .systemBarsPadding()
-            .imePadding(),
+            .systemBarsPadding(),
     ) {
         val scrollState = rememberScrollState()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = maxHeight)
-                .verticalScroll(scrollState)
+                .verticalScrollWithIme(scrollState)
                 .padding(horizontal = 20.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = BgWhite),
-                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-            ) {
+            LushAuthContentWidth {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = BgWhite),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                ) {
                 Column(
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -261,6 +261,7 @@ fun SetupProfileScreen(
                         )
                     }
                 }
+            }
             }
         }
     }

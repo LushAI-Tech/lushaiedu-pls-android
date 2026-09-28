@@ -1,10 +1,5 @@
 package com.lushaiedupls.ui.student.secondary
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -149,17 +144,14 @@ fun NotificationsScreen(
             }
         }
 
-        AnimatedVisibility(
-            visible = selected != null,
-            enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
-            exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
-        ) {
-            selected?.let { announcement ->
-                NotificationDetailScreen(
-                    notification = announcement,
-                    onBack = { selected = null },
-                )
-            }
+        if (selected != null) {
+            NotificationDetailScreen(
+                notification = selected!!,
+                onBack = { selected = null },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(BgWhite),
+            )
         }
     }
 }

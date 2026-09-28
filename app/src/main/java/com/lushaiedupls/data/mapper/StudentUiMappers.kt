@@ -43,12 +43,15 @@ import com.lushaiedupls.data.remote.dto.DayOfWeek
 import com.lushaiedupls.data.remote.dto.DeviceOut
 import com.lushaiedupls.data.remote.dto.DevicePlatform
 import com.lushaiedupls.data.remote.dto.NotificationOut
-import com.lushaiedupls.data.remote.dto.ProgressDashboardResponse
+import com.lushaiedupls.data.remote.dto.ProgressOverviewResponse
 import com.lushaiedupls.data.remote.dto.QuizAttemptSummary
+import com.lushaiedupls.data.remote.dto.subjectOverview
+import com.lushaiedupls.data.remote.dto.totals
 import com.lushaiedupls.data.remote.dto.QuizQuestionOut
 import com.lushaiedupls.data.remote.dto.SectionOut
 import com.lushaiedupls.data.remote.dto.StudentAttendanceSummary
 import com.lushaiedupls.data.remote.dto.StudentOverview
+import com.lushaiedupls.data.remote.dto.TeacherInstitutionGroup
 import com.lushaiedupls.data.remote.dto.TeachingUnitOut
 import com.lushaiedupls.data.remote.dto.TeachingUnitStatus
 import com.lushaiedupls.data.remote.dto.WeekSlot
@@ -109,32 +112,38 @@ object StudentUiMappers {
         "picture",
     )
 
-    fun overviewMetrics(overview: StudentOverview): List<OverviewMetric> = listOf(
-        OverviewMetric(
-            label = "Subject",
-            value = overview.subject_count.toString(),
-            emphasized = true,
-            iconKind = OverviewIcon.Subject,
-        ),
-        OverviewMetric(
-            label = "Stem Mastery",
-            value = pct(overview.ai.stem_mastery_pct),
-            emphasized = true,
-            iconKind = OverviewIcon.StemMastery,
-        ),
-        OverviewMetric(
-            label = "Reading Progress",
-            value = pct(overview.ai.reading_progress_pct),
-            emphasized = false,
-            iconKind = OverviewIcon.ReadingProgress,
-        ),
-        OverviewMetric(
-            label = "Quizzes Done",
-            value = (overview.ai.quizzes_completed ?: 0).toString(),
-            emphasized = false,
-            iconKind = OverviewIcon.AverageProgress,
-        ),
-    )
+    fun overviewMetrics(
+        overview: StudentOverview,
+        progress: ProgressOverviewResponse? = null,
+    ): List<OverviewMetric> {
+        val totals = progress?.totals()
+        return listOf(
+            OverviewMetric(
+                label = "Subject",
+                value = overview.subject_count.toString(),
+                emphasized = true,
+                iconKind = OverviewIcon.Subject,
+            ),
+            OverviewMetric(
+                label = "Stem Mastery",
+                value = pct(totals?.overall_mastery_pct ?: overview.ai.stem_mastery_pct),
+                emphasized = true,
+                iconKind = OverviewIcon.StemMastery,
+            ),
+            OverviewMetric(
+                label = "Reading Progress",
+                value = pct(totals?.overall_progress_pct ?: overview.ai.reading_progress_pct),
+                emphasized = false,
+                iconKind = OverviewIcon.ReadingProgress,
+            ),
+            OverviewMetric(
+                label = "Quizzes Done",
+                value = (totals?.quizzes_completed ?: overview.ai.quizzes_completed ?: 0).toString(),
+                emphasized = false,
+                iconKind = OverviewIcon.AverageProgress,
+            ),
+        )
+    }
 
     fun sessionSummary(overview: StudentOverview): SessionSummary {
         val overall = overview.overall
@@ -251,11 +260,14 @@ object StudentUiMappers {
         )
     }
 
-    fun aiHubStats(dashboard: ProgressDashboardResponse): List<AiHubStat> = listOf(
-        AiHubStat(pct(dashboard.overall_mastery_pct), "Mastery"),
-        AiHubStat(pct(dashboard.overall_progress_pct), "Reading"),
-        AiHubStat(dashboard.quizzes_completed.toString(), "Quiz"),
-    )
+    fun aiHubStats(overview: ProgressOverviewResponse): List<AiHubStat> {
+        val totals = overview.totals()
+        return listOf(
+            AiHubStat(pct(totals.overall_mastery_pct), "Mastery"),
+            AiHubStat(pct(totals.overall_progress_pct), "Reading"),
+            AiHubStat(totals.quizzes_completed.toString(), "Quiz"),
+        )
+    }
 
     fun emptyAiHubStats(): List<AiHubStat> = listOf(
         AiHubStat("0%", "Mastery"),
@@ -272,13 +284,16 @@ object StudentUiMappers {
                     ?: subject.name.take(4).uppercase(Locale.ENGLISH),
                 iconRes = subjectIcon(subject.name, subject.code),
                 className = formatClassLabel(subject.class_name),
+                classId = subject.class_id,
+                institutionId = subject.institution_id.orEmpty(),
+                institutionName = subject.institution_name.orEmpty(),
             )
         }
 
     fun teachingUnitSubjects(units: List<TeachingUnitOut>): List<AiSubjectItem> =
         units
             .filter { it.status == TeachingUnitStatus.ACTIVE }
-            .distinctBy { it.class_id to it.subject_id }
+            .distinctBy { it.institution_id.orEmpty() to it.class_id to it.subject_id }
             .map { unit ->
                 AiSubjectItem(
                     id = unit.subject_id,
@@ -286,8 +301,43 @@ object StudentUiMappers {
                     abbreviation = unit.class_name,
                     iconRes = subjectIcon(unit.subject_name, null),
                     className = formatClassLabel(unit.class_name),
+                    classId = unit.class_id,
+                    institutionId = unit.institution_id.orEmpty(),
+                    institutionName = unit.institution_name.orEmpty(),
                 )
             }
+
+    fun institutionOptions(subjects: List<AiSubjectItem>): List<Pair<String, String>> {
+        val seen = linkedSetOf<String>()
+        return subjects.mapNotNull { subject ->
+            val id = subject.institutionId.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            if (!seen.add(id)) return@mapNotNull null
+            id to subject.institutionName.ifBlank { "Institution" }
+        }
+    }
+
+    fun mergeInstitutionOptions(vararg sources: List<Pair<String, String>>): List<Pair<String, String>> {
+        val seen = linkedSetOf<String>()
+        val names = linkedMapOf<String, String>()
+        for (source in sources) {
+            for ((id, name) in source) {
+                if (id.isBlank()) continue
+                if (seen.add(id)) {
+                    names[id] = name
+                } else if (name.isNotBlank() && names[id].isNullOrBlank()) {
+                    names[id] = name
+                }
+            }
+        }
+        return seen.map { id -> id to names[id].orEmpty().ifBlank { "Institution" } }
+    }
+
+    fun queryInstitutionId(
+        institutionIds: List<String>,
+        selectedInstitutionId: String?,
+    ): String? = selectedInstitutionId?.takeIf { id ->
+        id.isNotBlank() && institutionIds.size > 1
+    }
 
     fun notifications(items: List<NotificationOut>): List<AppNotification> {
         val today = LocalDate.now()
@@ -302,6 +352,7 @@ object StudentUiMappers {
                 section = if (published == today) NotificationSection.Today else NotificationSection.Earlier,
                 authorName = n.author_name,
                 teachingUnitLabel = n.teaching_unit_label,
+                audience = n.audience,
             )
         }
     }
@@ -449,13 +500,28 @@ object StudentUiMappers {
         return String.format(Locale.ENGLISH, "%d:%02d %s", h12, minute, amPm)
     }
 
-    fun chapterStats(dashboard: ProgressDashboardResponse): SubjectChapterStats =
-        SubjectChapterStats(
-            mastery = pct(dashboard.overall_mastery_pct),
-            reading = pct(dashboard.overall_progress_pct),
-            quizCount = dashboard.quizzes_completed.toString(),
-            quickCheckCount = dashboard.quick_check_attempts.toString(),
+    fun chapterStats(
+        overview: ProgressOverviewResponse? = null,
+        subjectId: String? = null,
+        textbookId: String? = null,
+    ): SubjectChapterStats? {
+        if (overview == null) return null
+        val wantsSubject = !subjectId.isNullOrBlank() || !textbookId.isNullOrBlank()
+        val subject = overview.subjectOverview(subjectId = subjectId, textbookId = textbookId)
+        if (wantsSubject && subject == null) return null
+        val totals = overview.totals()
+        val subjectScoped = overview.self_overview?.subjects.orEmpty().size <= 1
+        return SubjectChapterStats(
+            mastery = pct(subject?.overall_mastery_pct ?: totals.overall_mastery_pct),
+            reading = pct(subject?.progress_pct ?: totals.overall_progress_pct),
+            quizCount = if (!wantsSubject || subjectScoped) {
+                totals.quizzes_completed.toString()
+            } else {
+                "0"
+            },
+            quickCheckCount = (subject?.quick_check_attempts ?: totals.quick_check_attempts).toString(),
         )
+    }
 
     fun chapters(items: List<ChapterListItem>): List<ChapterItem> =
         items.filter { it.is_active }.sortedBy { it.chapter_number }.map {
@@ -488,6 +554,9 @@ object StudentUiMappers {
                 },
                 lastActive = it.last_active_at?.let(::formatDateTimeLabel) ?: "—",
                 sessions = if (it.is_current) "Yes" else "--",
+                id = it.id,
+                isCurrent = it.is_current,
+                deviceName = it.device_name?.takeIf { name -> name.isNotBlank() },
             )
         }
 
@@ -546,6 +615,11 @@ object StudentUiMappers {
         walk(sections)
         return out
     }
+
+    fun firstContentBlock(sections: List<SectionOut>): ContentBlockOut? =
+        flattenSections(sections).firstNotNullOfOrNull { section ->
+            section.content_blocks.minByOrNull { it.sort_order }
+        }
 
     fun textbookQuestions(
         sections: List<SectionOut>,
@@ -888,4 +962,5 @@ data class StudentEnrollmentSummary(
     val institutionName: String? = null,
     val className: String? = null,
     val subjects: List<String> = emptyList(),
+    val teachingInstitutions: List<TeacherInstitutionGroup> = emptyList(),
 )

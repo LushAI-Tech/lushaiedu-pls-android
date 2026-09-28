@@ -2,7 +2,11 @@ package com.lushaiedupls.ui.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -10,7 +14,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.lushaiedupls.data.remote.NetworkResult
-import com.lushaiedupls.data.remote.userMessage
+import com.lushaiedupls.data.remote.PendingSignInNotice
+import com.lushaiedupls.data.remote.deviceSessionConflictOrNull
+import com.lushaiedupls.data.remote.loginUserMessage
 import com.lushaiedupls.data.remote.dto.OnboardingState
 import com.lushaiedupls.data.repository.AdminRepository
 import com.lushaiedupls.data.repository.AuthRepository
@@ -19,6 +25,7 @@ import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.data.session.UserSessionStore
 import com.lushaiedupls.push.PushRouter
+import com.lushaiedupls.ui.auth.google.GoogleOauthLogger
 import com.lushaiedupls.ui.auth.google.rememberGoogleSignInAction
 import com.lushaiedupls.ui.admin.AdminShell
 import com.lushaiedupls.ui.auth.invitecode.InviteCodeRoute
@@ -61,15 +68,31 @@ fun AppNavGraph(
     startDestination: String = authRepository.routeForStoredSession(),
 ) {
     val scope = rememberCoroutineScope()
+    var welcomeOauthStatus by remember { mutableStateOf<String?>(null) }
+    var welcomeOauthIsError by remember { mutableStateOf(false) }
 
     fun navigateAfterAuth(route: String) {
+        welcomeOauthStatus = null
+        welcomeOauthIsError = false
         navController.navigate(route) {
             popUpTo(AppRoutes.WELCOME) { inclusive = true }
         }
     }
 
+    fun showWelcomeOauthStatus(message: String?, isError: Boolean = false) {
+        val text = message?.takeIf { it.isNotBlank() } ?: return
+        if (!GoogleOauthLogger.enabled && !isError) return
+        if (!GoogleOauthLogger.enabled && text.contains("cancelled", ignoreCase = true)) return
+        welcomeOauthStatus = text
+        welcomeOauthIsError = isError
+    }
+
     fun navigateToSignInWithMessage(message: String?) {
         val text = message?.takeIf { it.isNotBlank() } ?: return
+        if (GoogleOauthLogger.enabled) {
+            showWelcomeOauthStatus(text, isError = true)
+            return
+        }
         if (text.contains("cancelled", ignoreCase = true)) return
         authRepository.setPendingSignInMessage(text)
         navController.navigate(AppRoutes.SIGN_IN) {
@@ -80,8 +103,11 @@ fun AppNavGraph(
     val welcomeGoogleSignIn = rememberGoogleSignInAction(
         onIdToken = { token ->
             scope.launch {
+                // Keep prior activity logs — do not clear here.
+                showWelcomeOauthStatus("Account selected. Calling auth/google…", isError = false)
                 when (val result = authRepository.google(token)) {
                     is NetworkResult.Success -> {
+                        showWelcomeOauthStatus("Signed in. Opening app…", isError = false)
                         navigateAfterAuth(
                             authRepository.resolvePostAuthRoute(
                                 result.data,
@@ -89,11 +115,33 @@ fun AppNavGraph(
                             ),
                         )
                     }
-                    else -> navigateToSignInWithMessage(result.userMessage())
+                    else -> {
+                        val conflict = result.deviceSessionConflictOrNull()
+                        if (conflict != null) {
+                            authRepository.setPendingSignInNotice(
+                                PendingSignInNotice(
+                                    message = conflict.message,
+                                    conflict = conflict,
+                                    googleIdToken = token,
+                                ),
+                            )
+                            navController.navigate(AppRoutes.SIGN_IN) {
+                                launchSingleTop = true
+                            }
+                        } else {
+                            navigateToSignInWithMessage(
+                                GoogleOauthLogger.uiNetworkMessage(
+                                    result.loginUserMessage(),
+                                    result,
+                                ),
+                            )
+                        }
+                    }
                 }
             }
         },
         onError = { message -> navigateToSignInWithMessage(message) },
+        onStatus = { status -> showWelcomeOauthStatus(status, isError = false) },
     )
 
     fun logOutToWelcome() {
@@ -146,7 +194,9 @@ fun AppNavGraph(
                 )
                 if (current == dest) return@LaunchedEffect
                 // Don't pull users out of the onboarding wizard while still incomplete.
-                if (current in wizard &&
+                if ((current in wizard ||
+                        current?.startsWith("select_class/") == true ||
+                        current?.startsWith("select_subject/") == true) &&
                     result.data.onboarding_state != OnboardingState.COMPLETE
                 ) {
                     return@LaunchedEffect
@@ -170,13 +220,33 @@ fun AppNavGraph(
     ) {
         composable(AppRoutes.WELCOME) {
             WelcomeRoute(
-                onCreateAccount = { navController.navigate(AppRoutes.CREATE_ACCOUNT) },
-                onSignIn = { navController.navigate(AppRoutes.SIGN_IN) },
-                onGoogle = welcomeGoogleSignIn,
+                onCreateAccount = {
+                    welcomeOauthStatus = null
+                    welcomeOauthIsError = false
+                    navController.navigate(AppRoutes.CREATE_ACCOUNT)
+                },
+                onSignIn = {
+                    welcomeOauthStatus = null
+                    welcomeOauthIsError = false
+                    navController.navigate(AppRoutes.SIGN_IN)
+                },
+                onGoogle = {
+                    welcomeOauthStatus = if (GoogleOauthLogger.enabled) {
+                        "Starting Google sign-in…"
+                    } else {
+                        null
+                    }
+                    welcomeOauthIsError = false
+                    welcomeGoogleSignIn()
+                },
                 onParent = {
+                    welcomeOauthStatus = null
+                    welcomeOauthIsError = false
                     userSessionStore.setParentSignupFlow(true)
                     navController.navigate(AppRoutes.CREATE_ACCOUNT)
                 },
+                oauthStatusMessage = welcomeOauthStatus,
+                oauthStatusIsError = welcomeOauthIsError,
             )
         }
         composable(AppRoutes.SIGN_IN) {
@@ -246,23 +316,37 @@ fun AppNavGraph(
                 userSessionStore = userSessionStore,
                 studentRepository = studentRepository,
                 onBack = { navigateBackFromOnboarding() },
-                onContinue = { navController.navigate(AppRoutes.SELECT_CLASS) },
+                onContinue = {
+                    val institutionId = userSessionStore.getInstitutionIds().firstOrNull()
+                    if (institutionId != null) {
+                        navController.navigate(AppRoutes.selectClass(institutionId))
+                    }
+                },
             )
         }
-        composable(AppRoutes.SELECT_CLASS) {
+        composable(AppRoutes.SELECT_CLASS) { entry ->
+            val institutionId = entry.arguments?.getString("institutionId").orEmpty()
             SelectClassRoute(
                 userSessionStore = userSessionStore,
                 studentRepository = studentRepository,
+                institutionId = institutionId,
                 onBack = { navigateBackFromOnboarding() },
-                onContinue = { navController.navigate(AppRoutes.SELECT_SUBJECT) },
+                onContinue = {
+                    navController.navigate(AppRoutes.selectSubject(institutionId))
+                },
             )
         }
-        composable(AppRoutes.SELECT_SUBJECT) {
+        composable(AppRoutes.SELECT_SUBJECT) { entry ->
+            val institutionId = entry.arguments?.getString("institutionId").orEmpty()
             SelectSubjectRoute(
                 userSessionStore = userSessionStore,
                 studentRepository = studentRepository,
                 authRepository = authRepository,
+                institutionId = institutionId,
                 onBack = { navigateBackFromOnboarding() },
+                onContinueToNextInstitution = { nextId ->
+                    navController.navigate(AppRoutes.selectClass(nextId))
+                },
                 onDone = {
                     navigateAfterAuth(
                         authRepository.routeForStoredSession().takeIf {

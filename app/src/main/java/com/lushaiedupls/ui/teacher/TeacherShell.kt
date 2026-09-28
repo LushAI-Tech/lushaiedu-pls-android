@@ -1,12 +1,7 @@
 package com.lushaiedupls.ui.teacher
 
 import android.net.Uri
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -16,7 +11,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -31,10 +25,12 @@ import com.lushaiedupls.data.repository.TeacherRepository
 import com.lushaiedupls.data.session.UserSessionStore
 // Switch Roles (re-enable later):
 // import com.lushaiedupls.ui.auth.selectrole.UserRole
+import com.lushaiedupls.ui.common.AdaptiveRoleScaffold
+import com.lushaiedupls.ui.common.LegalDocumentScreen
+import com.lushaiedupls.ui.common.LushPullToRefreshBox
 import com.lushaiedupls.ui.common.StudentPageSkeleton
 import com.lushaiedupls.ui.common.StudentSkeletonKind
 import com.lushaiedupls.ui.student.ai.StudentAiChatRoute
-import com.lushaiedupls.ui.common.LegalDocumentScreen
 import com.lushaiedupls.ui.student.menu.StudentAccountRoute
 import com.lushaiedupls.ui.student.secondary.ChaptersScreen
 import com.lushaiedupls.ui.student.secondary.ChaptersViewModel
@@ -56,11 +52,11 @@ import com.lushaiedupls.ui.teacher.secondary.TeacherAnnouncementsRoute
 import com.lushaiedupls.ui.teacher.secondary.TeacherMoreScreen
 import com.lushaiedupls.ui.teacher.secondary.TeacherNewAnnouncementRoute
 import com.lushaiedupls.ui.teacher.secondary.TeacherTimetableRoute
-import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.navigation.lushEnterTransition
 import com.lushaiedupls.ui.navigation.lushExitTransition
 import com.lushaiedupls.ui.navigation.lushPopEnterTransition
 import com.lushaiedupls.ui.navigation.lushPopExitTransition
+import com.lushaiedupls.ui.navigation.navigateToRoleTab
 
 private val TeacherTabRoutes = TeacherTab.entries.map { it.route }.toSet()
 
@@ -110,36 +106,23 @@ fun TeacherShell(
     var showMenuOverlay by remember { mutableStateOf(false) }
 
     fun navigateTab(route: String) {
-        tabNavController.navigate(route) {
-            popUpTo(tabNavController.graph.findStartDestination().id) {
-                saveState = true
-            }
-            launchSingleTop = true
-            restoreState = true
-        }
+        tabNavController.navigateToRoleTab(route, moreRoute = TeacherRoutes.MORE)
     }
 
-    Scaffold(
-        modifier = modifier
-            .fillMaxSize()
-            .background(BgWhite)
-            .systemBarsPadding(),
-        containerColor = BgWhite,
+    AdaptiveRoleScaffold(
+        showNav = !inAiFlow,
         bottomBar = {
-            if (!inAiFlow) {
-                TeacherBottomBar(
-                    selectedTab = selectedTab,
-                    onTabSelected = { tab -> navigateTab(tab.route) },
-                )
-            }
+            TeacherBottomBar(
+                selectedTab = selectedTab,
+                onTabSelected = { tab -> navigateTab(tab.route) },
+            )
         },
-    ) { innerPadding ->
+        modifier = modifier,
+    ) {
         NavHost(
             navController = tabNavController,
             startDestination = TeacherRoutes.HOME,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
+            modifier = Modifier.fillMaxSize(),
             enterTransition = { lushEnterTransition(tabRoutes = TeacherTabRoutes) },
             exitTransition = { lushExitTransition(tabRoutes = TeacherTabRoutes) },
             popEnterTransition = { lushPopEnterTransition(tabRoutes = TeacherTabRoutes) },
@@ -181,6 +164,7 @@ fun TeacherShell(
             composable(TeacherRoutes.MY_GROUPS) {
                 TeacherMyGroupsRoute(
                     teacherRepository = teacherRepository,
+                    userSessionStore = userSessionStore,
                     onGroupClick = { group ->
                         tabNavController.navigate(TeacherRoutes.classOverview(group.id))
                     },
@@ -259,6 +243,7 @@ fun TeacherShell(
                 TeacherAiHubRoute(
                     studentRepository = studentRepository,
                     teacherRepository = teacherRepository,
+                    userSessionStore = userSessionStore,
                     onSubjectClick = { subject ->
                         tabNavController.navigate(
                             TeacherRoutes.aiChapters(subject.id, subject.name),
@@ -295,12 +280,18 @@ fun TeacherShell(
                         title = subjectName.ifBlank { stringResource(R.string.chapters_subject_title) },
                     )
                     state.errorMessage != null && state.chapters.isEmpty() ->
-                        SubjectContentUnavailableScreen(
-                            title = state.subjectTitle.ifBlank { subjectName },
-                            message = state.errorMessage.orEmpty(),
-                            onBack = { tabNavController.popBackStack() },
+                        LushPullToRefreshBox(
+                            isRefreshing = state.isLoading || state.isRefreshing,
+                            onRefresh = { vm.refresh(forceRefresh = true) },
                             modifier = Modifier.fillMaxSize(),
-                        )
+                        ) {
+                            SubjectContentUnavailableScreen(
+                                title = state.subjectTitle.ifBlank { subjectName },
+                                message = state.errorMessage.orEmpty(),
+                                onBack = { tabNavController.popBackStack() },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
                     else -> ChaptersScreen(
                         title = state.subjectTitle.ifBlank { subjectName },
                         stats = state.stats ?: SubjectChapterStats("0%", "0%", "0", "0"),
@@ -311,6 +302,8 @@ fun TeacherShell(
                                 TeacherRoutes.aiChats(subjectId, chapter.id),
                             )
                         },
+                        onRefresh = { vm.refresh(forceRefresh = true) },
+                        isRefreshing = state.isRefreshing,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -375,7 +368,6 @@ fun TeacherShell(
                     userSessionStore = userSessionStore,
                     studentRepository = studentRepository,
                     authRepository = authRepository,
-                    teacherRepository = teacherRepository,
                     showTeacherProfile = true,
                     onBack = { tabNavController.popBackStack() },
                     onLogOut = onLogOut,
@@ -410,14 +402,20 @@ fun TeacherShell(
                         title = stringResource(R.string.chapters_subject_title),
                     )
                     state.errorMessage != null && state.chapters.isEmpty() ->
-                        SubjectContentUnavailableScreen(
-                            title = state.subjectTitle.ifBlank {
-                                stringResource(R.string.chapters_subject_title)
-                            },
-                            message = state.errorMessage.orEmpty(),
-                            onBack = { tabNavController.popBackStack() },
+                        LushPullToRefreshBox(
+                            isRefreshing = state.isLoading || state.isRefreshing,
+                            onRefresh = { vm.refresh(forceRefresh = true) },
                             modifier = Modifier.fillMaxSize(),
-                        )
+                        ) {
+                            SubjectContentUnavailableScreen(
+                                title = state.subjectTitle.ifBlank {
+                                    stringResource(R.string.chapters_subject_title)
+                                },
+                                message = state.errorMessage.orEmpty(),
+                                onBack = { tabNavController.popBackStack() },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
                     else -> ChaptersScreen(
                         title = state.subjectTitle,
                         stats = state.stats ?: SubjectChapterStats("0%", "0%", "0", "0"),
@@ -426,6 +424,8 @@ fun TeacherShell(
                         onChapterClick = { chapter ->
                             tabNavController.navigate(TeacherRoutes.quiz(chapter.id))
                         },
+                        onRefresh = { vm.refresh(forceRefresh = true) },
+                        isRefreshing = state.isRefreshing,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }

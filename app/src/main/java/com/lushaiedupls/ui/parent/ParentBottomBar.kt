@@ -36,10 +36,13 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.lushaiedupls.R
+import com.lushaiedupls.ui.common.LushNavigationRail
+import com.lushaiedupls.ui.common.LushRailNavIcon
 import com.lushaiedupls.ui.common.navItemClickable
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
 import com.lushaiedupls.ui.theme.BrandBlack
+import com.lushaiedupls.ui.theme.BrandOrange
 
 enum class ParentTab(val route: String) {
     Home(ParentRoutes.HOME),
@@ -98,6 +101,40 @@ fun ParentBottomBar(
 }
 
 @Composable
+fun ParentNavigationRail(
+    selectedTab: ParentTab,
+    onTabSelected: (ParentTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LushNavigationRail(modifier = modifier) {
+        LushRailNavIcon(
+            icon = Icons.Outlined.Home,
+            label = stringResource(R.string.tab_home),
+            selected = selectedTab == ParentTab.Home,
+            onClick = { onTabSelected(ParentTab.Home) },
+        )
+        LushRailNavIcon(
+            icon = Icons.Outlined.CalendarMonth,
+            label = stringResource(R.string.tab_calendar),
+            selected = selectedTab == ParentTab.Calendar,
+            onClick = { onTabSelected(ParentTab.Calendar) },
+        )
+        LushRailNavIcon(
+            icon = Icons.Outlined.Person,
+            label = stringResource(R.string.parent_tab_attendance),
+            selected = selectedTab == ParentTab.Attendance,
+            onClick = { onTabSelected(ParentTab.Attendance) },
+        )
+        LushRailNavIcon(
+            icon = Icons.Outlined.Menu,
+            label = stringResource(R.string.tab_more),
+            selected = selectedTab == ParentTab.More,
+            onClick = { onTabSelected(ParentTab.More) },
+        )
+    }
+}
+
+@Composable
 private fun BottomNavIcon(
     icon: ImageVector,
     label: String,
@@ -120,14 +157,14 @@ private fun BottomNavIcon(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = BrandBlack,
+                tint = if (selected) BrandOrange else BrandBlack,
                 modifier = Modifier.size(26.dp),
             )
             if (showCheckBadge) {
                 Icon(
                     imageVector = Icons.Outlined.Check,
                     contentDescription = null,
-                    tint = BrandBlack,
+                    tint = if (selected) BrandOrange else BrandBlack,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .size(12.dp),
@@ -144,7 +181,7 @@ private fun BottomNavIcon(
             modifier = Modifier
                 .size(width = indicatorWidth, height = 3.dp)
                 .clip(RoundedCornerShape(50))
-                .background(BrandBlack),
+                .background(BrandOrange),
         )
     }
 }

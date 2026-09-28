@@ -9,6 +9,7 @@ import com.lushaiedupls.data.mock.SubjectChapterStats
 import com.lushaiedupls.data.remote.NetworkResult
 import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.StudentRepository
+import com.lushaiedupls.ui.common.reloadUiFlags
 import com.lushaiedupls.ui.common.viewModelFactory
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -35,7 +36,10 @@ class ChaptersViewModel(
 ) : ViewModel() {
 
     private val cachedChapters = subjectIdHint?.let { studentRepository.getCachedChapters(it) }.orEmpty()
-    private val cachedDashboard = studentRepository.getCachedProgressDashboard()
+    private val cachedOverview = studentRepository.getCachedProgressOverview(
+        subjectId = subjectIdHint,
+        textbookId = cachedChapters.firstOrNull { it.textbook_id.isNotBlank() }?.textbook_id,
+    )
 
     private val _uiState = MutableStateFlow(
         ChaptersUiState(
@@ -43,8 +47,11 @@ class ChaptersViewModel(
             subjectId = subjectIdHint.orEmpty(),
             subjectTitle = subjectNameHint.orEmpty(),
             chapters = StudentUiMappers.chapters(cachedChapters),
-            stats = cachedDashboard?.let(StudentUiMappers::chapterStats)
-                ?: SubjectChapterStats("0%", "0%", "0", "0"),
+            stats = StudentUiMappers.chapterStats(
+                overview = cachedOverview,
+                subjectId = subjectIdHint,
+                textbookId = cachedChapters.firstOrNull { it.textbook_id.isNotBlank() }?.textbook_id,
+            ),
         ),
     )
     val uiState: StateFlow<ChaptersUiState> = _uiState.asStateFlow()
@@ -53,24 +60,31 @@ class ChaptersViewModel(
         refresh()
     }
 
-    fun refresh() {
+    fun refresh(forceRefresh: Boolean = false) {
         viewModelScope.launch {
             val hasContent = _uiState.value.chapters.isNotEmpty()
+            val (loading, refreshing) = reloadUiFlags(_uiState.value.isLoading, hasContent)
+            val bypassCache = forceRefresh || refreshing
             _uiState.update {
-                if (hasContent) {
-                    it.copy(isRefreshing = true, errorMessage = null)
-                } else {
-                    it.copy(isLoading = true, errorMessage = null)
-                }
+                it.copy(
+                    isRefreshing = refreshing,
+                    isLoading = loading,
+                    errorMessage = null,
+                )
             }
             coroutineScope {
                 val resolvedSubjectId = subjectIdHint?.takeIf { it.isNotBlank() }
                 val chaptersDeferred = if (!resolvedSubjectId.isNullOrBlank()) {
-                    async { studentRepository.chapters(resolvedSubjectId) }
+                    async { studentRepository.chapters(resolvedSubjectId, forceRefresh = bypassCache) }
                 } else null
 
-                val subjectsDeferred = async { studentRepository.aiSubjects() }
-                val dashboardDeferred = async { studentRepository.progressDashboard() }
+                val subjectsDeferred = async { studentRepository.aiSubjects(forceRefresh = bypassCache) }
+                val overviewDeferred = async {
+                    studentRepository.progressOverview(
+                        forceRefresh = bypassCache,
+                        subjectId = resolvedSubjectId,
+                    )
+                }
 
                 val subjectId = resolvedSubjectId
                     ?: (subjectsDeferred.await() as? NetworkResult.Success)?.data?.firstOrNull()?.subject_id
@@ -92,7 +106,7 @@ class ChaptersViewModel(
                 }
 
                 val chDeferred = chaptersDeferred ?: async {
-                    studentRepository.chapters(subjectId)
+                    studentRepository.chapters(subjectId, forceRefresh = bypassCache)
                 }
 
                 // Handle chapters as soon as ready
@@ -107,6 +121,12 @@ class ChaptersViewModel(
                                 subjectTitle = subjectTitle.ifBlank { it.subjectTitle },
                                 chapters = StudentUiMappers.chapters(chapters.data),
                             )
+                        }
+                        val textbookId = chapters.data
+                            .firstOrNull { it.textbook_id.isNotBlank() }
+                            ?.textbook_id
+                        if (!textbookId.isNullOrBlank()) {
+                            studentRepository.progressResume(textbookId, forceRefresh = bypassCache)
                         }
                         val activeChapterIds = chapters.data.filter { it.is_active }.map { it.id }
                         studentRepository.preferredChatPrefetchChapterId(activeChapterIds)
@@ -124,11 +144,14 @@ class ChaptersViewModel(
 
                 // Handle stats as soon as ready
                 launch {
-                    val dashboard = dashboardDeferred.await()
-                    if (dashboard is NetworkResult.Success) {
-                        _uiState.update {
-                            it.copy(stats = StudentUiMappers.chapterStats(dashboard.data))
-                        }
+                    val overview = overviewDeferred.await()
+                    if (overview is NetworkResult.Success) {
+                        val stats = StudentUiMappers.chapterStats(
+                            overview = overview.data,
+                            subjectId = subjectId,
+                            textbookId = studentRepository.textbookIdForSubject(subjectId),
+                        ) ?: return@launch
+                        _uiState.update { state -> state.copy(stats = stats) }
                     }
                 }
             }

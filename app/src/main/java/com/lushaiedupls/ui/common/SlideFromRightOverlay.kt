@@ -1,6 +1,8 @@
 package com.lushaiedupls.ui.common
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -27,6 +29,66 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.delay
 
 private const val SlideDurationMs = 280
+
+/**
+ * Full-page panel that slides in from the right over the parent (no Dialog, no scrim).
+ * Use for secondary screens like announcement / notification detail.
+ */
+@Composable
+fun SlideFromRightPage(
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable (requestDismiss: () -> Unit) -> Unit,
+) {
+    val visibleState = remember {
+        MutableTransitionState(false).apply { targetState = true }
+    }
+    var hasOpened by remember { mutableStateOf(false) }
+
+    fun requestDismiss() {
+        visibleState.targetState = false
+    }
+
+    LaunchedEffect(visibleState.isIdle, visibleState.currentState, visibleState.targetState) {
+        if (visibleState.currentState || visibleState.targetState) {
+            hasOpened = true
+        }
+        // Only dismiss after a completed open→close cycle — never on first compose.
+        if (hasOpened &&
+            visibleState.isIdle &&
+            !visibleState.currentState &&
+            !visibleState.targetState
+        ) {
+            onDismiss()
+        }
+    }
+
+    BackHandler(
+        enabled = visibleState.currentState || visibleState.targetState,
+        onBack = ::requestDismiss,
+    )
+
+    // No fillMaxSize on AnimatedVisibility — when hidden that would intercept list taps.
+    AnimatedVisibility(
+        visibleState = visibleState,
+        enter = slideInHorizontally(
+            animationSpec = tween(SlideDurationMs),
+            initialOffsetX = { fullWidth -> fullWidth },
+        ),
+        exit = slideOutHorizontally(
+            animationSpec = tween(SlideDurationMs),
+            targetOffsetX = { fullWidth -> fullWidth },
+        ),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(modifier),
+        ) {
+            content(::requestDismiss)
+        }
+    }
+}
 
 /**
  * Full-height overlay that slides in from the right over a dimmed scrim.
@@ -59,7 +121,10 @@ fun SlideFromRightOverlay(
 
     Dialog(
         onDismissRequest = ::requestDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             AnimatedVisibility(

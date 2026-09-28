@@ -17,6 +17,18 @@ val localProperties = Properties().apply {
 fun localProp(key: String, default: String): String =
     (localProperties.getProperty(key) ?: default).replace("\"", "\\\"")
 
+fun localBool(key: String, default: Boolean): Boolean =
+    localProperties.getProperty(key)?.trim()?.lowercase()?.toBooleanStrictOrNull() ?: default
+
+val releaseKeystore = file("keystore/lushaiedupls.keystore")
+val releaseStorePassword = localProperties.getProperty("KEYSTORE_PASSWORD")
+    ?: System.getenv("KEYSTORE_PASSWORD")
+val releaseKeyPassword = localProperties.getProperty("KEY_PASSWORD")
+    ?: System.getenv("KEY_PASSWORD")
+    ?: releaseStorePassword
+val releaseKeyAlias = localProperties.getProperty("KEY_ALIAS") ?: "lushaipls"
+val canSignRelease = releaseKeystore.isFile && !releaseStorePassword.isNullOrBlank()
+
 // API base URL — uncomment ONE line, then Sync/Rebuild.
 // val apiBaseUrl = "http://192.168.1.16:8002/"
 val apiBaseUrl = "https://pls-api-staging.lushaiedu.com/"
@@ -31,9 +43,10 @@ android {
         applicationId = "com.lushaiedupls"
         minSdk = 24
         targetSdk = 36
-        versionCode = 39
+        versionCode = 70
 
-        versionName = "2.0.5"
+
+        versionName = "2.1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Optional override: local.properties API_BASE_URL=...
@@ -50,14 +63,51 @@ android {
         )
     }
 
+    signingConfigs {
+        if (canSignRelease) {
+            create("release") {
+                storeFile = releaseKeystore
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
-        release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+        debug {
+            isDebuggable = true
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            buildConfigField("boolean", "ENABLE_API_LOGS", "true")
+            // Toggle via local.properties: ENABLE_GOOGLE_OAUTH_LOGS=false
+            buildConfigField(
+                "boolean",
+                "ENABLE_GOOGLE_OAUTH_LOGS",
+                "${localBool("ENABLE_GOOGLE_OAUTH_LOGS", true)}",
+            )
+        }
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            isDebuggable = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            buildConfigField("boolean", "ENABLE_API_LOGS", "true")
+            buildConfigField(
+                "boolean",
+                "ENABLE_GOOGLE_OAUTH_LOGS",
+                "${localBool("ENABLE_GOOGLE_OAUTH_LOGS", true)}",
+            )
+            if (canSignRelease) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {

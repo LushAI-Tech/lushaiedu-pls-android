@@ -21,6 +21,8 @@ data class AiSubjectOut(
     val code: String? = null,
     val class_id: String,
     val class_name: String,
+    val institution_id: String? = null,
+    val institution_name: String? = null,
 )
 
 @Serializable
@@ -197,6 +199,7 @@ data class NotificationOut(
     val title: String,
     val body: String,
     val audience: NotificationAudience,
+    val institution_id: String? = null,
     val teaching_unit_id: String? = null,
     val teaching_unit_label: String? = null,
     val published_at: String,
@@ -276,10 +279,24 @@ data class PeriodOut(
 )
 
 @Serializable
-data class ProgressDashboardResponse(
+data class ProgressOverviewResponse(
+    val scope: String = "self",
+    val ai_available: Boolean = true,
+    val self_overview: SelfProgressOverview? = null,
+)
+
+@Serializable
+data class SelfProgressOverview(
+    val totals: ProgressOverviewTotals = ProgressOverviewTotals(),
+    val subjects: List<ProgressSubjectOverview> = emptyList(),
+)
+
+@Serializable
+data class ProgressOverviewTotals(
     val subjects_in_progress: Int = 0,
     val chapters_in_progress: Int = 0,
     val overall_mastery_pct: Double = 0.0,
+    val overall_quiz_mastery_pct: Double = 0.0,
     val overall_progress_pct: Double = 0.0,
     val mastered_sections: Int = 0,
     val total_sections: Int = 0,
@@ -291,12 +308,107 @@ data class ProgressDashboardResponse(
 )
 
 @Serializable
+data class ProgressSubjectOverview(
+    val textbook_id: String,
+    val subject_id: String? = null,
+    val subject_name: String? = null,
+    val class_name: String? = null,
+    val progress_pct: Double = 0.0,
+    val last_accessed_at: String? = null,
+    val overall_mastery_pct: Double = 0.0,
+    val quiz_mastery_pct: Double = 0.0,
+    val mastered_sections: Int = 0,
+    val total_sections: Int = 0,
+    val chapters: List<ProgressChapterOverview> = emptyList(),
+    val quick_check_attempts: Int = 0,
+    val quick_check_correct: Int = 0,
+    val quick_check_accuracy_pct: Double? = null,
+)
+
+@Serializable
+data class ProgressChapterOverview(
+    val chapter_id: String,
+    val title: String? = null,
+    val chapter_number: Int? = null,
+    val quiz_mastery_pct: Double = 0.0,
+    val mastered_sections: Int = 0,
+    val total_sections: Int = 0,
+    val quick_check_attempts: Int = 0,
+    val quick_check_correct: Int = 0,
+    val quick_check_accuracy_pct: Double? = null,
+    val sections: List<ProgressSectionOverview> = emptyList(),
+)
+
+@Serializable
+data class ProgressSectionOverview(
+    val section_id: String? = null,
+    val section_title: String? = null,
+    val section_number: String? = null,
+    val best_score: Double? = null,
+    val latest_score: Double? = null,
+    val attempts: Int = 0,
+    val mastered: Boolean = false,
+    val weak_concepts: List<String> = emptyList(),
+)
+
+fun ProgressOverviewResponse.totals(): ProgressOverviewTotals =
+    self_overview?.totals ?: ProgressOverviewTotals()
+
+fun ProgressOverviewResponse.subjectOverview(
+    subjectId: String? = null,
+    textbookId: String? = null,
+): ProgressSubjectOverview? {
+    val subjects = self_overview?.subjects.orEmpty()
+    if (!subjectId.isNullOrBlank()) {
+        subjects.find { it.subject_id == subjectId }?.let { return it }
+    }
+    if (!textbookId.isNullOrBlank()) {
+        subjects.find { it.textbook_id == textbookId }?.let { return it }
+    }
+    return null
+}
+
+fun ProgressOverviewResponse.scopedToSubject(
+    subjectId: String? = null,
+    textbookId: String? = null,
+): ProgressOverviewResponse? {
+    val subject = subjectOverview(subjectId = subjectId, textbookId = textbookId) ?: return null
+    return copy(
+        self_overview = SelfProgressOverview(
+            totals = ProgressOverviewTotals(
+                subjects_in_progress = 1,
+                chapters_in_progress = subject.chapters.size,
+                overall_mastery_pct = subject.overall_mastery_pct,
+                overall_quiz_mastery_pct = subject.quiz_mastery_pct,
+                overall_progress_pct = subject.progress_pct,
+                mastered_sections = subject.mastered_sections,
+                total_sections = subject.total_sections,
+                quick_check_attempts = subject.quick_check_attempts,
+                quick_check_correct = subject.quick_check_correct,
+                quick_check_accuracy_pct = subject.quick_check_accuracy_pct,
+                last_accessed_at = subject.last_accessed_at,
+            ),
+            subjects = listOf(subject),
+        ),
+    )
+}
+
+@Serializable
 data class ProgressUpdateRequest(
     val textbook_id: String,
-    val chapter_id: String? = null,
+    val chapter_id: String,
     val section_id: String? = null,
     val content_block_id: String? = null,
-    val progress_pct: Double? = null,
+)
+
+@Serializable
+data class QuickCheckAttemptRequest(
+    val chat_message_id: String,
+    val textbook_id: String,
+    val chapter_id: String,
+    val selected_index: Int,
+    val is_correct: Boolean,
+    val content_block_id: String? = null,
 )
 
 @Serializable

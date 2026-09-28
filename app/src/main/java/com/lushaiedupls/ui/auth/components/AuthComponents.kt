@@ -72,7 +72,9 @@ import com.lushaiedupls.R
 import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.ui.theme.BgWhite
 import com.lushaiedupls.ui.theme.BorderGray
+import com.lushaiedupls.ui.common.keepKeyboardOpen
 import com.lushaiedupls.ui.theme.BrandBlack
+import com.lushaiedupls.ui.theme.BrandOrange
 import com.lushaiedupls.ui.theme.TextSecondary
 import com.lushaiedupls.ui.theme.TileGray
 import com.lushaiedupls.ui.theme.TileSelected
@@ -154,6 +156,9 @@ fun OnboardingStepHeader(
     totalSteps: Int,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
+    highlightSubtitle: Boolean = false,
+    emphasizeSubtitle: Boolean = false,
+    bridgeText: String? = null,
     hint: String? = null,
 ) {
     Column(
@@ -171,16 +176,36 @@ fun OnboardingStepHeader(
         Text(
             text = title,
             fontWeight = FontWeight.Bold,
-            fontSize = 22.sp,
+            fontSize = when {
+                emphasizeSubtitle && bridgeText != null -> 18.sp
+                emphasizeSubtitle -> 16.sp
+                else -> 22.sp
+            },
             fontFamily = androidx.compose.ui.text.font.FontFamily.SansSerif,
             textAlign = TextAlign.Center,
         )
-        subtitle?.let {
-            Spacer(modifier = Modifier.height(8.dp))
+        bridgeText?.let {
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = it,
                 color = TextSecondary,
                 fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.SansSerif,
+                textAlign = TextAlign.Center,
+            )
+        }
+        subtitle?.let {
+            Spacer(modifier = Modifier.height(if (bridgeText != null) 4.dp else 8.dp))
+            Text(
+                text = it,
+                color = if (highlightSubtitle) BrandOrange else TextSecondary,
+                fontSize = when {
+                    emphasizeSubtitle -> 26.sp
+                    highlightSubtitle -> 16.sp
+                    else -> 14.sp
+                },
+                fontWeight = if (highlightSubtitle || emphasizeSubtitle) FontWeight.Bold else FontWeight.Normal,
                 fontFamily = androidx.compose.ui.text.font.FontFamily.SansSerif,
                 textAlign = TextAlign.Center,
             )
@@ -281,6 +306,7 @@ fun OutlinedAuthField(
             onValueChange = onValueChange,
             modifier = Modifier
                 .fillMaxWidth()
+                .keepKeyboardOpen()
                 .onFocusEvent { event ->
                     if (event.isFocused) {
                         scope.launch {

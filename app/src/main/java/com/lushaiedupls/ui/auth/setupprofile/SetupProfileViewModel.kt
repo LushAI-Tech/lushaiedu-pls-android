@@ -13,6 +13,7 @@ import com.lushaiedupls.data.remote.userMessage
 import com.lushaiedupls.data.repository.AuthRepository
 import com.lushaiedupls.data.repository.StudentRepository
 import com.lushaiedupls.data.session.UserSessionStore
+import com.lushaiedupls.ui.auth.google.GoogleOauthLogger
 import com.lushaiedupls.ui.auth.signup.GenderOption
 import com.lushaiedupls.ui.common.viewModelFactory
 import com.lushaiedupls.ui.navigation.AppRoutes
@@ -47,8 +48,7 @@ class SetupProfileViewModel(
     val uiState: StateFlow<SetupProfileUiState> = _uiState.asStateFlow()
 
     init {
-        android.util.Log.d(
-            "SetupProfile",
+        GoogleOauthLogger.log(
             "Initial Google avatarUrl=${_uiState.value.avatarUrl}",
         )
         viewModelScope.launch {
@@ -71,8 +71,7 @@ class SetupProfileViewModel(
                         )
                     }
                     googleAvatar?.let { userSessionStore.setAvatarUrl(it) }
-                    android.util.Log.d(
-                        "SetupProfile",
+                    GoogleOauthLogger.log(
                         "Profile avatarUrl=${_uiState.value.avatarUrl}",
                     )
                 }
@@ -125,12 +124,24 @@ class SetupProfileViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
+            var uploadedPublicUrl: String? = null
+            state.avatarUri?.let { uri ->
+                when (val avatarResult = studentRepository.uploadAvatar(uri, context)) {
+                    is NetworkResult.Success -> {
+                        uploadedPublicUrl = avatarResult.data.publicUrl
+                        avatarResult.data.user?.let { authRepository.persistProfile(it) }
+                    }
+                    else -> Unit
+                }
+            }
+
             when (
                 val profileResult = studentRepository.updateProfile(
                     name = state.username.trim(),
                     phone = state.phone.trim(),
                     gender = gender,
                     address = state.address.trim(),
+                    avatarUrl = uploadedPublicUrl,
                 )
             ) {
                 is NetworkResult.Success -> {
@@ -139,13 +150,11 @@ class SetupProfileViewModel(
                     userSessionStore.setPendingAddress(state.address.trim())
                     userSessionStore.setPendingGender(gender.name)
                     userSessionStore.setNeedsProfileSetup(false)
-
-                    // Non-fatal: profile details already saved if avatar upload fails.
-                    state.avatarUri?.let { uri ->
-                        when (val avatarResult = studentRepository.uploadAvatar(uri, context)) {
-                            is NetworkResult.Success -> authRepository.persistProfile(avatarResult.data)
-                            else -> Unit
-                        }
+                    val resolvedAvatar = uploadedPublicUrl
+                        ?: AuthRepository.normalizeAvatarUrl(profileResult.data.avatar_url)
+                    resolvedAvatar?.let {
+                        userSessionStore.setAvatarUrl(it)
+                        userSessionStore.bumpAvatarRevision()
                     }
 
                     val route = finishAfterProfile(state.username.trim())

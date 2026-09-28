@@ -42,6 +42,15 @@ class SharedPrefsUserSessionStore(
         }
     }
 
+    override fun getAvatarRevision(): Long =
+        prefs.getLong(KEY_AVATAR_REVISION, 0L)
+
+    override fun bumpAvatarRevision(): Long {
+        val next = System.currentTimeMillis()
+        prefs.edit(commit = true) { putLong(KEY_AVATAR_REVISION, next) }
+        return next
+    }
+
     override fun getSelectedClasses(): List<SchoolClass> {
         val raw = prefs.getString(KEY_SELECTED_CLASSES, null) ?: return emptyList()
         if (raw.isBlank()) return emptyList()
@@ -116,6 +125,7 @@ class SharedPrefsUserSessionStore(
             if (cleaned.isEmpty()) {
                 remove(KEY_CLASS_IDS)
                 remove(KEY_CLASS_ID)
+                remove(KEY_CLASS_INSTITUTIONS)
             } else {
                 putString(KEY_CLASS_IDS, cleaned.joinToString(LIST_SEP))
                 putString(KEY_CLASS_ID, cleaned.first())
@@ -174,12 +184,95 @@ class SharedPrefsUserSessionStore(
 
     override fun getInstitutionId(): String? =
         prefs.getString(KEY_INSTITUTION_ID, null)?.takeIf { it.isNotBlank() }
+            ?: getInstitutionIds().firstOrNull()
 
     override fun setInstitutionId(institutionId: String?) {
         prefs.edit {
             val cleaned = institutionId?.trim().orEmpty()
             if (cleaned.isEmpty()) remove(KEY_INSTITUTION_ID)
             else putString(KEY_INSTITUTION_ID, cleaned)
+        }
+    }
+
+    override fun getInstitutionIds(): List<String> {
+        val raw = prefs.getString(KEY_INSTITUTION_IDS, null)
+            ?: prefs.getString(KEY_INSTITUTION_ID, null)
+            ?: return emptyList()
+        if (raw.isBlank()) return emptyList()
+        return raw.split(LIST_SEP).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    }
+
+    override fun setInstitutionIds(ids: List<String>) {
+        val cleaned = ids.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        val current = prefs.getString(KEY_INSTITUTION_ID, null)?.takeIf { it.isNotBlank() }
+        prefs.edit {
+            if (cleaned.isEmpty()) {
+                remove(KEY_INSTITUTION_IDS)
+                remove(KEY_INSTITUTION_ID)
+            } else {
+                putString(KEY_INSTITUTION_IDS, cleaned.joinToString(LIST_SEP))
+                if (current == null || current !in cleaned) {
+                    putString(KEY_INSTITUTION_ID, cleaned.first())
+                }
+            }
+        }
+    }
+
+    override fun getClassInstitutionIds(): Map<String, String> {
+        val raw = prefs.getString(KEY_CLASS_INSTITUTIONS, null) ?: return emptyMap()
+        if (raw.isBlank()) return emptyMap()
+        return raw.split(LIST_SEP).mapNotNull { part ->
+            val bits = part.split(PAIR_SEP, limit = 2)
+            val classId = bits.getOrNull(0)?.trim().orEmpty()
+            val institutionId = bits.getOrNull(1)?.trim().orEmpty()
+            if (classId.isEmpty() || institutionId.isEmpty()) null else classId to institutionId
+        }.toMap()
+    }
+
+    override fun setClassInstitutionIds(map: Map<String, String>) {
+        val cleaned = map
+            .mapKeys { it.key.trim() }
+            .mapValues { it.value.trim() }
+            .filter { it.key.isNotEmpty() && it.value.isNotEmpty() }
+        prefs.edit {
+            if (cleaned.isEmpty()) remove(KEY_CLASS_INSTITUTIONS)
+            else putString(
+                KEY_CLASS_INSTITUTIONS,
+                cleaned.entries.joinToString(LIST_SEP) { "${it.key}$PAIR_SEP${it.value}" },
+            )
+        }
+    }
+
+    override fun getPendingTeacherAssignments(): List<PendingTeacherAssignment> {
+        val raw = prefs.getString(KEY_PENDING_TEACHER_ASSIGNMENTS, null) ?: return emptyList()
+        if (raw.isBlank()) return emptyList()
+        return raw.split(LIST_SEP).mapNotNull { part ->
+            val bits = part.split(PAIR_SEP)
+            if (bits.size != 3) return@mapNotNull null
+            val classId = bits[0].trim()
+            val subjectId = bits[1].trim()
+            val institutionId = bits[2].trim()
+            if (classId.isEmpty() || subjectId.isEmpty() || institutionId.isEmpty()) null
+            else PendingTeacherAssignment(classId, subjectId, institutionId)
+        }
+    }
+
+    override fun setPendingTeacherAssignments(items: List<PendingTeacherAssignment>) {
+        val cleaned = items.mapNotNull { item ->
+            val classId = item.classId.trim()
+            val subjectId = item.subjectId.trim()
+            val institutionId = item.institutionId.trim()
+            if (classId.isEmpty() || subjectId.isEmpty() || institutionId.isEmpty()) null
+            else PendingTeacherAssignment(classId, subjectId, institutionId)
+        }.distinct()
+        prefs.edit {
+            if (cleaned.isEmpty()) remove(KEY_PENDING_TEACHER_ASSIGNMENTS)
+            else putString(
+                KEY_PENDING_TEACHER_ASSIGNMENTS,
+                cleaned.joinToString(LIST_SEP) {
+                    "${it.classId}$PAIR_SEP${it.subjectId}$PAIR_SEP${it.institutionId}"
+                },
+            )
         }
     }
 
@@ -204,6 +297,7 @@ class SharedPrefsUserSessionStore(
             remove(KEY_ROLE)
             remove(KEY_DISPLAY_NAME)
             remove(KEY_AVATAR_URL)
+            remove(KEY_AVATAR_REVISION)
             remove(KEY_SELECTED_CLASSES)
             remove(KEY_CLASS_SUBJECTS)
             remove(KEY_ONBOARDING_STATE)
@@ -216,6 +310,9 @@ class SharedPrefsUserSessionStore(
             remove(KEY_PENDING_ADDRESS)
             remove(KEY_PENDING_INVITE)
             remove(KEY_INSTITUTION_ID)
+            remove(KEY_INSTITUTION_IDS)
+            remove(KEY_CLASS_INSTITUTIONS)
+            remove(KEY_PENDING_TEACHER_ASSIGNMENTS)
             remove(KEY_PARENT_SIGNUP)
             remove(KEY_NEEDS_PROFILE_SETUP)
         }
@@ -226,6 +323,7 @@ class SharedPrefsUserSessionStore(
         const val KEY_ROLE = "role"
         const val KEY_DISPLAY_NAME = "display_name"
         const val KEY_AVATAR_URL = "avatar_url"
+        const val KEY_AVATAR_REVISION = "avatar_revision"
         const val KEY_SELECTED_CLASSES = "selected_classes"
         const val KEY_CLASS_SUBJECTS = "class_subjects"
         const val KEY_ONBOARDING_STATE = "onboarding_state"
@@ -238,6 +336,9 @@ class SharedPrefsUserSessionStore(
         const val KEY_PENDING_ADDRESS = "pending_address"
         const val KEY_PENDING_INVITE = "pending_invite"
         const val KEY_INSTITUTION_ID = "institution_id"
+        const val KEY_INSTITUTION_IDS = "institution_ids"
+        const val KEY_CLASS_INSTITUTIONS = "class_institutions"
+        const val KEY_PENDING_TEACHER_ASSIGNMENTS = "pending_teacher_assignments"
         const val KEY_PARENT_SIGNUP = "parent_signup_flow"
         const val KEY_NEEDS_PROFILE_SETUP = "needs_profile_setup"
         const val LIST_SEP = ","

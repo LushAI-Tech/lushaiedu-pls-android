@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lushaiedupls.R
@@ -81,7 +82,8 @@ private val CardShape = RoundedCornerShape(16.dp)
 private val SegmentShape = RoundedCornerShape(14.dp)
 private val MetricShape = RoundedCornerShape(16.dp)
 private val CalendarShape = RoundedCornerShape(22.dp)
-private val DaySelectedShape = RoundedCornerShape(10.dp)
+private val DaySelectedShape = RoundedCornerShape(8.dp)
+private val DayMarkSize = 36.dp
 private val LegendGray = Color(0xFF8B93A7)
 private val DowGray = Color(0xFF9CA3AF)
 private val SelectedDayBg = Color(0xFFFFE0B8)
@@ -104,6 +106,10 @@ fun TeacherOverviewRoute(
     ),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    LifecycleResumeEffect(Unit) {
+        viewModel.refreshMarkedDays()
+        onPauseOrDispose { }
+    }
     // Opened from More → Attendance; land on the Attendance workspace.
     LaunchedEffect(onBack) {
         if (onBack != null) {
@@ -253,7 +259,7 @@ fun TeacherOverviewScreen(
                     selectedSubject = uiState.selectedAttendanceSubject,
                     pickerError = uiState.attendancePickerError,
                     month = uiState.attendanceMonth,
-                    selectedDay = uiState.selectedAttendanceDay,
+                    markedDays = uiState.markedRollDays,
                     isLoading = uiState.isLoading,
                     onClassSelected = onAttendanceClassSelected,
                     onSubjectSelected = onAttendanceSubjectSelected,
@@ -410,7 +416,7 @@ private fun AttendanceWorkspace(
     selectedSubject: String,
     pickerError: String?,
     month: YearMonth,
-    selectedDay: Int?,
+    markedDays: Set<Int>,
     isLoading: Boolean,
     onClassSelected: (String) -> Unit,
     onSubjectSelected: (String) -> Unit,
@@ -481,7 +487,7 @@ private fun AttendanceWorkspace(
     Box(modifier = Modifier.fillMaxWidth()) {
         AttendanceCalendarCard(
             month = month,
-            selectedDay = selectedDay,
+            markedDays = markedDays,
             onSelectDay = { day -> if (!isLoading) onSelectDay(day) },
         )
         if (isLoading) {
@@ -515,7 +521,7 @@ private fun AttendanceWorkspace(
 @Composable
 private fun AttendanceCalendarCard(
     month: YearMonth,
-    selectedDay: Int?,
+    markedDays: Set<Int>,
     onSelectDay: (Int) -> Unit,
 ) {
     Column(
@@ -577,23 +583,30 @@ private fun AttendanceCalendarCard(
                         contentAlignment = Alignment.Center,
                     ) {
                         if (day != null) {
-                            val selected = selectedDay == day
+                            val marked = day in markedDays
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(4.dp)
-                                    .clip(DaySelectedShape)
-                                    .background(if (selected) SelectedDayBg else Color.Transparent)
                                     .clickable { onSelectDay(day) },
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Text(
-                                    text = day.toString(),
-                                    color = if (selected) BrandOrange else BrandBlack,
-                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                    fontSize = 15.sp,
-                                    fontFamily = FontFamily.SansSerif,
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(DayMarkSize)
+                                        .clip(DaySelectedShape)
+                                        .background(
+                                            if (marked) SelectedDayBg else Color.Transparent,
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = day.toString(),
+                                        color = if (marked) BrandOrange else BrandBlack,
+                                        fontWeight = if (marked) FontWeight.Bold else FontWeight.Normal,
+                                        fontSize = 15.sp,
+                                        fontFamily = FontFamily.SansSerif,
+                                    )
+                                }
                             }
                         }
                     }
@@ -918,16 +931,17 @@ private fun OverallSessionsCard(dashboard: TeacherOverviewDashboard) {
                 )
             }
         }
-        Spacer(modifier = Modifier.height(18.dp))
-        VolumeSection(
-            title = stringResource(R.string.teacher_by_class_volume),
-            row = dashboard.byClass,
-        )
-        Spacer(modifier = Modifier.height(14.dp))
-        VolumeSection(
-            title = stringResource(R.string.by_subject_volume),
-            row = dashboard.bySubject,
-        )
+        // Hidden for now: By Class / By Subject volume bars.
+        // Spacer(modifier = Modifier.height(18.dp))
+        // VolumeSection(
+        //     title = stringResource(R.string.teacher_by_class_volume),
+        //     row = dashboard.byClass,
+        // )
+        // Spacer(modifier = Modifier.height(14.dp))
+        // VolumeSection(
+        //     title = stringResource(R.string.by_subject_volume),
+        //     row = dashboard.bySubject,
+        // )
     }
 }
 
@@ -1013,6 +1027,7 @@ private fun TeacherOverviewPreview() {
                 selectedAttendanceSubject = "Chemistry",
                 attendanceMonth = YearMonth.of(2026, 7),
                 selectedAttendanceDay = 25,
+                markedRollDays = setOf(17, 18, 25),
             ),
             onSectionSelected = {},
         )
